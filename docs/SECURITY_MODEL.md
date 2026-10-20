@@ -1,6 +1,6 @@
 # Security Model — VAPT Workbench
 
-> **Status:** Phase 00 design baseline (2026-10-20). The only controls implemented today are the **loopback-only bind policy** (`backend/app/core/config.py`; `tests/test_bind_policy.py`, `tests/test_main_entrypoint.py`), the **loopback-peer guard** (`backend/app/core/loopback_guard.py`; `tests/test_loopback_guard.py`), and the **`.gitignore` safety net** (`tests/test_repo_hygiene.py`). Every other control below is a design commitment, owned by the phase listed.
+> **Status:** Updated for Phase 01 (2026-10-20). Implemented controls are marked **Implemented** with test references below; earlier Phase 00 controls: the **loopback-only bind policy** (`backend/app/core/config.py`; `tests/test_bind_policy.py`, `tests/test_main_entrypoint.py`), the **loopback-peer guard** (`backend/app/core/loopback_guard.py`; `tests/test_loopback_guard.py`), and the **`.gitignore` safety net** (`tests/test_repo_hygiene.py`). Every other control below is a design commitment, owned by the phase listed.
 
 ## 1. Security objectives
 
@@ -45,19 +45,19 @@
 | Remote network access to the API | Bind to `127.0.0.1` by default; `localhost` is mapped to `127.0.0.1` (no hosts-file dependence). Non-loopback bind refused at startup until secure mode exists (TBD-003). | **Implemented** (`core/config.py`; `test_bind_policy.py`, `test_main_entrypoint.py`; manual smoke test refused `0.0.0.0` with exit 2) |
 | Bypass by launching the ASGI app directly (`uvicorn app.main:app --host 0.0.0.0`) | `LoopbackOnlyMiddleware` returns 403 (HTTP) or closes with 1008 (WebSocket) for any peer that is not a loopback IP literal. `X-Forwarded-For` is ignored. | **Implemented** (`core/loopback_guard.py`; `test_loopback_guard.py`). Residual: a same-host reverse proxy appears as loopback (§5). |
 | CSRF from a malicious page to `127.0.0.1` | Require `Content-Type: application/json` on state-changing routes (forces CORS preflight), strict CORS allowlist (no `*`), custom header / CSRF token if cookies are introduced | Design, Phase 01/12 |
-| DNS rebinding against the local API | Validate the `Host` header against an allowlist (`127.0.0.1:<port>`, `localhost:<port>`) | Design, Phase 01 |
+| DNS rebinding against the local API | Validate the `Host` header against an allowlist (`127.0.0.1:<port>`, `localhost:<port>`) | **Implemented** (`core/loopback_guard.py`; `tests/test_loopback_guard.py`) |
 | XSS in UI from imported or target-derived content | React default escaping; never use `dangerouslySetInnerHTML` for untrusted data; CSP on the UI | Design, Phase 02/12 |
-| Oversized or malformed requests | Request size limits, Pydantic validation, consistent error format without stack traces | Design, Phase 01 |
+| Oversized or malformed requests | Request size limits, Pydantic validation, consistent error format without stack traces | **Implemented** (`core/request_guards.py`, `core/errors.py`; `tests/test_api_system.py`) |
 | Remote mode (future) | Argon2id local password file, secure session cookies, CSRF, strict CORS, TLS, startup refusal if any prerequisite is missing | Design, Phase 12 |
 
 ### B2 — Application ↔ filesystem (data root)
 
 | Threat | Control | Status |
 |---|---|---|
-| Path traversal / absolute paths / symlink escape via IDs or filenames | IDs generated server-side with a strict regex; filenames never used as paths (opaque names); every resolved path checked to be under the data root after `resolve()`; symlinks rejected | Design, Phase 01 |
-| Half-written or corrupt records | Atomic temp-file + fsync + `os.replace`; validation on read; corrupt records reported, not fatal to other projects | Design, Phase 01 |
-| Concurrent writers / second instance | Per-record locks; exclusive `instance.lock` | Design, Phase 01 |
-| Other local users reading data | POSIX `0700`/`0600`; Windows per-user `%LOCALAPPDATA%` ACL inheritance (documented limitation) | Design, Phase 01 |
+| Path traversal / absolute paths / symlink escape via IDs or filenames | IDs generated server-side with a strict regex; filenames never used as paths (opaque names); every resolved path checked to be under the data root after `resolve()`; symlinks rejected | **Implemented** (`storage/`; `tests/test_{paths,atomic,locking,repository}.py`; POSIX modes untested on Windows) |
+| Half-written or corrupt records | Atomic temp-file + fsync + `os.replace`; validation on read; corrupt records reported, not fatal to other projects | **Implemented** (`storage/`; `tests/test_{paths,atomic,locking,repository}.py`; POSIX modes untested on Windows) |
+| Concurrent writers / second instance | Per-record locks; exclusive `instance.lock` | **Implemented** (`storage/`; `tests/test_{paths,atomic,locking,repository}.py`; POSIX modes untested on Windows) |
+| Other local users reading data | POSIX `0700`/`0600`; Windows per-user `%LOCALAPPDATA%` ACL inheritance (documented limitation) | **Implemented** (`storage/`; `tests/test_{paths,atomic,locking,repository}.py`; POSIX modes untested on Windows) |
 | Evidence committed to Git | Data dir outside repo by default; `.gitignore` safety net | **Implemented** (`.gitignore`; `test_repo_hygiene.py`) |
 
 ### B3 — Application ↔ target systems (outbound network)
@@ -93,8 +93,8 @@
 
 | Rule | Status |
 |---|---|
-| Secrets referenced as `env:NAME` aliases; values resolved at use time and never persisted | Design, Phase 01/05/07 (TBD-010) |
-| Central redactor applied before every log, event, evidence, and export write (Authorization, Cookie, Set-Cookie, `*token*`, `*secret*`, `*password*`, API-key patterns, JWTs, query-string secrets) | Design, Phase 01 |
+| Secrets referenced as `env:NAME` aliases; values resolved at use time and never persisted | Partial: `SecretRef` type (`env:NAME`) in `models/common.py`; resolution in Phase 05/07 (TBD-010) |
+| Central redactor applied before every log, event, evidence, and export write (Authorization, Cookie, Set-Cookie, `*token*`, `*secret*`, `*password*`, API-key patterns, JWTs, query-string secrets) | **Implemented** for logs, audit and evidence excerpts (`core/redaction.py`; `tests/test_redaction.py`, `tests/test_audit_jsonl.py`); exports in Phase 10 |
 | Settings API never returns secret values (write-only fields) | Design, Phase 11 |
 | `.env` and key files are git-ignored; only `.env.example` is tracked | **Implemented** (`.gitignore`; `test_repo_hygiene.py`) |
 

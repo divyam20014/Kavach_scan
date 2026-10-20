@@ -1,6 +1,6 @@
 # Testing Strategy — VAPT Workbench
 
-> **Status:** Phase 00 (2026-10-20). Backend unit tests exist for the health/version skeleton, bind policy, entry point, loopback-peer guard, and `.gitignore` hygiene. Test clients must pass `client=("127.0.0.1", <port>)`, because the guard rejects Starlette's default `testclient` peer. Everything else here is the plan each phase must follow.
+> **Status:** Phase 01 (2026-10-20). 20 backend test files / 466 tests. Use the fixtures in `backend/tests/conftest.py` (`settings`, `repo`, `client`, `make_project/finding/asset`): each test gets a temporary data root. API test clients must use `base_url="http://127.0.0.1"` and `client=("127.0.0.1", <port>)`, because the guards reject Starlette's default `testserver` host and `testclient` peer.
 
 ## 1. Ground rules
 
@@ -23,7 +23,31 @@ Run from `backend/` (see [DEVELOPMENT.md](DEVELOPMENT.md) for setup):
 
 Frontend (Phase 02+, planned): `npm test` (Vitest), `npm run lint` (ESLint), `npm run typecheck` (`tsc --noEmit`), `npm run build`.
 
-### Results recorded at Phase 00 verification (2026-10-20, Windows 11, Python 3.13.5)
+### Results recorded at Phase 01 verification (2026-10-20, Windows 11, Python 3.13.5)
+
+| Command | Result |
+|---|---|
+| `poetry run pytest -ra` | **543 passed, 1 skipped** (POSIX permission bits, N/A on Windows) |
+| `poetry run ruff check .` / `ruff format --check .` / `mypy` | passed / 58 files formatted / no issues in 37 files |
+| Race test repeated 15× (`test_writes_racing_project_delete_never_resurrect_it`) | 15/15 passed |
+| Live: request with `Authorization: Bearer …`, `Cookie: sid=…`, `?password=…` | 0 secret occurrences in the server log |
+| Live: second `python -m app` on same data dir | refused, exit 3 |
+
+### Results recorded at Phase 01 (2026-10-20)
+
+| Command | Result |
+|---|---|
+| `poetry run pytest` | **465 passed, 1 skipped** (`test_posix_permissions_are_owner_only`: not applicable on Windows), 1 warning (Starlette TestClient deprecation) |
+| `poetry run ruff check .` | All checks passed |
+| `poetry run ruff format --check .` | 57 files already formatted |
+| `poetry run mypy` | Success: no issues found in 37 source files |
+| Live: `VAPT_DATA_DIR=<tmp> poetry run python -m app` + `curl` | readiness `ready`; diagnostics show `~/…` path and `held_by_this_process`; Host `evil.example` → 403 `invalid_host`; server log is JSON lines with correlation IDs; `access_token` value redacted (0 occurrences in log) |
+| Live: second `python -m app` on the same data dir | `error: Another VAPT Workbench instance is already using this data directory (pid …)`, exit 3 |
+| Live: `python -m app diagnose` while the server runs | `"instance_lock": "held_by_another_process"`, `"ready": true` |
+
+Symlink/junction escape tests ran on Windows using a directory junction (symlink creation needs privileges here). They pass, so junction escapes are rejected.
+
+### Results recorded at Phase 00 verification (2026-10-20)
 
 | Command | Result |
 |---|---|
@@ -63,16 +87,16 @@ Not live-tested: a real remote client against `uvicorn app.main:app --host 0.0.0
 - **TLS fixtures:** self-signed and expired certificates generated at test time with `cryptography` (Phase 05). Never use real certificates.
 - **DNS:** mocked resolver for rebinding (first answer public, second answer private), CNAME chains, NXDOMAIN, IPv6-only.
 
-## 5. Network isolation guard (planned, Phase 01)
+## 5. Network isolation guard (implemented, Phase 01)
 
-Add a `conftest.py` autouse fixture that patches `socket.socket.connect` / `getaddrinfo` so that any connection to a non-loopback address fails the test immediately. The fixture-network layer is still allowed loopback. This proves the suite is offline and catches accidental real traffic.
+`tests/conftest.py::_offline_guard` (autouse) patches `socket.socket.connect`, so any connection to a non-loopback IP or to a hostname fails the test immediately. Loopback stays allowed for fixture servers. Subprocesses spawned by tests are not covered by this in-process patch; they only run app code that has no network imports (enforced by `tests/test_static_guards.py`).
 
 ## 6. Phase-specific must-have tests
 
 | Phase | Must test |
 |---|---|
 | 00 | Health/version, version consistency, localhost default + canonicalization, non-loopback refusal before uvicorn starts, loopback-peer guard, no other routes, 404/405 for unimplemented, `.gitignore` coverage incl. fixture/source false positives (**done**) |
-| 01 | CRUD, atomic replace, concurrent writers, truncated JSON, invalid schema, `../` / absolute / encoded / symlink escapes, stale locks, second-instance refusal, index rebuild, restart persistence, log redaction |
+| 01 | **done:** CRUD, atomic replace (failed replace, partial write/disk full), thread + process concurrent writers, truncated JSON, invalid schema, `../` / absolute / encoded / reserved-name / symlink / junction escapes, stale locks + crash release, second-instance refusal, index rebuild (missing/corrupt/out-of-sync/stale revision), restart persistence, audit/log redaction, migrations with backup, integrity checks, first-run/version refusal, static architecture guards |
 | 02 | Project form validation, reload persistence, dashboard counters from API (no constants), empty/offline/error states, keyboard navigation |
 | 03 | Each blocked range row, suffix confusion, IDN, IPv6, user-info, non-HTTP schemes, encoded paths, port/path exclusions, redirect to private, rebinding, expiry boundaries (fake clock) |
 | 04 | State transitions, duplicate submission, claim race, queue cap, cancel, subprocess timeout/kill, restart → interrupted, kill switch |

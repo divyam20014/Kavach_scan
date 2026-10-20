@@ -1,0 +1,28 @@
+"""Generated-report metadata (rendering arrives in Phase 10)."""
+
+from __future__ import annotations
+
+from typing import Literal
+
+from pydantic import Field
+
+from app.models.common import FindingId, Name, ProjectId, Record, ReportId, Sha256Hex, ShortText
+
+REPORT_SCHEMA_VERSION: Literal[1] = 1
+
+ReportFormat = Literal["html", "pdf", "json", "csv"]
+
+
+class ReportMetadata(Record):
+    schema_version: Literal[1] = REPORT_SCHEMA_VERSION
+    report_id: ReportId
+    project_id: ProjectId
+    title: Name
+    classification_label: ShortText = "CONFIDENTIAL"
+    formats: list[ReportFormat] = Field(min_length=1, max_length=4)
+    file_sha256: dict[ReportFormat, Sha256Hex] = Field(default_factory=dict)
+    finding_ids: list[FindingId] = Field(default_factory=list, max_length=10_000)
+    filters: dict[str, ShortText | int | bool | list[ShortText]] = Field(
+        default_factory=dict, max_length=50
+    )
+    generator_version: ShortText = ""

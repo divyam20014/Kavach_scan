@@ -7,21 +7,31 @@ from starlette.routing import Route
 
 from app import __version__
 from app.main import create_app
+from tests.conftest import LOCAL_BASE_URL, LOCAL_CLIENT
 
-client = TestClient(create_app(), client=("127.0.0.1", 50000))
+SYSTEM_ROUTES = {
+    "/api/health",
+    "/api/version",
+    "/api/readiness",
+    "/api/diagnostics/storage",
+    "/api/diagnostics/integrity-check",
+}
+
+# No lifespan: these endpoints must work without storage.
+bare = TestClient(create_app(), base_url=LOCAL_BASE_URL, client=LOCAL_CLIENT)
 
 
-def test_health_ok() -> None:
-    resp = client.get("/api/health")
+def test_health_ok_without_storage() -> None:
+    resp = bare.get("/api/health")
     assert resp.status_code == 200
     assert resp.json() == {"status": "ok"}
 
 
 def test_version_reports_no_scanning() -> None:
-    resp = client.get("/api/version")
-    assert resp.status_code == 200
-    body = resp.json()
+    body = bare.get("/api/version").json()
     assert body["version"] == __version__
+    assert body["api_version"] == "1"
+    assert body["storage_version"] == 1
     assert body["scanning_available"] is False
 
 
@@ -31,17 +41,23 @@ def test_version_matches_pyproject() -> None:
 
 
 def test_only_system_routes_exist() -> None:
-    """Phase 00 guard: no scan, project, or import routes may exist yet."""
+    """Guard: no scan, project, or import routes may exist before their phases."""
     app = create_app()
-    assert set(app.openapi()["paths"]) == {"/api/health", "/api/version"}
-    # Included routers are nested, so top-level plain routes are only FastAPI's docs pages.
+    assert set(app.openapi()["paths"]) == SYSTEM_ROUTES
     top_level = {r.path for r in app.routes if isinstance(r, Route | APIRoute)}
     assert top_level <= {"/openapi.json", "/docs", "/docs/oauth2-redirect", "/redoc"}
 
 
+def test_storage_endpoints_unavailable_without_storage() -> None:
+    resp = bare.get("/api/readiness")
+    assert resp.status_code == 503
+    assert resp.json()["error"]["code"] == "service_unavailable"
+
+
 def test_health_endpoints_reject_writes() -> None:
-    assert client.post("/api/health").status_code == 405
-    assert client.delete("/api/version").status_code == 405
+    resp = bare.post("/api/health")
+    assert resp.status_code == 405
+    assert resp.json()["error"]["code"] == "method_not_allowed"
 
 
 def test_unknown_routes_are_404_not_fake_200() -> None:
@@ -52,4 +68,6 @@ def test_unknown_routes_are_404_not_fake_200() -> None:
         ("POST", "/api/projects/x/imports"),
         ("GET", "/api/findings"),
     ]:
-        assert client.request(method, path).status_code == 404, (method, path)
+        resp = bare.request(method, path)
+        assert resp.status_code == 404, (method, path)
+        assert resp.json()["error"]["code"] == "not_found"

@@ -1,6 +1,6 @@
 # Local Development — VAPT Workbench
 
-> Phase 00 (2026-10-20). Only the backend skeleton exists. These steps were run on Windows 11 with Git Bash. POSIX shells are equivalent; PowerShell differences are noted. The repository root `README.md` belongs to the build pack and is intentionally not used for app instructions (TBD-033).
+> Phase 01 (2026-10-20). Backend foundation and filesystem storage exist; no frontend yet. These steps were run on Windows 11 with Git Bash. POSIX shells are equivalent; PowerShell differences are noted. The repository root `README.md` belongs to the build pack and is intentionally not used for app instructions (TBD-033).
 
 ## Prerequisites
 
@@ -21,17 +21,31 @@ poetry install            # creates backend/.venv (in-project, see poetry.toml);
 
 ```bash
 cd backend
-poetry run python -m app
-# → http://127.0.0.1:8765/api/health   {"status":"ok"}
-# → http://127.0.0.1:8765/api/version
-# → http://127.0.0.1:8765/docs         (OpenAPI UI)
+poetry run python -m app            # first run creates the data directory
+# → http://127.0.0.1:8765/api/health              liveness
+# → http://127.0.0.1:8765/api/readiness           200 ready / 503 not ready
+# → http://127.0.0.1:8765/api/diagnostics/storage data dir, disk space, lock, last integrity check
+# → http://127.0.0.1:8765/docs                    OpenAPI UI
+poetry run python -m app diagnose   # read-only JSON report; exit 0 ready, 1 not ready
+poetry run python -m app --version
 ```
+
+Exit codes: 0 ok · 1 not ready (diagnose) · 2 configuration error · 3 storage error (e.g. another instance is using the data directory).
 
 | Variable | Default | Notes |
 |---|---|---|
-| `VAPT_HOST` | `127.0.0.1` | Only loopback IP literals (`127.0.0.0/8`, `::1`, `[::1]`) or `localhost` (mapped to `127.0.0.1`) are accepted. Anything else exits with code 2 until a secure remote mode exists (TBD-003). |
+| `VAPT_HOST` | `127.0.0.1` | Only loopback IP literals (`127.0.0.0/8`, `::1`, `[::1]`) or `localhost` (mapped to `127.0.0.1`). Anything else exits with code 2 (TBD-003). |
 | `VAPT_PORT` | `8765` | 1–65535 |
-| `VAPT_DATA_DIR` | — | **Not used yet.** Introduced in Phase 01 ([STORAGE_FORMATS.md](STORAGE_FORMATS.md)). |
+| `VAPT_DATA_DIR` | per-user app data | Windows `%LOCALAPPDATA%\VAPTWorkbench\data`; Linux `~/.local/share/vapt-workbench`; macOS `~/Library/Application Support/VAPTWorkbench`. Must be absolute; refused inside the repo, on a drive root, or on a non-empty non-Workbench directory. |
+| `VAPT_ALLOW_REPO_DATA_DIR` | off | Escape hatch to allow a data dir inside the checkout (not recommended). |
+| `VAPT_LOG_LEVEL` | `INFO` | `DEBUG` / `INFO` / `WARNING` / `ERROR`. Logs are JSON lines on stderr, redacted. |
+| `VAPT_LOCK_TIMEOUT_SECONDS` | `10` | Record-lock wait before a 503 `lock_timeout`. |
+| `VAPT_AUDIT_ROTATE_BYTES` | `10485760` | Audit log segment size. |
+| `VAPT_MAX_RECORD_BYTES` | `5242880` | Largest JSON record. |
+| `VAPT_MAX_REQUEST_BYTES` | `1048576` | Largest API request body (`python -m app` path). |
+| `VAPT_DISK_WARNING_BYTES` | `2147483648` | Low-disk warning threshold. |
+
+Any other `VAPT_*` variable is rejected as a probable typo (exit code 2). Only one app instance may use a data directory at a time.
 
 PowerShell: `$env:VAPT_PORT = "9000"; poetry run python -m app`.
 
@@ -47,7 +61,7 @@ poetry run ruff format --check .
 poetry run mypy
 ```
 
-Expected results at Phase 00 are recorded in [TESTING.md](TESTING.md) §2.
+Expected results are recorded in [TESTING.md](TESTING.md) §2. Tests always use temporary data directories and never touch your real data dir.
 
 ## Frontend
 

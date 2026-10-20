@@ -1,6 +1,6 @@
 # Architecture — VAPT Workbench (Kavach_scan)
 
-> **Status:** Phase 00 baseline (2026-10-20).
+> **Status:** Updated for Phase 01 (2026-10-20).
 > **Implemented** means code and passing tests exist in this repository. **Design** means the agreed target, owned by the phase named, and not yet built. The implementation status of every module is tracked in [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
 
 Related documents: [SECURITY_MODEL.md](SECURITY_MODEL.md) · [SCAN_SAFETY.md](SCAN_SAFETY.md) · [STORAGE_FORMATS.md](STORAGE_FORMATS.md) · [TESTING.md](TESTING.md) · [DEPENDENCIES.md](DEPENDENCIES.md) · [DEVELOPMENT.md](DEVELOPMENT.md)
@@ -12,11 +12,12 @@ Related documents: [SECURITY_MODEL.md](SECURITY_MODEL.md) · [SCAN_SAFETY.md](SC
 | Area | State | Evidence |
 |---|---|---|
 | Git | Branch `main` has no commits. Remote `origin` (`github.com/divyam20014/Kavach_scan`) is empty. | `git log`, `git ls-remote` at bootstrap |
-| Backend | **Minimal FastAPI skeleton only**: `GET /api/health`, `GET /api/version`, a loopback-only bind policy (`python -m app`), and an in-app guard that rejects non-loopback peers with 403 however the app is launched. | `backend/app/`, `backend/tests/` (99 tests pass, Phase 00 verification) |
+| Backend foundation | FastAPI app factory with lifespan-managed storage. Typed error envelope, correlation IDs, redacting JSON logs, strict `VAPT_*` settings, loopback-peer + Host-header guards, request-size limit. Endpoints: `/api/health`, `/api/version`, `/api/readiness`, `/api/diagnostics/storage`, `POST /api/diagnostics/integrity-check`. CLI: `python -m app [serve\|diagnose\|--version]`. | `backend/app/{api,core}/`; 465 tests pass |
+| Contracts | Pydantic v2 models for Project, AuthorizationRecord, ScopeDefinition, ScanPolicy, ScanJob, Asset, Finding, EvidenceMetadata, ImportArtifact, AuditEvent, ReportMetadata, AppSettings. All have `schema_version`, `extra="forbid"`, enums and bounds. | `backend/app/models/`; `tests/test_models.py` |
+| Persistence | **Filesystem only**: `StorageRepository` is the single owner of `VAPT_DATA_DIR`. It provides atomic writes, two-level record locks, a single-instance lock, derived indexes, a JSONL audit log, migration hooks, an integrity checker and diagnostics. | `backend/app/storage/`; [STORAGE_FORMATS.md](STORAGE_FORMATS.md) |
 | Frontend | **None.** Planned for Phase 02. | — |
-| Persistence | **None.** No code reads or writes a data directory yet. | `backend/app/` has no file I/O |
-| Scanning / outbound network / subprocess | **None.** No HTTP client, DNS, socket, or subprocess usage exists in `backend/app/`. `/api/version` reports `scanning_available: false`. | `tests/test_health.py::test_only_system_routes_exist` |
-| Database / broker | **None.** The full locked dependency set (29 packages) contains no database, ORM, Redis, or queue library. | [DEPENDENCIES.md](DEPENDENCIES.md) |
+| Scanning / outbound network / subprocess | **None.** `/api/version` reports `scanning_available: false`. Static guards fail the build if `httpx`/`socket`/`subprocess`/`dns` (or similar) appear in `app/`; `socket` is used only for `gethostname()` in the instance lease. | `tests/test_static_guards.py`, `tests/test_health.py::test_only_system_routes_exist` |
+| Database / broker | **None.** 30 locked packages, none a database or broker. Importing the app loads no `sqlite3`/`redis`. | `tests/test_static_guards.py`, `tests/test_startup.py` |
 
 Layout as it exists:
 
@@ -28,17 +29,22 @@ backend/
   pyproject.toml poetry.toml poetry.lock
   app/
     __init__.py                __version__
-    __main__.py                `python -m app` dev entry point (refuses non-loopback bind)
-    main.py                    create_app() factory
-    api/health.py              /api/health, /api/version
-    core/config.py             bind config: VAPT_HOST / VAPT_PORT, canonical loopback host, refusal
-    core/loopback_guard.py     ASGI middleware: 403 for any non-loopback peer (defense in depth)
-  tests/
-    test_health.py             endpoints, version consistency, "no other routes exist", 404/405 checks
-    test_bind_policy.py        localhost default, canonicalization, non-loopback refusal, port validation
-    test_loopback_guard.py     remote peers / docs / forwarded headers rejected; loopback served
-    test_main_entrypoint.py    `python -m app` refuses bad config before uvicorn starts
-    test_repo_hygiene.py       .gitignore covers runtime/secrets, not source/fixtures
+    __main__.py                CLI: serve (opens storage before uvicorn) | diagnose | --version
+    main.py                    create_app(settings, repository); lifespan opens storage + integrity check
+    api/deps.py                get_repository dependency (routers never touch files)
+    api/health.py              health, version, readiness, storage diagnostics, integrity check
+    core/config.py             bind policy (loopback only)
+    core/settings.py           strict VAPT_* runtime settings
+    core/errors.py             AppError hierarchy + single JSON error envelope
+    core/correlation.py        X-Request-ID middleware + contextvar
+    core/log_config.py         redacting JSON log formatter
+    core/redaction.py          central secret redactor
+    core/loopback_guard.py     non-loopback peer + non-local Host header → 403
+    core/request_guards.py     request-size limit, redacted request log
+    models/                    canonical Pydantic v2 contracts (see table above)
+    storage/                   paths, atomic, locking, jsonl, audit, migrations,
+                               repository, integrity, diagnostics, errors
+  tests/                       20 files; see docs/TESTING.md
 ```
 
 ## 2. Target architecture (design)
@@ -82,7 +88,7 @@ One local OS process runs everything:
 
 ### 2.2 Why single-host and single-instance
 
-1. **Persistence is files only** (mandatory). OS file locks (`msvcrt` on Windows, `fcntl` on POSIX, through a maintained wrapper, TBD-032) are reliable between processes on **one host**. They are unreliable or unsupported on network filesystems (SMB/NFS) and do not coordinate across machines.
+1. **Persistence is files only** (mandatory). OS file locks (Windows byte-range locks, POSIX `flock`, through the `filelock` library behind `storage/locking.py`, TBD-032 decided) are reliable between processes on **one host**. They are unreliable or unsupported on network filesystems (SMB/NFS) and do not coordinate across machines.
 2. **The job queue is a spool directory.** Claims rely on per-job locks. A second app instance on the same data root could double-claim jobs, race on derived indexes, and interleave JSONL appends.
 3. **Enforcement:** at startup the app acquires an exclusive `instance.lock` in the data root and holds it for the life of the process. A second instance fails fast with a clear message. The OS releases the lock if the process dies, so a crash never leaves a permanent stale lock (Phase 01).
 4. **Product fit:** this is an operator workstation tool, bound to localhost (TBD-001/003).

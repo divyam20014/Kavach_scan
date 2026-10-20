@@ -5,7 +5,8 @@
 ## 1. Policy
 
 - Add a dependency only in the phase that uses it, with a test that exercises it. No speculative installs.
-- Python: Poetry 2.x with a committed `poetry.lock` (TBD-026). Frontend (Phase 02): npm with `package-lock.json`.
+- Python: Poetry 2.x with a committed `poetry.lock` (TBD-026, **decided**).
+- Check the import-time side effects of every new dependency: a library must not pull in a database or broker client just by being imported (this is the lesson from the TBD-032 evaluation). Frontend (Phase 02): npm with `package-lock.json`.
 - **Forbidden:** any database, ORM, or broker client, including `sqlalchemy`, `sqlmodel`, `psycopg*`, `asyncpg`, `pymysql`, `mysqlclient`, `pymongo`, `motor`, `redis`, `celery`, `kombu`, `rq`, `dramatiq`, `huey`, `tinydb`, `peewee`, `tortoise-orm`, `alembic`, `duckdb`, `lmdb`. The stdlib `sqlite3` and `shelve` modules must not be imported either.
 - Permissive licenses preferred (MIT/BSD/Apache/PSF/ISC; weak-copyleft MPL-2.0 acceptable). Copyleft (GPL/AGPL) needs explicit owner approval (TBD-028).
 
@@ -14,6 +15,7 @@
 | Package | Locked | License | Purpose | Added in |
 |---|---|---|---|---|
 | fastapi | 0.150.0 | MIT | HTTP API, OpenAPI generation | 00 |
+| filelock | 4.2.4 | MIT | Cross-process exclusive locks, wrapped in `storage/locking.py` (`fallback_to_soft=False`; ReadWriteLock/SoftFileLock banned) | 01 |
 | uvicorn | 0.54.0 | BSD-3-Clause | ASGI server for `python -m app` | 00 |
 
 Transitive runtime packages: `starlette` 1.9.0 (BSD-3), `pydantic` 2.14.1 / `pydantic-core` 2.50.1 (MIT), `anyio` 4.15.1 (MIT), `idna` 3.20 (BSD-3), `typing-extensions` 4.16.0 (PSF-2.0), `typing-inspection` 0.4.4 (MIT), `annotated-types` 0.8.0 (MIT), `annotated-doc` 0.0.5 (MIT), `click` 8.5.0 (BSD-3), `h11` 0.16.0 (MIT), `colorama` 0.4.6 (BSD, Windows only), and **`opentelemetry-api` 1.45.1 (Apache-2.0)**.
@@ -31,16 +33,16 @@ Transitive runtime packages: `starlette` 1.9.0 (BSD-3), `pydantic` 2.14.1 / `pyd
 
 Transitive dev packages: `httpcore`, `certifi` (MPL-2.0), `iniconfig`, `pluggy`, `packaging`, `pygments`, `pathspec` (MPL-2.0), `mypy-extensions`, `ast-serialize`, `librt`.
 
-## 4. Database/broker check (Phase 00)
+## 4. Database/broker check (Phase 01)
 
-`poetry show` lists 29 locked packages. A case-insensitive search for `sql|psycopg|pg8000|asyncpg|mysql|pymongo|motor|redis|celery|kombu|rq|dramatiq|huey|tortoise|peewee|alembic|sqlmodel|tinydb|shelve|lmdb|rocksdb|duckdb` found **none**. `backend/app/` imports no database modules.
+`poetry.lock` contains 30 packages (29 from Phase 00 + `filelock`). None is a database, ORM, broker or queue library. This is now enforced automatically: `tests/test_static_guards.py::test_manifest_has_no_database_or_broker_dependencies` (lockfile + manifest), `::test_no_database_imports` (source), and `tests/test_startup.py::test_importing_app_loads_no_database_or_broker_modules` (runtime: no `sqlite3`, `redis`, `celery`, … in `sys.modules`).
 
 ## 5. Planned dependencies (not installed; added only by the owning phase)
 
 | Phase | Candidate | Purpose | Decision |
 |---|---|---|---|
-| 01 | `filelock` or `portalocker` | Cross-process locks (Windows and POSIX) | TBD-032 |
-| 01 | `platformdirs` | Per-user default data dir | TBD-006 |
+| 01 | ~~`filelock`~~ | **Installed** (see §2) | TBD-032 decided |
+| 01 | ~~`platformdirs`~~ | Not needed: the per-user default is resolved in `storage/paths.py` (about 10 lines, tested) | TBD-006 |
 | 03 | `hypothesis` (dev) | Property tests for scope engine | — |
 | 05 | `httpx` (runtime, wrapped) | Outbound HTTP client in the shared adapter | spec §2 |
 | 05 | `beautifulsoup4` + `lxml` | HTML parsing (no JS execution) | spec §2 |
@@ -71,4 +73,7 @@ Transitive dev packages: `httpcore`, `certifi` (MPL-2.0), `iniconfig`, `pluggy`,
 | Loopback-peer guard (403 for non-loopback clients however the app is launched) | Implemented | `backend/app/core/loopback_guard.py`; `tests/test_loopback_guard.py` |
 | Dev entry point `python -m app` | Implemented | `backend/app/__main__.py` |
 | `.gitignore` for runtime/secrets/build output | Implemented | `.gitignore`; `tests/test_repo_hygiene.py` |
+| Filesystem storage layer (StorageRepository, locks, audit JSONL, migrations, integrity, diagnostics) | Implemented | `backend/app/storage/`; see IMPLEMENTATION_STATUS |
+| Canonical Pydantic contracts | Implemented | `backend/app/models/` |
+| Readiness / diagnostics endpoints, `python -m app diagnose` | Implemented | `backend/app/api/health.py`, `backend/app/__main__.py` |
 | Everything else in MASTER_SPEC | Not started | [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) |

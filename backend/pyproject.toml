@@ -6,6 +6,7 @@ requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115,<1",
     "uvicorn>=0.30,<1",
+    "filelock (>=4.2,<5)",
 ]
 
 [tool.poetry]
@@ -33,8 +34,12 @@ target-version = "py312"
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "B", "UP", "S", "BLE"]
 
+# UP046/UP047: keep typing.Generic; PEP 695 syntax is not needed and Pydantic generic
+# models are documented with Generic[T].
+ignore = ["UP046", "UP047"]
+
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101"]
+"tests/**" = ["S101", "S603", "S607", "S108", "E501"]  # long literal fixtures are clearer inline
 
 [tool.mypy]
 strict = true
