@@ -66,8 +66,8 @@ function ProjectDetail({ overview }: { overview: ProjectOverview }) {
           </Badge>
         </Group>
 
-        <Alert role="note" color="gray" title="Scanners are not available yet" variant="light">
-          The job system and scope safety gate are ready. The web, attack-surface and API scanners arrive in Phases 05–07.
+        <Alert role="note" color="gray" title="Scanner availability" variant="light">
+          The web application scanner is available (safe mode: no injection test input). The attack-surface and API scanners arrive in Phases 06–07.
         </Alert>
 
         <SimpleGrid cols={{ base: 2, sm: 3, md: 6 }}>

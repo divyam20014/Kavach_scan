@@ -57,6 +57,13 @@ class KillSwitchRequest(StrictModel):
     reason: ShortText = Field(min_length=3)
 
 
+class WebProfilePreview(StrictModel):
+    profile: dict[str, Any]
+    problems: list[str]
+    tls_tools: list[str]
+    parameters: dict[str, Any]
+
+
 class RetryRequest(StrictModel):
     confirmed: bool
     idempotency_key: str | None = Field(default=None, pattern=r"^[A-Za-z0-9._-]{8,64}$")
@@ -169,3 +176,73 @@ def retry_scan(project_id: str, scan_id: str, body: RetryRequest, request: Reque
 
         raise ValidationFailedError("Explicit confirmation is required to start a new job")
     return get_manager(request).retry(project_id, scan_id, idempotency_key=body.idempotency_key)
+
+
+# ---------------------------------------------------------------------- web scanner (Phase 05)
+
+RESULT_FILES = {
+    "summary": "summary.json",
+    "coverage": "coverage.json",
+    "pages": "pages.json",
+    "profile": "profile.json",
+}
+RESULT_MAX_BYTES = 16 * 1024 * 1024
+
+
+@router.get("/projects/{project_id}/web-scan-profile", response_model=WebProfilePreview)
+def web_scan_profile(
+    project_id: str,
+    repo: Repository,
+    seed_paths: Annotated[str, Query(max_length=2000)] = "",
+    max_pages: Annotated[int | None, Query(ge=1, le=100_000)] = None,
+    max_depth: Annotated[int | None, Query(ge=0, le=100)] = None,
+    respect_robots: bool = True,
+    tls_verify: bool = True,
+    check_cors: bool = True,
+    run_tls_tool: bool = True,
+) -> WebProfilePreview:
+    """Preview the web scan profile (checks, budgets, safe mode) for the start dialog."""
+    from app.integrations.tls_tools import detect_tls_tools
+    from app.scanners.webapp.profile import build_profile, validate_parameters
+
+    project = repo.get_project(project_id)
+    params: dict[str, Any] = {
+        "respect_robots": respect_robots,
+        "tls_verify": tls_verify,
+        "check_cors": check_cors,
+        "run_tls_tool": run_tls_tool,
+    }
+    if seed_paths:
+        params["seed_paths"] = seed_paths
+    if max_pages is not None:
+        params["max_pages"] = max_pages
+    if max_depth is not None:
+        params["max_depth"] = max_depth
+    problems = validate_parameters(params, project.scan_policy)
+    profile = build_profile(params if not problems else {}, project.scan_policy)
+    tools = [f"{t.name} ({t.executable})" for t in detect_tls_tools()]
+    return WebProfilePreview(
+        profile=profile.model_dump(mode="json"),
+        problems=problems,
+        tls_tools=tools,
+        parameters=params,
+    )
+
+
+@router.get("/projects/{project_id}/scans/{scan_id}/results/{kind}")
+def scan_results(project_id: str, scan_id: str, kind: str, repo: Repository) -> Any:
+    """Web scanner outputs: summary, coverage, pages (inventory) or profile."""
+    import json
+
+    from app.core.errors import NotFoundError
+
+    name = RESULT_FILES.get(kind)
+    if name is None:
+        raise NotFoundError("Unknown result kind")
+    repo.get_scan(project_id, scan_id)
+    raw = repo.read_scan_output(project_id, scan_id, name, max_bytes=RESULT_MAX_BYTES)
+    try:
+        data = json.loads(raw.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError) as exc:
+        raise NotFoundError("The result file is unreadable") from exc
+    return redact(data, max_items=20_000)  # defence in depth: outputs are redacted at write

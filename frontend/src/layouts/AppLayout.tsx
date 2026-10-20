@@ -17,7 +17,7 @@ const NAV = [
 
 // Listed honestly as unavailable instead of rendering placeholder pages or controls.
 const NOT_YET = [
-  { label: "Scanners (web, surface, API)", phase: "Phases 05–07" },
+  { label: "Scanners (surface, API)", phase: "Phases 06–07" },
   { label: "API specifications", phase: "Phase 07" },
   { label: "Imports", phase: "Phase 08" },
   { label: "Reports", phase: "Phase 10" },
@@ -91,7 +91,7 @@ export function AppLayout() {
         </AppShell.Section>
         <AppShell.Section>
           <Text size="xs" c="dimmed" px="sm">
-            Job system ready; scanners arrive in Phases 05–07.
+            Web scanner ready (safe mode); surface/API scanners arrive in Phases 06–07.
           </Text>
         </AppShell.Section>
       </AppShell.Navbar>

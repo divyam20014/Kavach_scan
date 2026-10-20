@@ -2,6 +2,7 @@
 // Backend serves frontend/dist on 127.0.0.1 with a throwaway data dir; nothing else is contacted.
 import { spawn } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
+import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { chromium } from "playwright-core";
@@ -316,6 +317,7 @@ try {
   const jobId = jobUrl.split("/").pop();
   await page.getByText("Completed", { exact: true }).waitFor({ timeout: 30000 });
   await page.getByRole("row", { name: /Steps done 5/ }).waitFor();
+  await page.getByRole("tab", { name: "Logs" }).click();
   await page.getByRole("table", { name: "Job events" }).getByText(/stage: report/).waitFor();
   await page.getByLabel("Console log output").getByText(/job completed/).waitFor();
   const persisted = (await api("GET", `/api/projects/${scoped.project_id}/scans/${jobId}`)).json.scan;
@@ -371,6 +373,77 @@ try {
   await page.getByRole("dialog").getByRole("button", { name: "Release" }).click();
   await page.getByRole("button", { name: "Kill switch…" }).waitFor();
   ok("kill switch engaged from the header blocks new jobs (409) and can be released");
+
+  // 13. Phase 05: real web scan through the UI against a local fixture app ----------------------
+  const fixtureHits = [];
+  const fixture = createServer((req, res) => {
+    fixtureHits.push(req.url);
+    const html = (title, body, headers = {}) => {
+      res.writeHead(200, { "Content-Type": "text/html; charset=utf-8", ...headers });
+      res.end(`<!doctype html><html><head><title>${title}</title></head><body>${body}</body></html>`);
+    };
+    if (req.url === "/") {
+      html("Fixture home", '<a href="/about">About</a> <a href="/listing/">Files</a> <a href="/admin/">Admin</a> <a href="http://outside.example/">Out</a>',
+        { Server: "nginx/1.18.0", "Set-Cookie": "sessionid=fixture-secret-value; Path=/" });
+    } else if (req.url === "/about") {
+      html("About", "about", { "X-Content-Type-Options": "nosniff" });
+    } else if (req.url === "/listing/") {
+      html("Index of /listing", '<h1>Index of /listing</h1><a href="../">Parent Directory</a>');
+    } else if (req.url === "/robots.txt") {
+      res.writeHead(200, { "Content-Type": "text/plain" });
+      res.end("User-agent: *\nDisallow: /admin\n");
+    } else {
+      res.writeHead(404, { "Content-Type": "text/html" });
+      res.end("<html><title>404</title></html>");
+    }
+  });
+  await new Promise((r) => fixture.listen(0, "127.0.0.1", r));
+  const target = `http://127.0.0.1:${fixture.address().port}/`;
+  const webProj = (await api("POST", "/api/projects", { name: "Web lab", client_name: "C", authorization: auth(-day, 10 * day),
+    scan_policy: { allowed_modules: ["web_app"], requests_per_second: 10 }, ...(await previewed([target])) })).json;
+  const ov = await api("PUT", `/api/projects/${webProj.project_id}/internal-override`, { expected_revision: webProj.revision,
+    ip_ranges: ["127.0.0.1/32"], reason: "local fixture app for browser verification", expires_at: new Date(Date.now() + day).toISOString(), attestation: true });
+  assert(ov.status === 200, `internal override set (${ov.status} ${JSON.stringify(ov.json).slice(0, 200)})`);
+  await page.goto(`${BASE}/projects/${webProj.project_id}`);
+  const webCard = page.getByRole("region", { name: "Start a job" });
+  await webCard.getByRole("radio", { name: /Web application scanner/ }).check();
+  const profileBox = webCard.getByLabel("Web scan profile details");
+  await profileBox.getByText("Safe mode: on").waitFor();
+  await profileBox.getByRole("table", { name: "Disabled checks" }).getByText(/Not built in/).first().waitFor();
+  await webCard.getByRole("textbox", { name: /targets/i }).fill(target);
+  await webCard.getByRole("button", { name: /Review & confirm/ }).click();
+  const webDlg = page.getByRole("dialog");
+  await webDlg.getByText(/no injection test input is sent/).waitFor();
+  await webDlg.getByRole("checkbox", { name: /I confirm/ }).check();
+  await webDlg.getByRole("button", { name: "Start job" }).click();
+  await page.waitForURL(/\/scans\/scn_/);
+  const webJobId = page.url().split("/").pop();
+  await page.getByText(/^Completed( with warnings)?$/).waitFor({ timeout: 60000 });
+  const outcomeTable = page.getByRole("table", { name: "Check outcome counts" });
+  await outcomeTable.waitFor();
+  const outcomeText = await outcomeTable.textContent();
+  assert(!outcomeText.includes("REDACTED") && /pass\s*[1-9]/.test(outcomeText), `outcome counts readable: ${outcomeText}`);
+  await page.getByText(/Tool versions: no external tool ran/).waitFor();
+  await page.getByRole("tab", { name: "Pages / endpoints" }).click();
+  await page.getByRole("table", { name: "Pages and endpoints" }).getByText("Index of /listing").waitFor();
+  await page.getByRole("tab", { name: "Findings" }).click();
+  const jobFindings = page.getByRole("table", { name: "Findings from this job" });
+  await jobFindings.getByText("Directory listing enabled").waitFor();
+  await jobFindings.getByText("Server or framework version disclosed").waitFor();
+  await page.getByRole("tab", { name: "Coverage" }).click();
+  const coverageTable = page.getByRole("table", { name: "Check coverage" });
+  await coverageTable.getByText("WEB-INJ-000").first().waitFor();
+  const tlsToolRow = coverageTable.getByRole("row").filter({ hasText: "WEB-TLS-006" }).first();
+  assert((await tlsToolRow.textContent()).includes("skipped"), "absent TLS tool shown as skipped, not pass");
+  await page.getByRole("tab", { name: "Findings" }).click();
+  await page.getByRole("link", { name: /global findings view/ }).click();
+  await page.getByText(/Scan id: scn_/).waitFor();
+  await page.getByText("Directory listing enabled").first().waitFor();
+  assert(!fixtureHits.some((u) => u.startsWith("/admin")), "robots.txt-disallowed path never requested");
+  const stored = JSON.stringify((await api("GET", `/api/findings?scan_id=${webJobId}&limit=100`)).json);
+  assert(!stored.includes("fixture-secret-value"), "cookie value never stored in findings");
+  fixture.close();
+  ok(`web scan via UI: ${fixtureHits.length} requests to a local fixture; pages, findings, coverage tabs; global findings filtered by scan; robots and scope respected`);
 
   if (consoleErrors.length) throw new Error("console errors:\n" + consoleErrors.join("\n"));
   ok("no unexpected browser console errors or CSP violations");

@@ -74,12 +74,13 @@ _PATTERNS: list[tuple[re.Pattern[str], str]] = [
         ),
         r"\1" + REDACTED,
     ),
-    # key=value / key: value assignments in free text
+    # key=value / key: value assignments in free text (also at the start of a quoted string,
+    # e.g. "password=x" inside JSON text; already-redacted quoted keys are skipped below)
     (
         re.compile(
-            r"(?i)(?<![\w\"'])((?:[\w-]*(?:password|passwd|secret|token|api[_-]?key|apikey|"
+            r"(?i)(?<![\w])((?:[\w-]*(?:password|passwd|secret|token|api[_-]?key|apikey|"
             r"access[_-]?key|private[_-]?key|credential)[\w-]*|pwd)\s*[=:]\s*)"
-            r"(?!\"?\[REDACTED)(\"[^\"]*\"|'[^']*'|[^\s,;&]+)"
+            r"(?!\"?\[REDACTED)(?![\"']?(?:true|false|null)\b[\"']?(?![\w-]))(\"[^\"]*\"|'[^']*'|[^\s,;&\"'}\]]+)"
         ),
         r"\1" + REDACTED,
     ),
@@ -98,8 +99,11 @@ def redact_text(text: str, max_chars: int = MAX_STRING_CHARS) -> str:
     return text
 
 
-def redact(value: Any, *, _depth: int = 0) -> Any:
-    """Return a redacted deep copy of JSON-like data (dict/list/str/scalars)."""
+def redact(value: Any, *, max_items: int = MAX_ITEMS, _depth: int = 0) -> Any:
+    """Return a redacted deep copy of JSON-like data (dict/list/str/scalars).
+
+    `max_items` caps each mapping/list (raise it for large, bounded scan outputs).
+    """
     if _depth > MAX_DEPTH:
         return "[TRUNCATED-DEPTH]"
     if isinstance(value, str):
@@ -107,16 +111,20 @@ def redact(value: Any, *, _depth: int = 0) -> Any:
     if isinstance(value, Mapping):
         out: dict[str, Any] = {}
         for i, (k, v) in enumerate(value.items()):
-            if i >= MAX_ITEMS:
+            if i >= max_items:
                 out["__truncated__"] = True
                 break
             key = str(k)
-            out[key] = REDACTED if is_sensitive_key(key) else redact(v, _depth=_depth + 1)
+            out[key] = (
+                REDACTED
+                if is_sensitive_key(key)
+                else redact(v, max_items=max_items, _depth=_depth + 1)
+            )
         return out
     if isinstance(value, list | tuple | set | frozenset):
         items = list(value)
-        result = [redact(v, _depth=_depth + 1) for v in items[:MAX_ITEMS]]
-        if len(items) > MAX_ITEMS:
+        result = [redact(v, max_items=max_items, _depth=_depth + 1) for v in items[:max_items]]
+        if len(items) > max_items:
             result.append("[TRUNCATED-ITEMS]")
         return result
     if value is None or isinstance(value, bool | int | float):

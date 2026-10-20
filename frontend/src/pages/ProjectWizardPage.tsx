@@ -430,7 +430,7 @@ export function ProjectWizard({ existing }: { existing?: Project }) {
           {active === 3 && (
             <Stack>
               <Title order={2} size="h4">Allowed modules & request limits</Title>
-              <Checkbox.Group label="Modules this project may use later" description="Selecting a module does not start anything; scanners arrive in Phases 05–07."
+              <Checkbox.Group label="Modules this project may use later" description="Selecting a module does not start anything. The web scanner is available; surface/API scanners arrive in Phases 06–07."
                 value={values.allowed_modules} onChange={(v) => set("allowed_modules", v as ScanModule[])}>
                 <Stack mt={4} gap={6}>
                   {SCAN_MODULES.map((m) => (
@@ -458,7 +458,7 @@ export function ProjectWizard({ existing }: { existing?: Project }) {
               </Group>
               <NumberInput label="Evidence retention (days)" description="Leave empty to keep evidence until manually deleted" min={1} max={3650}
                 value={values.evidence_retention_days} onChange={(v) => set("evidence_retention_days", v === "" ? "" : Number(v))} allowDecimal={false} w={280} />
-              <Text size="sm" c="dimmed">Active probes (SQLi/XSS, API write, IDOR, rate-limit) stay disabled by default and are configured per scan in later phases.</Text>
+              <Text size="sm" c="dimmed">Active injection probes (SQLi/XSS) are not built into the web scanner (safe mode); API write, IDOR and rate-limit probes stay disabled by default and arrive with the API module (Phase 07).</Text>
             </Stack>
           )}
 

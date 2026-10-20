@@ -3,7 +3,8 @@
 - Only `app/storage/` may write to the filesystem (no ad hoc file writes elsewhere).
 - Only `app/storage/locking.py` may import `filelock`; banned lock types never appear.
 - No database/broker modules are imported anywhere in `app/`.
-- No network or subprocess modules exist in `app/` yet (scanner adapters arrive in Phase 05).
+- Network and subprocess modules are imported ONLY by the sanctioned adapters in
+  `app/integrations/` (DNS, pinned HTTP transport, subprocess); scanners must use them.
 - The dependency manifest contains no database/broker packages.
 """
 
@@ -73,8 +74,8 @@ BANNED_IMPORTS = re.compile(
     re.M,
 )
 NETWORK_OR_PROCESS = re.compile(
-    r"^\s*(?:import|from)\s+(httpx|requests|aiohttp|urllib3|socket|subprocess|dns|http\.client|"
-    r"urllib\.request|asyncio\.subprocess)\b",
+    r"^\s*(?:import|from)\s+(httpx|requests|aiohttp|urllib3|socket|ssl|subprocess|dns|http\.client|"
+    r"urllib\.request|asyncio\.subprocess|asyncio)\b",
     re.M,
 )
 # socket is used only for gethostname() in the instance lease; it opens no connections.
@@ -82,6 +83,10 @@ NETWORK_ALLOWED = {
     APP / "storage" / "locking.py": {"socket"},
     # The sanctioned subprocess adapter (argv lists, allowlist, caps, tree kill).
     APP / "integrations" / "process.py": {"subprocess"},
+    # The DNS adapter (getaddrinfo behind a bounded cache; answers validated by ScopeGuard).
+    APP / "integrations" / "dns.py": {"socket"},
+    # The pinned HTTP(S) transport (connects only to guard-pinned IPs).
+    APP / "integrations" / "http_client.py": {"socket", "ssl", "http.client"},
 }
 
 
@@ -91,10 +96,10 @@ def test_no_database_imports(path: Path) -> None:
 
 
 @pytest.mark.parametrize("path", SOURCES, ids=lambda p: p.relative_to(APP).as_posix())
-def test_no_network_or_subprocess_modules_yet(path: Path) -> None:
+def test_network_and_subprocess_only_in_adapters(path: Path) -> None:
     found = set(NETWORK_OR_PROCESS.findall(_code(path))) - NETWORK_ALLOWED.get(path, set())
     assert not found, (
-        f"{path.relative_to(APP)} imports {found}; outbound I/O must wait for Phase 05 adapters"
+        f"{path.relative_to(APP)} imports {found}; use the adapters in app/integrations/"
     )
 
 
@@ -139,3 +144,21 @@ def test_subprocess_only_in_process_adapter_and_never_with_shell() -> None:
             assert path == APP / "integrations" / "process.py", path
         assert "shell=True" not in code, path
         assert "os.system(" not in code and "os.popen(" not in code, path
+
+
+SCANNERS = APP / "scanners"
+
+
+@pytest.mark.parametrize(
+    "path", sorted(SCANNERS.rglob("*.py")), ids=lambda p: p.relative_to(APP).as_posix()
+)
+def test_scanners_never_touch_raw_transport_or_dns(path: Path) -> None:
+    """Scanner code must go through HttpService/JobContext (scope + budgets on every hop)."""
+    code = _code(path)
+    for banned in (
+        r"PinnedHttpTransport\(",
+        r"system_lookup\(",
+        r"getaddrinfo",
+        r"(?<!\.)run_process\(",
+    ):
+        assert not re.search(banned, code), f"{path.relative_to(APP)} matches {banned}"

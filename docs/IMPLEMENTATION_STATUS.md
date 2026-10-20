@@ -1,24 +1,24 @@
 # Implementation Status — VAPT Workbench
 
-> Last updated: 2026-10-21 (Phase 04 verification). Statuses use only `Not started` / `Partial` / `Implemented` / `Blocked`. `Implemented` requires a code reference **and** a passing test that was actually run. Design-only documentation does not count as implementation.
+> Last updated: 2026-10-21 (Phase 05 verification). Statuses use only `Not started` / `Partial` / `Implemented` / `Blocked`. `Implemented` requires a code reference **and** a passing test that was actually run. Design-only documentation does not count as implementation.
 
 ## Current baseline (observed 2026-10-20, Windows 11, Python 3.13.5)
 
 | Check | Result |
 |---|---|
-| Backend tests | `poetry run pytest` → **1076 passed, 1 skipped** (POSIX permission bits; N/A on Windows) |
-| Frontend | `npm test` → **40 passed**; `npm run typecheck`, `npm run lint`, `npm run build` pass; `npm audit` 0 vulnerabilities |
-| Real-browser E2E | `npm run e2e` → **10/10**; `npm run e2e:verify` → **17/17** (KPIs equal captured network response; tampered response changes UI; offline + retry; backend 422; edit conflict; delete confirmation; keyboard-only) |
-| Lint / format / types | `ruff check .` passed · `ruff format --check .` 58 files formatted · `mypy` (strict) no issues in 37 files |
-| Database / broker dependencies | **None.** 30 locked packages; static + runtime guards in `tests/test_static_guards.py`, `tests/test_startup.py::test_importing_app_loads_no_database_or_broker_modules` |
-| Scanning / outbound network / subprocess code in `backend/app/` | **None.** Enforced by `tests/test_static_guards.py::test_no_network_or_subprocess_modules_yet` |
+| Backend tests | `poetry run pytest` → **1242 passed, 1 skipped** (POSIX permission bits; N/A on Windows) |
+| Frontend | `npm test` → **45 passed**; `npm run typecheck`, `npm run lint`, `npm run build` pass; `npm audit` 0 vulnerabilities |
+| Real-browser E2E | `npm run e2e` → **10/10**; `npm run e2e:verify` → **18/18** (incl. a real web scan through the UI against a local fixture app) (KPIs equal captured network response; tampered response changes UI; offline + retry; backend 422; edit conflict; delete confirmation; keyboard-only) |
+| Lint / format / types | `ruff check .` passed · `ruff format --check .` 112 files formatted · `mypy` (strict) no issues in 73 files |
+| Database / broker dependencies | **None.** 35 locked packages (Phase 05 added `cryptography` + `cffi` + `pycparser`, dev only); static + runtime guards in `tests/test_static_guards.py`, `tests/test_startup.py::test_importing_app_loads_no_database_or_broker_modules` |
+| Outbound network / subprocess code in `backend/app/` | **Only in the sanctioned adapters**: `integrations/dns.py` (socket), `integrations/http_client.py` (socket, ssl, http.client), `integrations/process.py` (subprocess). Enforced by `tests/test_static_guards.py::test_network_and_subprocess_only_in_adapters`; scanners may not construct transports or resolve DNS (`::test_scanners_never_touch_raw_transport_or_dns`). |
 | File writes outside `app/storage/` | **None.** Enforced by `tests/test_static_guards.py::test_no_file_io_outside_storage` |
 
 ## Product option matrix (Options A–D)
 
 | Option | Description | Status | Depends on | Phase(s) | Planned paths | Tests |
 |---|---|---|---|---|---|---|
-| **A** | Web Application Vulnerability Scanner | Not started | M2 ✔, M3, M4, adapters | 05 (+ TLS/CVE 11) | `backend/app/scanners/webapp/`, `scanners/tls/`, `integrations/http_client.py` | — |
+| **A** | Web Application Vulnerability Scanner | **Partial**: implemented in safe mode; active injection tests and sensitive-file probing deliberately not built in (TBD-049/050); CVE matching awaits an imported catalog (Phase 11) | M2 ✔, M3 ✔, M4 ✔, adapters ✔ | 05 (+ TLS/CVE 11) | `backend/app/scanners/webapp/`, `integrations/{http_client,http_service,dns,tls_tools}.py` | `tests/test_webapp_scan.py`, `test_webapp_units.py`, `test_http_adapters.py`, `frontend/src/test/webscan.test.tsx`, E2E check 13 |
 | **B** | Attack Surface Mapper | Not started | M2 ✔, M3, M4, adapters, A crawl | 06 | `backend/app/scanners/surface/`, `integrations/nmap.py`, `integrations/dns.py` | — |
 | **C** | API Security Testing (OpenAPI/Swagger) | Not started | M2 ✔, M3, M4, adapters | 07 | `backend/app/scanners/api_security/`, `imports/openapi/` | — |
 | **D** | Import, normalize, dedupe, report | Not started (storage contracts for imports/findings/reports exist) | M2 ✔, M9, M10 | 08, 09, 10 | `backend/app/imports/`, `findings/`, `reports/` | — |
@@ -63,7 +63,7 @@ No option is out of scope.
 | **M3** Canonicalization (URLs, IDN, ports, IPv4/IPv6, paths; rejects user-info, numeric shorthand, encoded/double-encoded traversal, `..;`, zone IDs) | §4.2 | **Implemented** | 03 | `app/scope/canonical.py` | `tests/test_scope_canonical.py`, `test_scope_properties.py` |
 | **M3** Default-blocked IP policy incl. embedded IPv4, non-overridable metadata | §4.2, TBD-037 | **Implemented** | 03 | `app/scope/ip_policy.py` | `tests/test_scope_ip_policy.py`, property test vs Python's non-global classification |
 | **M3** `normalize_target`, `is_target_in_scope`, `is_port_allowed`, `is_path_allowed`, `validate_redirect`, `validate_resolved_ip`, `require_active_authorization` with auditable `Decision` | §6 M3 | **Implemented** | 03 | `app/scope/engine.py` | `tests/test_scope_engine.py` |
-| **M3** Policy hook for all future HTTP/DNS/connect/subprocess entrypoints (`ScopeGuard`, `GuardedRequester`, IP pinning, kill-switch + authorization re-check per action, decision sink) | §4.2 | **Implemented** (real resolver/transport arrive in Phase 05 and must use it) | 03 | `app/scope/guard.py` | `tests/test_scope_guard.py` (incl. real local fixture server: zero requests for blocked targets) |
+| **M3** Policy hook for all future HTTP/DNS/connect/subprocess entrypoints (`ScopeGuard`, `GuardedRequester`, IP pinning, kill-switch + authorization re-check per action, decision sink) | §4.2 | **Implemented** (real resolver/transport wired through it in Phase 05) | 03 | `app/scope/guard.py` | `tests/test_scope_guard.py` (incl. real local fixture server: zero requests for blocked targets) |
 | **M3** Internal-target override (explicit, narrow, time-bound, attested, audited) | §4.2 | **Implemented** | 03 | `app/services/projects.py`, `app/api/scope.py` | `tests/test_api_scope.py` |
 | **M3** Scope preview API + policy view + dry-run check + UI | §6 M3 | **Implemented** | 03 | `app/api/scope.py`, `app/services/scope_preview.py`, `frontend/src/components/ScopePolicyCard.tsx` | `test_api_scope.py`, `frontend/src/test/scope.test.tsx`, E2E check 12 |
 | **M4** State machine (10 states, enforced transitions) | §6 M4 | **Implemented** | 04 | `app/jobs/states.py` | `tests/test_jobs.py` |
@@ -73,9 +73,20 @@ No option is out of scope.
 | **M4** Redacted JSONL events + human console log, correlation ID across request/job/subprocess | §6 M4 | **Implemented** | 04 | `app/jobs/context.py`, `app/storage/jsonl.py` | `tests/test_jobs.py::test_event_and_console_logs_are_redacted` |
 | **M4** Cancellation, global kill switch (persisted, fail-safe), deterministic restart recovery | §6 M4, M12 | **Implemented** | 04 | `app/jobs/manager.py` | `tests/test_jobs.py`, E2E checks 14–16 |
 | **M4** UI: scan history, job detail (live), start-job confirmation, cancel/retry, kill switch | §6 M13 | **Implemented** | 04 | `frontend/src/pages/ScanDetailPage.tsx`, `components/JobControls.tsx` | `frontend/src/test/jobs.test.tsx`, E2E checks 13–17 |
-| **M4** Real scanner runners (web/surface/API) | §6 M5–M7 | Not started (shown as unavailable with reason) | 05–07 | — | — |
-| Shared HTTP / DNS / subprocess adapters | §4.3 | Not started | 05 | `backend/app/integrations/` | — |
-| **M5** Web scanner (Option A) | §6 M5 | Not started | 05 | — | — |
+| **M4** Real scanner runners | §6 M5–M7 | Partial: `web_app` registered (Phase 05); surface/API shown as unavailable with reason | 05–07 | `app/jobs/manager.py::default_runners` | `tests/test_webapp_units.py::test_web_module_is_available` |
+| Shared HTTP transport: pinned IPs, no redirects/proxies, connect/read/total timeouts, raw + decompression byte caps, header-injection policy, method allowlist, TLS observation | §4.3 | **Implemented** | 05 | `app/integrations/http_client.py` | `tests/test_http_adapters.py` (real loopback server logs every request) |
+| Request service: per-hop scope validation (blocked redirects recorded, never followed), per-host token bucket + backoff window, bounded retries, `Retry-After` | §4.3 | **Implemented** | 05 | `app/integrations/http_service.py` | `tests/test_http_adapters.py` |
+| DNS adapter: per-job bounded TTL cache, negative cache, timeout; every (cached) answer re-validated by the guard | §4.2 | **Implemented** | 05 | `app/integrations/dns.py` | `tests/test_http_adapters.py::test_dns_*` |
+| Subprocess adapter additions: version capture, per-scan TEMP dir, executable discovery | §4.3, M11 | **Implemented** | 05 | `app/integrations/process.py` | `tests/test_http_adapters.py::test_capture_version_and_temp_dir` |
+| **M5.1** Bounded same-scope crawler (canonical dedup, loop/trap defence, depth/page caps, content types, robots.txt, inventory of links/forms/params/titles/redirects) | §6 M5.1 | **Implemented** (no JS execution; no authenticated crawling) | 05 | `app/scanners/webapp/crawler.py`, `html.py` | `tests/test_webapp_scan.py`, `test_webapp_units.py` |
+| **M5.2** Security headers, cookies, version leakage, CORS, caching | §6 M5.2 | **Implemented** | 05 | `app/scanners/webapp/checks.py`, `probes.py` | as above |
+| **M5.3** HTTPS availability/redirect, certificate validity/hostname/expiry; optional sslyze/testssl.sh adapter (pinned IP, version capture, skipped/error when absent/failing) | §6 M5.3 | **Implemented** | 05 | `probes.py`, `app/integrations/tls_tools.py`, `runner.py` | `tests/test_webapp_scan.py::test_certificate_checks`, `::test_tls_tool_*` |
+| **M5.4** Debug/default pages, directory listing (passive) | §6 M5.4 | **Implemented** | 05 | `checks.py` | as above |
+| **M5.4** Sensitive-file signature probing | §6 M5.4 | **Not built in** (TBD-050; always reported skipped) | — | — | coverage asserts `skipped` |
+| **M5.5** Active SQLi/XSS probes | §6 M5.5 | **Not built in** (TBD-049); passive reflection + DB-error indicators implemented | — | `checks.py` | `test_webapp_units.py::test_passive_reflection_requires_unencoded_metacharacters` |
+| **M5.6** Component detection with evidence/confidence; CVE adapter contract (no invented CVEs) | §6 M5.6 | **Implemented** (matching needs an imported catalog, Phase 11) | 05 | `app/scanners/webapp/components.py` | `test_webapp_units.py::test_cve_contract_never_invents_matches` |
+| **M5.7** Versioned rule catalog, outcomes pass/observation/finding/skipped/error, canonical findings + sanitized evidence, re-observation dedup, scan summary/coverage/pages outputs | §6 M5.7 | **Implemented** | 05 | `rules.py`, `findings.py`, `runner.py`, `docs/WEB_RULES.md` | `tests/test_webapp_scan.py` |
+| **M5** UI: scan profile in the start dialog; job tabs Summary / Pages / Findings / Logs / Warnings / Coverage; findings filter by scan | §6 M5, M13 | **Implemented** | 05 | `components/WebScanProfile.tsx`, `pages/ScanResultTabs.tsx`, `pages/ScanDetailPage.tsx` | `frontend/src/test/webscan.test.tsx`, E2E check 13 |
 | **M6** Attack surface mapper (Option B) | §6 M6 | Not started | 06 | — | — |
 | **M7** API security testing (Option C) | §6 M7 | Not started | 07 | — | — |
 | **M8** Import, normalization, dedupe (Option D) | §6 M8 | Not started (ImportArtifact storage exists) | 08 | `backend/app/imports/` | — |
@@ -97,4 +108,5 @@ No option is out of scope.
 | 02 | Verified | **PASS** (2026-10-20) | Verification fixed: after delete the UI stuck on a 404 error screen instead of returning to Projects (query invalidation unmounted the dialog); added skip link; test-only build break. | UI shell, dashboard, projects, wizard, drill-down views, audit/settings pages; backend project/dashboard/scope-preview APIs; SPA served by backend with security headers |
 | 03 | Verified | **PASS** (2026-10-20) | Focused SSRF suite vs two real local servers (60 tests, mutation-checked). Verification cleanup: stub resolver raises RuntimeError. Earlier in-phase fixes: | Scope/authorization engine, policy hook, IP policy (TBD-037 decided), override endpoint, preview-hash gate, policy UI. Property tests found and fixed: NAT64-local and 6to4 gaps, metadata-in-6to4 precedence, connect-path bug |
 | 04 | Verified | **PASS** (2026-10-21) | Verification fixed 2 races (concurrent same-key submits created 10 jobs → serialized; cancel during the claim window was ignored → worker honours persisted flag, cancel waits for registration), byte-bounded event pages, re-redaction of tailed logs, `ctx.last_process`. Tests: `tests/test_jobs_verification.py`. In-phase fixes: Job system end to end with a network-free self-test module (enabled only by `VAPT_ENABLE_SELFTEST_JOBS=1`). In-phase fixes: Windows share-delete reads (atomic replace vs concurrent readers), authorization-before-duration ordering, parameter-key validation (was 500), final-event refresh in UI, duplicate accessible name |
-| 05 | Not started | — | Awaiting explicit prompt |
+| 05 | Verified | **PASS** (2026-10-21), with the owner-accepted gaps TBD-049/050 | Verification fixed 3 defects: (1) raw sslyze/testssl.sh output was stored unredacted → redacted at write; (2) the redactor missed `key=value` secrets opening a quoted string (e.g. `"password=…"` in JSON text) and swallowed the closing quote/brace → look-behind and value class fixed; (3) the summary's outcome count keyed `pass` was wiped as a secret-like key (UI showed `[REDACTED]`) → outcome counts are a list; booleans (`Allow-Credentials: true`) are no longer redacted. Tests: `tests/test_webapp_verification.py` (+9), `tests/test_redaction.py` (+4), UI and E2E assertions. In-phase fixes: drip responses bounded by the total timeout (`read1`), test PKI needed AKI/SKI for Python 3.13 strict X.509, partial crawl results kept on cancellation, cookie evidence label survives the redactor, log queries moved into the Logs tab |
+| 06 | Not started | — | Awaiting explicit prompt |

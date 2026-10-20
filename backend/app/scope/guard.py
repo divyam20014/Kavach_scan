@@ -11,8 +11,8 @@ code to obtain permission to touch a target. It:
    may connect to (defeats DNS rebinding between check and use);
 5. records every allow/block `Decision` to a sink (job events, audit, tests).
 
-Nothing here performs network I/O; real resolvers/transports arrive in Phase 05 and
-must be wired through this class.
+Nothing here performs network I/O. The real resolver (`app/integrations/dns.py`) and
+transport (`app/integrations/http_client.py`) are wired through this class.
 """
 
 from __future__ import annotations
@@ -21,6 +21,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Protocol
+from urllib.parse import urljoin, urlsplit
 
 from app.models.common import ScopeStatus, utc_now
 from app.models.project import Project
@@ -253,23 +254,77 @@ class ScopeGuard:
 
 
 @dataclass(frozen=True)
+class RequestOptions:
+    """Per-request extras. The query string travels separately because scope is path-based."""
+
+    query: str = ""
+    headers: tuple[tuple[str, str], ...] = ()
+    body: bytes | None = None
+
+
+@dataclass(frozen=True)
+class TlsObservation:
+    """What the client saw during the TLS handshake (no third-party parsing)."""
+
+    verified: bool
+    version: str = ""
+    cipher: str = ""
+    error: str = ""  # verification failure text when not verified
+    not_before: str = ""
+    not_after: str = ""
+    subject_cn: str = ""
+    issuer_cn: str = ""
+    san: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
 class TransportResponse:
     status: int
     location: str | None = None
     body: bytes = b""
+    headers: tuple[tuple[str, str], ...] = ()  # in received order; duplicates preserved
+    reason: str = ""
+    truncated: bool = False  # body cut at the byte or decompression cap
+    bytes_read: int = 0  # raw bytes read from the wire for the body
+    peer_ip: str | None = None
+    elapsed_ms: int = 0
+    tls: TlsObservation | None = None
+    url: str = ""  # the canonical URL (with query) this response belongs to
+
+    def header(self, name: str) -> str | None:
+        lowered = name.lower()
+        for key, value in self.headers:
+            if key.lower() == lowered:
+                return value
+        return None
+
+    def header_all(self, name: str) -> list[str]:
+        lowered = name.lower()
+        return [v for k, v in self.headers if k.lower() == lowered]
 
 
 class Transport(Protocol):
-    """A raw transport. It must connect only to `authorized.pinned_ips`."""
+    """A raw transport. It must connect only to `authorized.pinned_ips` and never resolve DNS."""
 
-    def send(self, method: str, authorized: AuthorizedTarget) -> TransportResponse: ...
+    def send(
+        self, method: str, authorized: AuthorizedTarget, options: RequestOptions | None = None
+    ) -> TransportResponse: ...
+
+
+REDIRECT_STATUSES = (301, 302, 303, 307, 308)
+
+
+def _query_of(url: str) -> str:
+    return urlsplit(url).query
 
 
 class GuardedRequester:
     """Wraps a raw transport so that nothing reaches it without a passing guard decision.
 
-    Phase 05's HTTP client provides the real transport; scanners use this class (never the
-    transport directly). Redirects are followed only after `authorize_redirect`.
+    Scanners use this class (never the transport directly). Each hop is authorized
+    separately: the first via `authorize_request`, every redirect via `authorize_redirect`
+    (which resolves and validates the destination from scratch). Redirects are never
+    followed by the transport itself.
     """
 
     def __init__(self, guard: ScopeGuard, transport: Transport, *, max_redirects: int = 5) -> None:
@@ -277,16 +332,38 @@ class GuardedRequester:
         self.transport = transport
         self.max_redirects = min(max_redirects, MAX_REDIRECTS_HARD_CAP)
 
-    def request(self, method: str, url: str) -> tuple[TransportResponse, list[str]]:
-        """Return (final response, chain of canonical URLs requested)."""
+    def request(
+        self,
+        method: str,
+        url: str,
+        options: RequestOptions | None = None,
+        *,
+        follow_redirects: bool = True,
+    ) -> tuple[TransportResponse, list[str]]:
+        """Return (final response, chain of canonical URLs requested, query included)."""
         authorized = self.guard.authorize_request(url)
+        opts = options or RequestOptions(query=_query_of(url))
         chain: list[str] = []
         for _ in range(self.max_redirects + 1):
-            response = self.transport.send(method, authorized)
-            chain.append(authorized.target.url)
-            if response.status not in (301, 302, 303, 307, 308) or not response.location:
+            response = self.transport.send(method, authorized, opts)
+            current = authorized.target.url + (f"?{opts.query}" if opts.query else "")
+            chain.append(current)
+            if (
+                not follow_redirects
+                or response.status not in REDIRECT_STATUSES
+                or not response.location
+            ):
                 return response, chain
-            authorized = self.guard.authorize_redirect(authorized.target.url, response.location)
+            authorized = self.guard.authorize_redirect(current, response.location)
+            # 301/302/303 after a non-GET become GET without a body (as browsers do).
+            if method not in ("GET", "HEAD") and response.status in (301, 302, 303):
+                method = "GET"
+            next_url = urljoin(current, response.location.strip())
+            opts = RequestOptions(
+                query=_query_of(next_url),
+                headers=opts.headers,
+                body=opts.body if method not in ("GET", "HEAD") else None,
+            )
         raise self.guard._deny(
             self.guard.policy._decision(
                 False,

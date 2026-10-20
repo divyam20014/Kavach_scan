@@ -1,14 +1,15 @@
-import { Alert, Anchor, Badge, Button, Card, Code, Group, Modal, Progress, SimpleGrid, Stack, Table, Text, Title } from "@mantine/core";
+import { Alert, Anchor, Badge, Button, Card, Code, Group, Modal, Progress, SimpleGrid, Stack, Table, Tabs, Text, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "../api/client";
 import { useCancelScan, useRetryScan, useScanConsole, useScanDetail, useScanEvents } from "../api/hooks";
-import type { ScanDetail } from "../api/types";
+import type { ScanDetail, ScanJob } from "../api/types";
 import { PageHeader } from "../components/PageHeader";
 import { ErrorAlert, QueryState } from "../components/QueryState";
 import { ScanStateLabel } from "../components/StatusLabel";
 import { formatDateTime, humanize } from "../lib/format";
+import { WebCoverageTab, WebFindingsTab, WebPagesTab, WebSummaryPanel, WebWarningsPanel } from "./ScanResultTabs";
 
 const RETRYABLE = new Set(["failed", "interrupted", "cancelled", "expired_authorization", "blocked_scope", "completed_with_warnings"]);
 
@@ -25,23 +26,14 @@ export function ScanDetailPage() {
 function ScanDetailView({ detail }: { detail: ScanDetail }) {
   const { scan } = detail;
   const live = !detail.terminal;
-  const events = useScanEvents(scan.project_id, scan.scan_id, live);
-  const consoleLog = useScanConsole(scan.project_id, scan.scan_id, live);
   const cancel = useCancelScan(scan.project_id, scan.scan_id);
   const retry = useRetryScan(scan.project_id, scan.scan_id);
   const navigate = useNavigate();
   const [confirmCancel, setConfirmCancel] = useState(false);
   const counters = Object.entries(scan.progress.counters);
-  const { refetch: refetchEvents } = events;
-  const { refetch: refetchConsole } = consoleLog;
-  // Polling stops once the job is terminal; fetch once more so the final events/log lines
-  // written at completion are shown (they land after the last live poll).
-  useEffect(() => {
-    if (detail.terminal) {
-      void refetchEvents();
-      void refetchConsole();
-    }
-  }, [detail.terminal, refetchEvents, refetchConsole]);
+  const isWeb = scan.module === "web_app";
+  // Web outputs are written at the end of the run (also on cancellation/limits).
+  const resultsReady = detail.terminal && scan.output_refs.includes("work/summary.json");
 
   const doRetry = () =>
     retry.mutate(undefined, {
@@ -116,7 +108,18 @@ function ScanDetailView({ detail }: { detail: ScanDetail }) {
             {scan.warnings.slice(-5).map((w) => <Text size="sm" key={w}>! {w}</Text>)}
           </Alert>
         )}
-
+        <Tabs defaultValue="summary" keepMounted={false}>
+          <Tabs.List aria-label="Job detail sections">
+            <Tabs.Tab value="summary">Summary</Tabs.Tab>
+            {isWeb && <Tabs.Tab value="pages">Pages / endpoints</Tabs.Tab>}
+            {isWeb && <Tabs.Tab value="findings">Findings</Tabs.Tab>}
+            <Tabs.Tab value="logs">Logs</Tabs.Tab>
+            <Tabs.Tab value="warnings">Warnings ({scan.warnings.length + scan.errors.length})</Tabs.Tab>
+            {isWeb && <Tabs.Tab value="coverage">Coverage</Tabs.Tab>}
+          </Tabs.List>
+          <Tabs.Panel value="summary" pt="md">
+            <Stack gap="md">
+              {isWeb && <WebSummaryPanel scan={scan} ready={resultsReady} />}
         <SimpleGrid cols={{ base: 1, md: 2 }}>
           <Card withBorder component="section" aria-labelledby="targets-h">
             <Title order={2} size="h4" id="targets-h" mb="sm">Targets (scope-checked)</Title>
@@ -147,6 +150,71 @@ function ScanDetailView({ detail }: { detail: ScanDetail }) {
           </Card>
         </SimpleGrid>
 
+            </Stack>
+          </Tabs.Panel>
+          {isWeb && (
+            <Tabs.Panel value="pages" pt="md">
+              <WebPagesTab scan={scan} ready={resultsReady} />
+            </Tabs.Panel>
+          )}
+          {isWeb && (
+            <Tabs.Panel value="findings" pt="md">
+              <WebFindingsTab scan={scan} />
+            </Tabs.Panel>
+          )}
+          <Tabs.Panel value="logs" pt="md">
+            <Stack gap="md">
+              <JobLogs scan={scan} live={live} terminal={detail.terminal} />
+            </Stack>
+          </Tabs.Panel>
+          <Tabs.Panel value="warnings" pt="md">
+            <Stack gap="md">
+        <Text size="sm" c="dimmed">{scan.warnings.length + scan.errors.length === 0 ? "No warnings or errors recorded for this job." : `${scan.warnings.length} warning(s) and ${scan.errors.length} error(s) are shown above.`}</Text>
+              {isWeb && <WebWarningsPanel scan={scan} ready={resultsReady} />}
+            </Stack>
+          </Tabs.Panel>
+          {isWeb && (
+            <Tabs.Panel value="coverage" pt="md">
+              <WebCoverageTab scan={scan} ready={resultsReady} />
+            </Tabs.Panel>
+          )}
+        </Tabs>
+      </Stack>
+
+      <Modal opened={confirmCancel} onClose={() => setConfirmCancel(false)} title="Cancel this job?" centered>
+        <Stack>
+          <Text size="sm">The job stops scheduling new work, child processes are terminated and partial results are kept.</Text>
+          {cancel.isError && <ErrorAlert error={cancel.error} title="Cancel failed" />}
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setConfirmCancel(false)}>Keep running</Button>
+            <Button color="red" loading={cancel.isPending}
+              onClick={() => cancel.mutate(undefined, { onSuccess: () => { setConfirmCancel(false); notifications.show({ color: "orange", message: "Cancellation requested" }); } })}>
+              Cancel job
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+    </>
+  );
+}
+
+
+/** Events + console. Queries live here so they re-render when this tab is shown. */
+function JobLogs({ scan, live, terminal }: { scan: ScanJob; live: boolean; terminal: boolean }) {
+  const events = useScanEvents(scan.project_id, scan.scan_id, live);
+  const consoleLog = useScanConsole(scan.project_id, scan.scan_id, live);
+  const { refetch: refetchEvents } = events;
+  const { refetch: refetchConsole } = consoleLog;
+  // Polling stops once the job is terminal; fetch once more so the final events/log lines
+  // written at completion are shown (they land after the last live poll).
+  useEffect(() => {
+    if (terminal) {
+      void refetchEvents();
+      void refetchConsole();
+    }
+  }, [terminal, refetchEvents, refetchConsole]);
+  return (
+    <>
         <Card withBorder component="section" aria-labelledby="events-h">
           <Title order={2} size="h4" id="events-h" mb="sm">Events (newest first)</Title>
           <QueryState query={events}>
@@ -191,21 +259,6 @@ function ScanDetailView({ detail }: { detail: ScanDetail }) {
             )}
           </QueryState>
         </Card>
-      </Stack>
-
-      <Modal opened={confirmCancel} onClose={() => setConfirmCancel(false)} title="Cancel this job?" centered>
-        <Stack>
-          <Text size="sm">The job stops scheduling new work, child processes are terminated and partial results are kept.</Text>
-          {cancel.isError && <ErrorAlert error={cancel.error} title="Cancel failed" />}
-          <Group justify="flex-end">
-            <Button variant="default" onClick={() => setConfirmCancel(false)}>Keep running</Button>
-            <Button color="red" loading={cancel.isPending}
-              onClick={() => cancel.mutate(undefined, { onSuccess: () => { setConfirmCancel(false); notifications.show({ color: "orange", message: "Cancellation requested" }); } })}>
-              Cancel job
-            </Button>
-          </Group>
-        </Stack>
-      </Modal>
     </>
   );
 }

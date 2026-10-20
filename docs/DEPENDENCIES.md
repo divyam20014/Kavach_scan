@@ -27,16 +27,17 @@ Transitive runtime packages: `starlette` 1.9.0 (BSD-3), `pydantic` 2.14.1 / `pyd
 | Package | Locked | License | Purpose |
 |---|---|---|---|
 | pytest | 8.4.2 | MIT | Test runner |
-| httpx | 0.28.1 | BSD-3-Clause | Required by `fastapi.testclient`. **Test-only for now**; the outbound scanner client (Phase 05) will be wrapped by the shared adapter. |
+| httpx | 0.28.1 | BSD-3-Clause | Required by `fastapi.testclient`. **Test-only.** The scanner's outbound client is the stdlib-based pinned transport (TBD-051). |
 | ruff | 0.17.1 | MIT | Lint and format |
 | mypy | 2.4.0 | MIT | Strict type checking |
 | hypothesis | 6.170.5 | MPL-2.0 | Property-based tests for the scope engine (Phase 03); depends only on `sortedcontainers` (Apache-2.0) |
+| cryptography | 50.0.2 | Apache-2.0 / BSD-3-Clause | **Dev only** (Phase 05): generates a throwaway test CA and valid/expired/wrong-host certificates at test time for the TLS fixture servers. Pulls `cffi` (MIT) and `pycparser` (BSD-3). |
 
 Transitive dev packages: `httpcore`, `certifi` (MPL-2.0), `iniconfig`, `pluggy`, `packaging`, `pygments`, `pathspec` (MPL-2.0), `mypy-extensions`, `ast-serialize`, `librt`.
 
 ## 4. Database/broker check (Phase 01)
 
-`poetry.lock` contains 30 packages (29 from Phase 00 + `filelock`). None is a database, ORM, broker or queue library. This is now enforced automatically: `tests/test_static_guards.py::test_manifest_has_no_database_or_broker_dependencies` (lockfile + manifest), `::test_no_database_imports` (source), and `tests/test_startup.py::test_importing_app_loads_no_database_or_broker_modules` (runtime: no `sqlite3`, `redis`, `celery`, … in `sys.modules`).
+`poetry.lock` contains 35 packages (Phase 05 added `cryptography`, `cffi`, `pycparser`, all dev-only). None is a database, ORM, broker or queue library. This is now enforced automatically: `tests/test_static_guards.py::test_manifest_has_no_database_or_broker_dependencies` (lockfile + manifest), `::test_no_database_imports` (source), and `tests/test_startup.py::test_importing_app_loads_no_database_or_broker_modules` (runtime: no `sqlite3`, `redis`, `celery`, … in `sys.modules`).
 
 ## 5. Planned dependencies (not installed; added only by the owning phase)
 
@@ -45,10 +46,10 @@ Transitive dev packages: `httpcore`, `certifi` (MPL-2.0), `iniconfig`, `pluggy`,
 | 01 | ~~`filelock`~~ | **Installed** (see §2) | TBD-032 decided |
 | 01 | ~~`platformdirs`~~ | Not needed: the per-user default is resolved in `storage/paths.py` (about 10 lines, tested) | TBD-006 |
 | 03 | `hypothesis` (dev) | Property tests for scope engine | — |
-| 05 | `httpx` (runtime, wrapped) | Outbound HTTP client in the shared adapter | spec §2 |
-| 05 | `beautifulsoup4` + `lxml` | HTML parsing (no JS execution) | spec §2 |
-| 05 | `cryptography` (dev, maybe runtime) | TLS fixture certs; certificate parsing | spec §2 |
-| 05/06 | `dnspython` | DNS resolution with record types and TTL | — |
+| 05 | ~~`httpx` (runtime)~~ | Not added: stdlib `http.client` pinned transport (TBD-051) | decided |
+| 05 | ~~`beautifulsoup4` + `lxml`~~ | Not added: stdlib `html.parser` is sufficient (links, forms, metadata; no JS) | decided |
+| 05 | `cryptography` (dev) | **Installed (dev only)**: TLS fixture certificates | decided |
+| 06 | `dnspython` | DNS record types beyond A/AAAA for the surface mapper (Phase 05 uses `getaddrinfo`) | — |
 | 07 | `PyYAML` (`safe_load` only) | OpenAPI YAML | — |
 | 08 | `defusedxml` | Hardened XML parsing (XXE-safe) | — |
 | 08 | `pypdf` | Best-effort PDF text import | TBD-024 |

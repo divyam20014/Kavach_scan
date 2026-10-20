@@ -946,6 +946,26 @@ class StorageRepository:
             raise RecordNotFoundError("Scan not found") from exc
         return directory
 
+    def scan_temp_dir(self, project_id: str, scan_id: str) -> Path:
+        """Per-scan temp directory handed to subprocesses as TEMP/TMP/TMPDIR."""
+        directory = self.scan_work_dir(project_id, scan_id) / "tmp"
+        ensure_dir(directory)
+        return directory
+
+    def read_scan_output(
+        self, project_id: str, scan_id: str, name: str, *, max_bytes: int = 8 * 1024 * 1024
+    ) -> bytes:
+        """Read a scan output written by `write_scan_output` (bounded; validated name)."""
+        path = self.paths.path("projects", project_id, "scans", scan_id, "work", name)
+        try:
+            with open(path, "rb") as fh:
+                data = fh.read(max_bytes + 1)
+        except FileNotFoundError as exc:
+            raise RecordNotFoundError("Scan output not found") from exc
+        if len(data) > max_bytes:
+            raise RecordTooLargeError(f"Scan output exceeds {max_bytes} bytes")
+        return data
+
     def scan_events(self, project_id: str, scan_id: str) -> JsonlLog:
         return JsonlLog(
             self.scan_dir(project_id, scan_id),

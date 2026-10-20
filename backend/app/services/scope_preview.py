@@ -28,7 +28,7 @@ MAX_LINES = 1000
 
 NOTE_ENGINE = (
     "Normalized by the scope engine. At request time every target, redirect and resolved IP "
-    "is re-checked; scanners that send traffic arrive in later phases."
+    "is re-checked before any traffic is sent (web scanner) and again on every redirect."
 )
 NOTE_BLOCKED = (
     "Loopback, private, link-local and cloud-metadata ranges are blocked by default and "

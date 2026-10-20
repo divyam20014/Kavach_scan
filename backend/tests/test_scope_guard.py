@@ -62,7 +62,9 @@ class RecordingTransport:
     routes: dict[str, TransportResponse] = field(default_factory=dict)
     sent: list[tuple[str, str, tuple[str, ...]]] = field(default_factory=list)
 
-    def send(self, method: str, authorized: AuthorizedTarget) -> TransportResponse:
+    def send(
+        self, method: str, authorized: AuthorizedTarget, options: object = None
+    ) -> TransportResponse:
         self.sent.append((method, authorized.target.url, authorized.pinned_ips))
         return self.routes.get(authorized.target.url, TransportResponse(status=200))
 
@@ -372,7 +374,9 @@ class LoopbackHttpTransport:
     def __init__(self, port: int) -> None:
         self.port = port
 
-    def send(self, method: str, authorized: AuthorizedTarget) -> TransportResponse:
+    def send(
+        self, method: str, authorized: AuthorizedTarget, options: object = None
+    ) -> TransportResponse:
         conn = http.client.HTTPConnection(authorized.pinned_ips[0], self.port, timeout=5)
         try:
             conn.request(method, authorized.target.path, headers={"Host": authorized.target.host})

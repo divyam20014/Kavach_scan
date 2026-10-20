@@ -7,7 +7,9 @@ import type {
   ManagerStatus,
   ModuleAvailability,
   ScanDetail,
+  ScanParams,
   StartScanRequest,
+  WebProfilePreview,
   InternalOverrideRequest,
   ScopeCheckResponse,
   ScopePolicyView,
@@ -226,5 +228,26 @@ export function useRetryScan(projectId: string, scanId: string) {
   return useMutation({
     mutationFn: () => api.post<ScanJob>(`/api/projects/${enc(projectId)}/scans/${enc(scanId)}/retry`, { confirmed: true }),
     onSuccess: invalidate,
+  });
+}
+
+// ---------------------------------------------------------------- web scanner (Phase 05)
+
+/** Live preview of the web scan profile for the start dialog (read-only). */
+export function useWebScanProfile(projectId: string, params: ScanParams, enabled: boolean) {
+  return useQuery({
+    queryKey: ["web-profile", projectId, params],
+    queryFn: () => api.get<WebProfilePreview>(`/api/projects/${enc(projectId)}/web-scan-profile`, params as Record<string, string | number | undefined>),
+    enabled,
+  });
+}
+
+/** Web scanner outputs (summary / coverage / pages); available once the job wrote them. */
+export function useScanResult<T>(projectId: string, scanId: string, kind: "summary" | "coverage" | "pages", enabled: boolean) {
+  return useQuery({
+    queryKey: ["scan-result", projectId, scanId, kind],
+    queryFn: () => api.get<T>(`/api/projects/${enc(projectId)}/scans/${enc(scanId)}/results/${kind}`),
+    enabled,
+    retry: false,
   });
 }

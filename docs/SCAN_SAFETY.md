@@ -113,11 +113,11 @@ Backoff: on 429/503 honor `Retry-After` (capped), otherwise exponential backoff 
 
 | Rule | Detail |
 |---|---|
-| Minimize retrieval | Sensitive-file checks use HEAD when reliable, otherwise a GET capped at a few KiB. Never download archives or backups. |
+| Minimize retrieval | Responses are capped (`max_response_bytes`; decoded bytes at most 2x) and static assets are never fetched. Sensitive-file probing is not built in (TBD-050). Never download archives or backups. |
 | Store excerpts, not bodies | Evidence holds status, content-type, bytes read, matched signature, and a ≤ 8 KiB redacted excerpt (TBD-009), plus a truncation flag and SHA-256 of what was read. |
 | Redact before write | Headers `Authorization`, `Proxy-Authorization`, `Cookie`, `Set-Cookie`, `X-Api-Key`, and any `*token*`/`*secret*`/`*session*` header. Query/body keys matching `pass(word)?|secret|token|api[_-]?key|session|auth`. Values matching JWT, AWS key IDs, private-key PEM blocks, generic high-entropy bearer tokens. Operator-configurable extra patterns. |
 | Secret-file hits | Report **that** a signature matched (e.g., "`.env` file served, contains `KEY=`-style lines"), never the values. |
-| Escaped vs executable | An XSS marker reflected but HTML-escaped is an *observation*, not a finding. Unescaped reflection is *potential*. Confirmed executable XSS is never claimed without browser execution, which is out of scope by default. |
+| Escaped vs executable | No XSS test input is sent (TBD-049). A crawled parameter value reflected HTML-escaped is a *pass*; reflected unencoded is a *potential* indicator (`WEB-REFL-001`). Executable XSS is never claimed. |
 | Opaque storage | Evidence files have random IDs, restrictive permissions, and are referenced by ID only. |
 
 ## 9. Prohibited behaviors (never implemented)
@@ -141,6 +141,18 @@ Backoff: on 429/503 honor `Retry-After` (capped), otherwise exponential backoff 
 | TCP connect probe | host + IP + port decision | 06 |
 | Subprocess adapter (nmap, sslyze) | each target argument + argv allowlist | 05 / 06 / 11 |
 | OpenAPI server URL / remote `$ref` | scope decision; remote refs off by default | 07 |
-| Static guard | no `httpx`/`requests`/`socket`/`subprocess`/`dns` imports outside `integrations/` | 05 / 12 |
+| Static guard | no `httpx`/`requests`/`socket`/`ssl`/`subprocess`/`dns`/`asyncio` imports outside the three adapters; scanners never construct transports or resolve DNS | **05 (implemented)** / 12 |
+
+## 11. Web scanner request path (implemented, Phase 05)
+
+1. `HttpService.fetch(url)` → `ScopeGuard.authorize_request(url)`: kill switch, authorization window, static scope, DNS via the per-job `CachingResolver`, **every** answer validated, IPs pinned. Blocked → recorded decision, zero traffic.
+2. Budgeted transport (`JobContext.requester`): per-target request budget, per-host token bucket, concurrency slot; counted as `requests_sent`.
+3. `PinnedHttpTransport`: connects only to a pinned IP; `Host`/SNI = canonical hostname; never resolves, never follows redirects, never uses proxies (proxy environment variables are ignored by construction); connect/read/total timeouts; raw and decoded byte caps; request headers validated (no CR/LF/NUL, no `Host`/framing/hop-by-hop overrides); methods limited to GET/HEAD/OPTIONS/POST (the scanner itself only uses GET).
+4. Redirects: each hop is re-authorized with `authorize_redirect` (resolve + validate from scratch). An out-of-scope destination is recorded (`redirects_blocked`) and **not requested**.
+5. 429/503: `Retry-After` honoured (at most 30 s) and the host enters a backoff window; at most 2 retries; connection errors are retried only for idempotent methods. Every retry consumes budget; every wait is interruptible.
+6. Crawl: same-scope links only (static scope check before queueing), robots.txt honoured by default, depth/page caps, canonical dedup, query-variant cap (10 per path), repeated-segment trap detection, static assets not fetched.
+7. External TLS tool: only after `authorize_connect(host, port)`; given the pinned IP (`host:port{ip}` / `--ip`); protocol enumeration and certificate info only; timeout 300 s, output cap 4 MiB, process-tree kill on cancel.
+8. Extra probe requests are fixed and small: HTTPS/HTTP root (per host), one CORS request per origin with `Origin: https://vapt-cors-check.invalid`, `robots.txt` per origin.
+9. Safe mode is always on: no injection test input (TBD-049) and no sensitive-file probing (TBD-050).
 
 **Current guard (Phase 00):** `backend/tests/test_health.py::test_only_system_routes_exist` fails if any route besides `/api/health` and `/api/version` is added, so no scan-triggering endpoint can appear unnoticed before Phase 04.

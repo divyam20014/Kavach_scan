@@ -81,3 +81,9 @@ npm run e2e              # real-browser smoke test with the installed Microsoft 
 ```
 
 Run the backend (`cd backend && poetry run python -m app`) before `npm run dev`. The browser talks only to `/api`; it never touches the filesystem.
+
+## Optional external tools and local labs (Phase 05)
+
+The web scanner runs without any external tool. If `sslyze` (preferred) or `testssl.sh` is on `PATH`, it is detected, its version captured, and it is used for TLS protocol enumeration (protocols and certificate info only, pinned IP, 300 s timeout). Without one, the TLS protocol/cipher checks are reported as **skipped**, never as passed. Install example: `pipx install sslyze`.
+
+To scan a local lab app on `127.0.0.1`, create the project with the app URL as target, then set an **internal-target override** for `127.0.0.1/32` on the project page (attested, audited, time-bound). Loopback and private ranges are blocked otherwise.

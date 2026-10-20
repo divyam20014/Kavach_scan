@@ -182,3 +182,18 @@ Enforced now: JSON record ≤ 5 MiB (`VAPT_MAX_RECORD_BYTES`), evidence excerpt 
 5. Running `recover()` a second time changes nothing (tested).
 
 **Graceful shutdown:** dispatching stops, running jobs are signalled and end as `interrupted` (partial output kept).
+
+## 14. Web scanner outputs (implemented in Phase 05)
+
+Written via `JobContext.write_output` into `projects/<pid>/scans/<sid>/work/`, redacted at write (every string through the redactor) and again when served by `GET /api/projects/{pid}/scans/{sid}/results/{summary|coverage|pages}` (bounded read, 16 MiB). Written at the end of the run **and** when the run is cancelled or stopped by a limit (partial results; `stopped_early` says why).
+
+| File | Content |
+|---|---|
+| `work/profile.json` | Resolved `WebScanProfile` (catalog version, safe mode, budgets, enabled/disabled check groups with reasons, limitations): the job manifest |
+| `work/summary.json` | Pages, endpoints, forms, parameters, request/error/retry/rate-limit counts, scope and redirect blocks, out-of-scope hosts, crawl skips, robots status, outcome counts (`check_outcomes`: list of `{outcome, count}`; no secret-looking keys, TBD-054), findings created/re-observed, tool versions, components, warnings, limitations |
+| `work/coverage.json` | Every check result: rule, outcome, subject, rationale, parameter, severity, linked finding id (at most 5000 rows) |
+| `work/pages.json` | Inventory: pages (status, type, title, bytes, truncation, redirects, blocked redirect, parameters), forms (method, action, field names, login form), parameters, resources |
+| `work/tls-tool-*.json` | Raw sslyze/testssl.sh output when a tool ran |
+| `work/tmp/` | Subprocess TEMP/TMP/TMPDIR |
+
+Findings, evidence and URL assets created by a web scan use the normal collections; `scan.json` additionally records `tool_versions`. Evidence records are linked to their finding (`finding_ids`).

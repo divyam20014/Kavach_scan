@@ -9,7 +9,7 @@ import { ScanStateLabel, SeverityLabel } from "../components/StatusLabel";
 import { formatDateTime, humanize } from "../lib/format";
 
 const PAGE_SIZE = 25;
-const FILTER_KEYS = ["project_id", "severity", "analyst_status", "confidence", "asset_type", "state"];
+const FILTER_KEYS = ["project_id", "scan_id", "severity", "analyst_status", "confidence", "asset_type", "state"];
 
 function useFilters() {
   const [params, setParams] = useSearchParams();
@@ -38,7 +38,7 @@ function ActiveFilters({ active, base }: { active: [string, string][]; base: str
       <Text size="sm">Filtered by:</Text>
       {active.map(([k, v]) => (
         <Badge key={`${k}=${v}`} variant="outline">
-          {humanize(k)}: {k === "project_id" ? v.slice(0, 12) + "…" : humanize(v)}
+          {humanize(k)}: {k === "project_id" || k === "scan_id" ? v.slice(0, 12) + "…" : humanize(v)}
         </Badge>
       ))}
       <Anchor component={Link} to={base} size="sm">
@@ -120,11 +120,14 @@ export function FindingsPage() {
       title="Findings"
       base="/findings"
       kind="findings"
-      emptyText="Findings are produced by scans (Phases 05–07) and imports (Phase 08). None exist in storage yet."
+      emptyText="Findings are produced by scans (web scanner available; surface/API in Phases 06–07) and imports (Phase 08)."
       columns={["Title", "Severity", "Confidence", "Analyst status", "Project", "Updated"]}
       row={(f) => (
         <Table.Tr key={f.finding_id}>
-          <Table.Td>{f.title}</Table.Td>
+          <Table.Td>
+            {f.title}
+            {f.url && <Text size="xs" c="dimmed" style={{ wordBreak: "break-all" }}>{f.url}{f.parameter ? ` · ${f.parameter}` : ""}</Text>}
+          </Table.Td>
           <Table.Td><SeverityLabel severity={f.severity} /></Table.Td>
           <Table.Td>{humanize(f.confidence)}</Table.Td>
           <Table.Td>{humanize(f.analyst_status)}</Table.Td>
@@ -164,7 +167,7 @@ export function ScansPage() {
       title="Scans"
       base="/scans"
       kind="scans"
-      emptyText="No jobs have been recorded. Start a job from a project page; real scanners arrive in Phases 05–07."
+      emptyText="No jobs have been recorded. Start a job from a project page (web scanner available; surface/API scanners in Phases 06–07)."
       columns={["Scan", "Module", "State", "Project", "Updated"]}
       row={(s) => (
         <Table.Tr key={s.scan_id}>

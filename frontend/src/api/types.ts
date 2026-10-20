@@ -317,6 +317,10 @@ export interface DashboardSummary {
 export interface Finding {
   finding_id: string;
   project_id: string;
+  scan_id?: string | null;
+  rule_id?: string;
+  category?: string;
+  parameter?: string;
   title: string;
   severity: Severity;
   confidence: Confidence;
@@ -359,6 +363,7 @@ export interface ScanJob {
   retry_of: string | null;
   final_reason: string;
   scope_hash: string | null;
+  tool_versions?: Record<string, string>;
 }
 
 export interface ScanDetail {
@@ -452,4 +457,132 @@ export interface ErrorDetail {
   loc: (string | number)[];
   message: string;
   type: string | null;
+}
+
+// ---------------------------------------------------------------- web scanner (Phase 05)
+
+export type ScanParams = Record<string, string | number | boolean | null>;
+
+export interface ProfileCheck {
+  group: string;
+  label: string;
+  kind: "passive" | "probe" | "active" | "tool";
+  rule_ids: string[];
+  enabled: boolean;
+  reason: string;
+}
+
+export interface WebScanProfile {
+  profile_version: number;
+  catalog_version: string;
+  safe_mode: boolean;
+  auth_profile: string | null;
+  respect_robots: boolean;
+  tls_verify: boolean;
+  seed_paths: string[];
+  budgets: {
+    max_pages: number;
+    max_depth: number;
+    requests_per_second: number;
+    max_concurrency: number;
+    max_requests_per_target: number;
+    max_duration_seconds: number;
+    max_response_bytes: number;
+    max_redirects: number;
+  };
+  checks: ProfileCheck[];
+  limitations: string[];
+}
+
+export interface WebProfilePreview {
+  profile: WebScanProfile;
+  problems: string[];
+  tls_tools: string[];
+  parameters: ScanParams;
+}
+
+export interface ComponentInfo {
+  name: string;
+  version: string;
+  confidence: string;
+  sources: string[];
+  evidence: string[];
+}
+
+export interface WebScanSummary {
+  schema_version: number;
+  catalog_version: string;
+  safe_mode: boolean;
+  stopped_early: string;
+  targets: string[];
+  pages_fetched: number;
+  endpoints_discovered: number;
+  forms_discovered: number;
+  parameters_discovered: number;
+  requests_sent: number;
+  request_errors: number;
+  request_retries: number;
+  rate_limited_responses: number;
+  scope_blocked: number;
+  redirects_blocked: number;
+  out_of_scope_links: number;
+  out_of_scope_hosts: Record<string, number>;
+  crawl_skipped: Record<string, number>;
+  crawl_limit: string;
+  robots: Record<string, string>;
+  check_outcomes: { outcome: CheckOutcome; count: number }[];
+  findings_created: number;
+  findings_reobserved: number;
+  findings_by_severity: Record<string, number>;
+  tool_versions: Record<string, string>;
+  components: ComponentInfo[];
+  warnings: string[];
+  limitations: string[];
+}
+
+export type CheckOutcome = "pass" | "observation" | "finding" | "skipped" | "error";
+
+export interface CoverageRow {
+  rule_id: string;
+  title: string;
+  kind: string;
+  outcome: CheckOutcome;
+  subject: string;
+  rationale: string;
+  parameter: string;
+  severity: Severity | null;
+  finding_id: string | null;
+}
+
+export interface PageRecord {
+  url: string;
+  depth: number;
+  status: number | null;
+  content_type: string;
+  title: string;
+  bytes: number;
+  truncated: boolean;
+  final_url: string;
+  redirect_chain: string[];
+  redirect_blocked_to: string;
+  parameters: string[];
+  links_found: number;
+  forms: number;
+  error: string;
+  source: string;
+}
+
+export interface FormRecord {
+  page: string;
+  action: string;
+  method: string;
+  fields: string[];
+  login_form: boolean;
+}
+
+export interface PagesInventory {
+  pages: PageRecord[];
+  forms: FormRecord[];
+  parameters: string[];
+  resources: string[];
 }

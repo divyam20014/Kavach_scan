@@ -51,7 +51,7 @@ describe("navigation and layout", () => {
     }
     expect(screen.getByRole("group", { name: /modules not available yet/i })).toHaveTextContent(/Reports/);
     expect(screen.queryByRole("button", { name: /start scan|run scan|scan now/i })).not.toBeInTheDocument();
-    expect(screen.getByText(/scanners arrive in Phases 05–07/i)).toBeInTheDocument();
+    expect(screen.getByText(/surface\/API scanners arrive in Phases 06–07/i)).toBeInTheDocument();
   });
 
   it("navigates between pages with a heading per page", async () => {
@@ -136,10 +136,10 @@ describe("projects list and drill-down views", () => {
     expect(screen.getByRole("link", { name: "Clear filters" })).toHaveAttribute("href", "/findings");
   });
 
-  it("states plainly that real scanners are not available yet", async () => {
+  it("states plainly which scanners are available", async () => {
     mockApi({ ...base, "GET /api/scans": { body: emptyPage() } });
     renderAt("/scans");
-    expect(await screen.findByText(/real scanners arrive in Phases 05–07/)).toBeInTheDocument();
+    expect(await screen.findByText(/web scanner available; surface\/API scanners in Phases 06–07/)).toBeInTheDocument();
   });
 });
 

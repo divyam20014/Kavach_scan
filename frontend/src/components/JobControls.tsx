@@ -3,10 +3,11 @@ import { notifications } from "@mantine/notifications";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ApiError } from "../api/client";
-import { useKillSwitch, useModules, useScopePolicy, useSetKillSwitch, useStartScan } from "../api/hooks";
+import { useKillSwitch, useModules, useScopePolicy, useSetKillSwitch, useStartScan, useWebScanProfile } from "../api/hooks";
 import type { Project, ScanModule } from "../api/types";
 import { humanize, splitLines } from "../lib/format";
 import { ErrorAlert, QueryState } from "./QueryState";
+import { DEFAULT_WEB_OPTIONS, WebProfileSummary, WebScanOptions, webParams, type WebOptions } from "./WebScanProfile";
 
 /** Start-a-job panel with an explicit confirmation step (MASTER_SPEC §4.1). */
 export function StartJobCard({ project }: { project: Project }) {
@@ -23,10 +24,15 @@ export function StartJobCard({ project }: { project: Project }) {
   const [idempotencyKey, setIdempotencyKey] = useState("");
   const gateOpen = policy.data?.can_start_active_work && !killSwitch.data?.engaged;
   const p = project.scan_policy;
+  const [webOptions, setWebOptions] = useState<WebOptions>(DEFAULT_WEB_OPTIONS);
+  const isWeb = module === "web_app";
+  const parameters = isWeb ? webParams(webOptions) : {};
+  const profile = useWebScanProfile(project.project_id, parameters, isWeb);
+  const profileInvalid = isWeb && (profile.data?.problems.length ?? 0) > 0;
 
   const submit = () =>
     start.mutate(
-      { module: module as ScanModule, targets: splitLines(targets), confirmed, idempotency_key: idempotencyKey },
+      { module: module as ScanModule, targets: splitLines(targets), parameters, confirmed, idempotency_key: idempotencyKey },
       {
         onSuccess: (scan) => {
           setReviewing(false);
@@ -57,7 +63,18 @@ export function StartJobCard({ project }: { project: Project }) {
             </Radio.Group>
             <Textarea label="Targets (one URL per line, must be in scope)" value={targets} onChange={(e) => setTargets(e.currentTarget.value)}
               autosize minRows={2} placeholder="https://app.example.com/" />
-            <Button w="fit-content" disabled={!module || !splitLines(targets).length || !gateOpen}
+            {isWeb && (
+              <Card withBorder padding="sm" component="section" aria-labelledby="web-profile-h">
+                <Title order={3} size="h5" id="web-profile-h" mb="xs">Web scan profile</Title>
+                <Stack gap="sm">
+                  <WebScanOptions value={webOptions} onChange={setWebOptions} limits={{ pages: p.max_pages, depth: p.max_crawl_depth }} />
+                  <QueryState query={profile} loadingLabel="Loading scan profile…">
+                    {(preview) => <WebProfileSummary preview={preview} />}
+                  </QueryState>
+                </Stack>
+              </Card>
+            )}
+            <Button w="fit-content" disabled={!module || !splitLines(targets).length || !gateOpen || profileInvalid}
               onClick={() => { setConfirmed(false); start.reset(); setIdempotencyKey(`ui-${crypto.randomUUID()}`); setReviewing(true); }}>
               Review &amp; confirm…
             </Button>
@@ -76,6 +93,18 @@ export function StartJobCard({ project }: { project: Project }) {
             Limits: {p.requests_per_second} req/s per host · concurrency {p.max_concurrency} · max {p.max_requests_per_target} requests per target ·
             max {Math.round(p.max_duration_seconds / 60)} min
           </Text>
+          {isWeb && profile.data && (
+            <>
+              <Text size="sm">
+                Web scan: safe mode {profile.data.profile.safe_mode ? "on (no injection test input is sent)" : "off"} ·{" "}
+                {profile.data.profile.checks.filter((c) => c.enabled).length} check groups enabled ·{" "}
+                {profile.data.profile.budgets.max_pages} pages max · depth {profile.data.profile.budgets.max_depth}
+              </Text>
+              {Object.keys(parameters).length > 0 && (
+                <Text size="sm">Options recorded in the job manifest: {Object.entries(parameters).map(([k, v]) => <Code key={k} mr={4}>{k}={String(v)}</Code>)}</Text>
+              )}
+            </>
+          )}
           <Text size="sm">Every request, redirect and resolved address is checked against the project scope; blocked targets receive no traffic.</Text>
           <Checkbox label="I confirm these targets are in my authorized scope and I want to start this job." checked={confirmed}
             onChange={(e) => setConfirmed(e.currentTarget.checked)} />

@@ -115,7 +115,9 @@ class Resolver:
 class RealHttpTransport:
     """Sends real HTTP, but only ever to the guard's pinned IP and the authorized port."""
 
-    def send(self, method: str, authorized: AuthorizedTarget) -> TransportResponse:
+    def send(
+        self, method: str, authorized: AuthorizedTarget, options: object = None
+    ) -> TransportResponse:
         conn = http.client.HTTPConnection(
             authorized.pinned_ips[0], authorized.target.port, timeout=5
         )

@@ -23,6 +23,27 @@ Run from `backend/` (see [DEVELOPMENT.md](DEVELOPMENT.md) for setup):
 
 Frontend (Phase 02+, planned): `npm test` (Vitest), `npm run lint` (ESLint), `npm run typecheck` (`tsc --noEmit`), `npm run build`.
 
+### Results recorded at Phase 05 verification (2026-10-21)
+
+| Command | Result |
+|---|---|
+| `poetry run pytest` | **1242 passed, 1 skipped** |
+| `poetry run pytest tests/test_webapp_verification.py` | 9/9: scanner sends only GET and only query strings that appeared in crawled links (no crafted input), only header added is the fixed CORS test Origin; catalog has no active rules and no "confirmed executable" XSS claim; `active_*` parameters rejected (422) with zero traffic; response cap → page `truncated`, non-HTML not parsed; redirect into an excluded path recorded, never followed; 503 `Retry-After` honoured; cancel during a 25 s `Retry-After` wait ends the job in < 8 s with no further request; every evidence record ≤ 8 KiB, bounded body window, no blobs, no session secret in evidence/findings/outputs/events/console, no structural field wiped by redaction; raw TLS-tool output redacted; absent tool → `skipped` with reason |
+| `ruff check` / `ruff format --check` / `mypy` | clean / 112 files formatted / no issues in 73 files |
+| `npm test` ×2 / `typecheck` / `lint` / `build` / `audit` | 45 passed both runs / pass / pass / built / 0 vulnerabilities |
+| `npm run e2e:verify` / `npm run e2e` | **18/18** (check 13 now also asserts readable outcome counts and the TLS-tool row shown as skipped) / 10/10 |
+
+### Results recorded at Phase 05 (2026-10-21)
+
+| Command | Result |
+|---|---|
+| `poetry run pytest` | **1229 passed, 1 skipped** (adds `test_http_adapters.py` 36, `test_webapp_scan.py` 14, `test_webapp_units.py` 27, new static guards) |
+| `ruff check` / `ruff format --check` / `mypy` | clean / 111 files formatted / no issues in 73 files |
+| `npm test` (2 consecutive runs) / `typecheck` / `lint` / `build` / `audit` | 45 passed / pass / pass / built / 0 vulnerabilities |
+| `npm run e2e:verify` / `npm run e2e` | **18/18** (new check 13: web scan started in the UI against a local Node fixture app; profile shown, pages/findings/coverage tabs, global findings filtered by scan, robots respected, cookie value never stored) / 10/10 |
+
+Fixture apps (`backend/tests/webfixtures.py`): a LAB app with pages for missing headers, cookies, version banners, directory listing, default page, traceback, DB error text, escaped and unescaped reflection, off-scope redirect, robots-disallowed area, excluded path, crawler trap, 429 rate limiting, CORS reflection, oversized body, gzip bomb, slow and drip responses; a VICTIM server that must receive zero requests; HTTPS servers with runtime-generated valid / expired / wrong-host / expiring certificates (throwaway CA via `cryptography`, dev only; no key material committed).
+
 ### Results recorded at Phase 04 verification (2026-10-21)
 
 | Command | Result |

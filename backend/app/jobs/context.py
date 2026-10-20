@@ -29,7 +29,14 @@ from app.integrations.process import ProcessResult, run_process
 from app.models.common import ShortText, StrictModel, UtcDatetime, new_id, utc_now
 from app.models.project import Project, ScanPolicy
 from app.models.scan import ScanJob
-from app.scope import AuthorizedTarget, GuardedRequester, ScopeGuard, Transport, TransportResponse
+from app.scope import (
+    AuthorizedTarget,
+    GuardedRequester,
+    RequestOptions,
+    ScopeGuard,
+    Transport,
+    TransportResponse,
+)
 from app.scope.engine import Decision, Reason
 from app.storage.repository import StorageRepository
 
@@ -121,10 +128,12 @@ class _BudgetedTransport:
         self.ctx = ctx
         self.inner = inner
 
-    def send(self, method: str, authorized: AuthorizedTarget) -> TransportResponse:
+    def send(
+        self, method: str, authorized: AuthorizedTarget, options: RequestOptions | None = None
+    ) -> TransportResponse:
         self.ctx.acquire_request(authorized.target.host)
         with self.ctx.slot():
-            response = self.inner.send(method, authorized)
+            response = self.inner.send(method, authorized, options)
         self.ctx.incr("requests_sent")
         return response
 
@@ -292,6 +301,7 @@ class JobContext:
             cancelled=self.cancel_event.is_set,
             correlation_id=self.scan.correlation_id,
             max_output_bytes=max_output_bytes,
+            temp_dir=self.repo.scan_temp_dir(self.project_id, self.scan_id),
         )
         level: Level = "info" if result.ok else "warning"
         self.emit(

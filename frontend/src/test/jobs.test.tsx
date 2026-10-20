@@ -39,6 +39,7 @@ describe("job detail page", () => {
     expect(screen.getByLabelText("Progress 40%")).toBeInTheDocument();
     expect(screen.getByRole("row", { name: /Steps done 2/ })).toBeInTheDocument();
     expect(screen.getByText(/self-test warning requested/)).toBeInTheDocument();
+    await userEvent.setup().click(screen.getByRole("tab", { name: "Logs" }));
     expect(await screen.findByRole("table", { name: "Job events" })).toHaveTextContent("stage: simulate");
     expect(screen.getByLabelText("Console log output")).toHaveTextContent("[simulate] stage: simulate");
   });
@@ -84,7 +85,7 @@ function projectApi(open: boolean, extra: Record<string, unknown> = {}) {
     [`GET /api/projects/${PID}/scope/policy`]: { body: policy(open) },
     "GET /api/audit": { body: { items: [], offset: 0, limit: 10, has_more: false, corrupt_lines: 0 } },
     "GET /api/jobs/modules": { body: [
-      { module: "web_app", label: "Web application scanner (Option A)", available: false, reason: "Scanner not implemented yet (Phase 05)" },
+      { module: "api_security", label: "API security testing (Option C)", available: false, reason: "Scanner not implemented yet (Phase 07)" },
       { module: "self_test", label: "Job system self-test (no network traffic)", available: true, reason: "" },
     ] },
     ...(extra as Record<string, { body: unknown }>),
@@ -98,7 +99,7 @@ describe("start a job", () => {
     renderAt(`/projects/${PID}`);
     const u = userEvent.setup();
     const card = await screen.findByRole("region", { name: "Start a job" });
-    const web = await within(card).findByRole("radio", { name: /Web application scanner.*unavailable: Scanner not implemented yet \(Phase 05\)/ });
+    const web = await within(card).findByRole("radio", { name: /API security testing.*unavailable: Scanner not implemented yet \(Phase 07\)/ });
     expect(web).toBeDisabled();
     await u.click(within(card).getByRole("radio", { name: /self-test/ }));
     await u.type(within(card).getByRole("textbox", { name: /targets/i }), "https://app.example.com/");
@@ -153,6 +154,8 @@ describe("job completion refresh", () => {
     });
     renderAt(`/projects/${PID}/scans/${SID}`);
     await screen.findByText(/Live: refreshing/);
+    await userEvent.setup().click(screen.getByRole("tab", { name: "Logs" }));
+    await waitFor(() => expect(calls.some((c) => c.path.endsWith("/events"))).toBe(true));
     const before = calls.filter((c) => c.path.endsWith("/events")).length;
     terminalNow = true;
     await screen.findByText("Completed", {}, { timeout: 5000 });

@@ -95,3 +95,29 @@ def test_benign_security_text_not_over_redacted(benign: str) -> None:
 def test_redaction_is_idempotent() -> None:
     once = redact_text('Authorization: Bearer abcdefghijkl {"password": "x"} token=abc')
     assert redact_text(once) == once
+
+
+# ---------------------------------------------------------------------- Phase 05 verification
+
+
+@pytest.mark.parametrize(
+    ("raw", "secret"),
+    [
+        (
+            '{"note": "password=hunter2-in-json"}',
+            "hunter2-in-json",
+        ),  # key=value opening a quoted string
+        ("'token=abcdef123456'", "abcdef123456"),
+        ("password=trueSecretValue", "trueSecretValue"),  # only exact booleans are exempt
+    ],
+)
+def test_key_value_secrets_inside_quotes_are_redacted(raw: str, secret: str) -> None:
+    assert secret not in redact_text(raw)
+
+
+def test_redaction_keeps_json_structure_and_boolean_values() -> None:
+    assert redact_text('{"note": "password=x1y2z3"}') == '{"note": "password=[REDACTED]"}'
+    assert redact_text("Access-Control-Allow-Credentials: true") == (
+        "Access-Control-Allow-Credentials: true"
+    )
+    assert redact_text("token: false") == "token: false"

@@ -41,6 +41,7 @@ from app.core.errors import (
 )
 from app.core.redaction import redact_text
 from app.core.settings import RuntimeSettings
+from app.integrations.dns import default_resolver_factory
 from app.jobs.context import JobContext, JobStop, RunResult
 from app.jobs.states import ACTIVE, InvalidTransitionError, check_transition, is_terminal
 from app.models.audit import AuditAction
@@ -80,7 +81,7 @@ class JobRejectedError(AppError):
 
 
 class NoResolver:
-    """Resolver used until Phase 05 provides real DNS: every lookup fails closed."""
+    """Resolver that fails every lookup closed (tests and network-free modules)."""
 
     def resolve(self, host: str) -> list[str]:
         raise ResolutionError("DNS resolution is not available in this build")
@@ -152,7 +153,7 @@ class JobManager:
     repo: StorageRepository
     settings: RuntimeSettings
     runners: dict[ScanModule, Runner] = field(default_factory=dict)
-    resolver_factory: Callable[[], Any] = NoResolver
+    resolver_factory: Callable[[], Any] = default_resolver_factory
     clock: Callable[[], datetime] = utc_now
 
     def __post_init__(self) -> None:
@@ -344,6 +345,17 @@ class JobManager:
             raise JobRejectedError(
                 "module_not_allowed", f"Module {req.module.value} is not allowed for this project"
             )
+        validate = getattr(runner, "validate_parameters", None)
+        if validate is not None:
+            problems = validate(dict(req.parameters), project.scan_policy)
+            if problems:
+                raise ValidationFailedError(
+                    "The scan parameters are invalid; nothing was started",
+                    details=[
+                        ErrorDetail(loc=["parameters"], message=p[:480], type="invalid_parameter")
+                        for p in problems
+                    ],
+                )
         decisions = [policy.is_target_in_scope(t) for t in req.targets]
         blocked = [d for d in decisions if not d.allowed]
         if blocked:
@@ -395,6 +407,7 @@ class JobManager:
                 "confirmed": True,
                 "scope_hash": created.scope_hash,
                 "retry_of": retry_of,
+                "parameters": dict(req.parameters),
             },
         )
         self.repo.spool_add(project_id, created.scan_id)
@@ -706,8 +719,9 @@ class JobManager:
 
 def default_runners(settings: RuntimeSettings) -> dict[ScanModule, Runner]:
     from app.jobs.selftest import SelfTestRunner
+    from app.scanners.webapp.runner import WebAppRunner
 
-    runners: dict[ScanModule, Runner] = {}
+    runners: dict[ScanModule, Runner] = {ScanModule.WEB_APP: WebAppRunner()}
     if settings.enable_selftest_jobs:
         runners[ScanModule.SELF_TEST] = SelfTestRunner()
     return runners

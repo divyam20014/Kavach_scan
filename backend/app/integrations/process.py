@@ -4,8 +4,10 @@ Rules enforced here:
 - argv is a list; `shell=False` always; no string command lines are accepted;
 - the executable must resolve to an entry in an explicit allowlist (absolute paths);
 - runs in a caller-provided working directory (a per-scan dir inside the data root);
-- a minimal environment is passed (PATH/SYSTEMROOT/TEMP plus VAPT_CORRELATION_ID);
+- a minimal environment is passed (PATH/SYSTEMROOT/... plus VAPT_CORRELATION_ID); TEMP/TMP/
+  TMPDIR point at a caller-controlled temp directory when one is given;
 - stdout/stderr are captured with byte caps (excess is discarded and flagged);
+- `capture_version` records tool provenance (first line of `--version`, capped);
 - timeout or cancellation terminates the WHOLE process tree (Windows: taskkill /T /F,
   POSIX: process group SIGTERM then SIGKILL), then the process is reaped.
 
@@ -146,6 +148,7 @@ def run_process(
     correlation_id: str | None = None,
     max_output_bytes: int = DEFAULT_MAX_OUTPUT,
     extra_env: dict[str, str] | None = None,
+    temp_dir: Path | None = None,
     on_start: Callable[[subprocess.Popen[bytes]], None] | None = None,
 ) -> ProcessResult:
     if isinstance(argv, str) or not argv or not all(isinstance(a, str) for a in argv):
@@ -162,6 +165,11 @@ def run_process(
     env = {k: v for k, v in os.environ.items() if k.upper() in _ENV_PASSTHROUGH}
     if correlation_id:
         env["VAPT_CORRELATION_ID"] = correlation_id
+    if temp_dir is not None:
+        if not temp_dir.is_dir():
+            raise ProcessPolicyError("temp directory does not exist")
+        for name in ("TEMP", "TMP", "TMPDIR"):
+            env[name] = str(temp_dir)
     env.update(extra_env or {})
     kwargs: dict[str, object] = {}
     if _IS_WINDOWS:
@@ -212,3 +220,40 @@ def run_process(
         duration_seconds=round(time.monotonic() - start, 3),
         killed_tree=killed,
     )
+
+
+def find_executable(names: Sequence[str]) -> str | None:
+    """Return the absolute path of the first of `names` found on PATH (no execution)."""
+    for name in names:
+        found = shutil.which(name)
+        if found:
+            return os.path.realpath(found)
+    return None
+
+
+def capture_version(
+    executable: str,
+    *,
+    cwd: Path,
+    args: Sequence[str] = ("--version",),
+    prefix: Sequence[str] = (),
+    timeout: float = 15.0,
+) -> str:
+    """Run `<executable> [prefix] --version` (allowlisted to itself) and return a short line.
+
+    Returns "" when the tool printed nothing usable. Raises ProcessPolicyError only for
+    policy violations; a failing tool simply yields "".
+    """
+    result = run_process(
+        [executable, *prefix, *args],
+        allowed_executables=[executable],
+        cwd=cwd,
+        timeout=timeout,
+        max_output_bytes=16 * 1024,
+    )
+    for stream in (result.stdout, result.stderr):
+        for raw in stream.decode("utf-8", "replace").splitlines():
+            line = raw.strip()
+            if line and not line.startswith("#"):
+                return "".join(ch for ch in line if ch.isprintable())[:200]
+    return ""
