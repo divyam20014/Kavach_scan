@@ -29,6 +29,9 @@ _ENV_FIELDS: dict[str, str] = {
     "VAPT_MAX_RECORD_BYTES": "max_record_bytes",
     "VAPT_MAX_REQUEST_BYTES": "max_request_bytes",
     "VAPT_DISK_WARNING_BYTES": "disk_warning_bytes",
+    "VAPT_MAX_ACTIVE_JOBS": "max_active_jobs",
+    "VAPT_MAX_QUEUED_JOBS": "max_queued_jobs",
+    "VAPT_ENABLE_SELFTEST_JOBS": "enable_selftest_jobs",
 }
 
 
@@ -49,6 +52,9 @@ class RuntimeSettings(BaseModel):
     max_record_bytes: int = Field(default=5 * 1024 * 1024, ge=64 * 1024, le=100 * 1024 * 1024)
     max_request_bytes: int = Field(default=1024 * 1024, ge=16 * 1024, le=100 * 1024 * 1024)
     disk_warning_bytes: int = Field(default=2 * 1024**3, ge=0)
+    max_active_jobs: int = Field(default=1, ge=1, le=4)  # TBD-011: 1 by default, hard cap 4
+    max_queued_jobs: int = Field(default=20, ge=1, le=200)
+    enable_selftest_jobs: bool = False  # exposes the network-free job self-test module
 
     def bind(self) -> BindConfig:
         return load_bind_config({"VAPT_HOST": self.host, "VAPT_PORT": str(self.port)})
@@ -69,7 +75,7 @@ def load_settings(env: Mapping[str, str] | None = None) -> RuntimeSettings:
         value = source.get(env_name)
         if value is None:
             continue
-        if field == "allow_repo_data_dir":
+        if field in ("allow_repo_data_dir", "enable_selftest_jobs"):
             raw[field] = value.strip().lower() in {"1", "true", "yes"}
         elif field == "log_level":
             raw[field] = value.strip().upper()

@@ -133,6 +133,7 @@ class ScanModule(StrEnum):
     WEB_APP = "web_app"  # Option A
     ATTACK_SURFACE = "attack_surface"  # Option B
     API_SECURITY = "api_security"  # Option C
+    SELF_TEST = "self_test"  # job-system self-test; no network activity; dev/test only
 
 
 class ScanState(StrEnum):

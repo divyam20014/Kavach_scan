@@ -164,11 +164,15 @@ export function ScansPage() {
       title="Scans"
       base="/scans"
       kind="scans"
-      emptyText="No scans have been recorded. Scans cannot be started in this build: the scope safety gate is ready, but the job manager (Phase 04) comes first."
+      emptyText="No jobs have been recorded. Start a job from a project page; real scanners arrive in Phases 05–07."
       columns={["Scan", "Module", "State", "Project", "Updated"]}
       row={(s) => (
         <Table.Tr key={s.scan_id}>
-          <Table.Td>{s.scan_id.slice(0, 12)}…</Table.Td>
+          <Table.Td>
+            <Anchor component={Link} to={`/projects/${s.project_id}/scans/${s.scan_id}`} size="sm">
+              {s.scan_id.slice(0, 12)}…
+            </Anchor>
+          </Table.Td>
           <Table.Td>{humanize(s.module)}</Table.Td>
           <Table.Td><ScanStateLabel state={s.state} /></Table.Td>
           <Table.Td>{projectLink(s.project_id)}</Table.Td>

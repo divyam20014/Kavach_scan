@@ -119,11 +119,17 @@ class JsonlLog:
         limit: int = 100,
         parse: Callable[[dict[str, Any]], Any] = lambda d: d,
         predicate: Callable[[Any], bool] = lambda _: True,
+        max_bytes: int = 4 * 1024 * 1024,
     ) -> tuple[list[Any], int, bool]:
-        """Return (items newest-first, corrupt_line_count, has_more)."""
+        """Return (items newest-first, corrupt_line_count, has_more).
+
+        Stops after `limit` items or once the returned lines total `max_bytes`, whichever
+        comes first, so a page can never pull an unbounded amount of log into memory.
+        """
         items: list[Any] = []
         corrupt = 0
         skipped = 0
+        used = 0
         files = ([self.current] if self.current.exists() else []) + self.segments()
         for path in files:
             for raw in _reverse_lines(path):
@@ -140,7 +146,75 @@ class JsonlLog:
                 if skipped < offset:
                     skipped += 1
                     continue
-                if len(items) == limit:
+                if len(items) == limit or (items and used + len(raw) > max_bytes):
                     return items, corrupt, True
+                used += len(raw)
                 items.append(parsed)
         return items, corrupt, False
+
+
+class TextLog:
+    """Concise human-readable log (one line per entry), size-rotated, tail-readable.
+
+    Callers redact before appending; embedded newlines are escaped so one entry is one line.
+    """
+
+    def __init__(
+        self,
+        directory: Path,
+        name: str,
+        *,
+        rotate_bytes: int,
+        lock_timeout: float,
+        lock_root: Path | None = None,
+    ) -> None:
+        if not re.fullmatch(r"[a-z][a-z0-9_-]{0,31}", name):
+            raise ValueError("invalid log name")
+        self.directory = directory
+        self.name = name
+        self.rotate_bytes = rotate_bytes
+        self.lock_timeout = lock_timeout
+        self.lock_root = lock_root
+        self.current = directory / f"{name}.log"
+        self._segment_re = re.compile(rf"^{re.escape(name)}\.(\d{{6}})\.log$")
+
+    def segments(self) -> list[Path]:
+        found: list[tuple[int, Path]] = []
+        if self.directory.is_dir():
+            for entry in os.scandir(self.directory):
+                m = self._segment_re.match(entry.name)
+                if m and entry.is_file(follow_symlinks=False):
+                    found.append((int(m.group(1)), Path(entry.path)))
+        return [p for _, p in sorted(found, reverse=True)]
+
+    def append(self, line: str) -> None:
+        text = line.replace("\r", "\\r").replace("\n", "\\n")[:4000] + "\n"
+        data = text.encode("utf-8", errors="replace")
+        with exclusive(self.current, self.lock_timeout, lock_root=self.lock_root):
+            size = self.current.stat().st_size if self.current.exists() else 0
+            if size and size + len(data) > self.rotate_bytes:
+                newest = self.segments()
+                m = self._segment_re.match(newest[0].name) if newest else None
+                number = int(m.group(1)) + 1 if m else 1
+                try:
+                    os.replace(self.current, self.directory / f"{self.name}.{number:06d}.log")
+                except PermissionError:
+                    pass  # a reader holds the file (Windows); rotate on a later append
+            fd = os.open(
+                self.current, os.O_WRONLY | os.O_CREAT | os.O_APPEND | _O_BINARY, FILE_MODE
+            )
+            try:
+                os.write(fd, data)
+            finally:
+                os.close(fd)
+
+    def tail(self, lines: int = 200) -> list[str]:
+        """Last `lines` lines, oldest first, read backwards with bounded memory."""
+        out: list[str] = []
+        files = ([self.current] if self.current.exists() else []) + self.segments()
+        for path in files:
+            for raw in _reverse_lines(path):
+                out.append(raw.decode("utf-8", errors="replace"))
+                if len(out) >= lines:
+                    return list(reversed(out))
+        return list(reversed(out))

@@ -10,7 +10,7 @@ import sys
 import time
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, BinaryIO
 
 from app.storage.errors import CorruptRecordError, RecordTooLargeError, StorageError
 
@@ -37,15 +37,22 @@ def ensure_dir(path: Path, *, parents: bool = False) -> None:
         os.chmod(path, DIR_MODE)
 
 
-def _replace_with_retry(src: Path, dst: Path, attempts: int = 8) -> None:
-    # On Windows, antivirus/indexers can briefly hold the destination open.
+REPLACE_RETRY_SECONDS = 5.0
+
+
+def _replace_with_retry(
+    src: Path, dst: Path, deadline_seconds: float = REPLACE_RETRY_SECONDS
+) -> None:
+    """os.replace with a bounded retry on Windows, where antivirus/indexers (or a reader that
+    did not grant FILE_SHARE_DELETE) can briefly hold the destination open."""
+    deadline = time.monotonic() + deadline_seconds
     delay = 0.01
-    for i in range(attempts):
+    while True:
         try:
             os.replace(src, dst)
             return
         except PermissionError:
-            if not _IS_WINDOWS or i == attempts - 1:
+            if not _IS_WINDOWS or time.monotonic() >= deadline:
                 raise
             time.sleep(delay)
             delay = min(delay * 2, 0.25)
@@ -94,11 +101,27 @@ def dumps_record(data: dict[str, Any]) -> bytes:
     return (json.dumps(data, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
 
 
+def _open_for_read(path: Path) -> BinaryIO:
+    """Open for reading. On Windows, share read/write/DELETE so that a concurrent reader can
+    never make a writer's atomic os.replace fail (Python's open() omits FILE_SHARE_DELETE)."""
+    if not _IS_WINDOWS:
+        return open(path, "rb")  # noqa: SIM115 - returned to the caller's context manager
+    import _winapi
+    import msvcrt
+
+    share = 0x1 | 0x2 | 0x4  # FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE
+    handle = _winapi.CreateFile(
+        str(path), _winapi.GENERIC_READ, share, 0, _winapi.OPEN_EXISTING, 0, 0
+    )
+    fd = msvcrt.open_osfhandle(handle, os.O_RDONLY | _O_BINARY)
+    return os.fdopen(fd, "rb")
+
+
 def read_bytes_bounded(path: Path, max_bytes: int) -> bytes:
     size = os.stat(path).st_size
     if size > max_bytes:
         raise RecordTooLargeError(f"Record exceeds {max_bytes} bytes")
-    with open(path, "rb") as fh:
+    with _open_for_read(path) as fh:
         data = fh.read(max_bytes + 1)
     if len(data) > max_bytes:
         raise RecordTooLargeError(f"Record exceeds {max_bytes} bytes")

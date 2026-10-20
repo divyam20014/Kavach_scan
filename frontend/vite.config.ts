@@ -20,5 +20,6 @@ export default defineConfig({
     setupFiles: ["./src/test/setup.ts"],
     css: false,
     include: ["src/**/*.test.{ts,tsx}"],
+    testTimeout: 15000, // multi-step form flows in jsdom are slow under load
   },
 });

@@ -22,7 +22,7 @@ export type ScanState =
   | "interrupted"
   | "blocked_scope"
   | "expired_authorization";
-export type ScanModule = "web_app" | "attack_surface" | "api_security";
+export type ScanModule = "web_app" | "attack_surface" | "api_security" | "self_test";
 export type ProjectStatus = "active" | "archived";
 export type AuthorizationStatus = "missing" | "not_started" | "active" | "expiring_soon" | "expired";
 export type AssetType = "domain" | "hostname" | "ip" | "port" | "service" | "url" | "api_operation";
@@ -339,9 +339,85 @@ export interface ScanJob {
   scan_id: string;
   project_id: string;
   module: ScanModule;
+  profile: string;
   state: ScanState;
+  revision: number;
+  created_at: string;
   updated_at: string;
   queued_at: string | null;
+  started_at: string | null;
+  finished_at: string | null;
+  targets: string[];
+  authorized_targets: string[];
+  parameters: Record<string, string | number | boolean | null>;
+  progress: { stage: string; percent: number | null; counters: Record<string, number> };
+  cancel_requested: boolean;
+  warnings: string[];
+  errors: string[];
+  output_refs: string[];
+  correlation_id: string | null;
+  retry_of: string | null;
+  final_reason: string;
+  scope_hash: string | null;
+}
+
+export interface ScanDetail {
+  scan: ScanJob;
+  active: boolean;
+  terminal: boolean;
+  elapsed_seconds: number | null;
+}
+
+export interface JobEvent {
+  event_id: string;
+  ts: string;
+  scan_id: string;
+  type: string;
+  level: "debug" | "info" | "warning" | "error";
+  stage: string;
+  message: string;
+  data: Record<string, unknown>;
+  correlation_id: string | null;
+}
+
+export interface EventPage {
+  items: JobEvent[];
+  offset: number;
+  limit: number;
+  has_more: boolean;
+  corrupt_lines: number;
+}
+
+export interface ModuleAvailability {
+  module: ScanModule;
+  label: string;
+  available: boolean;
+  reason: string;
+}
+
+export interface ManagerStatus {
+  running: boolean;
+  active_jobs: string[];
+  queued_jobs: number;
+  max_active_jobs: number;
+  max_queued_jobs: number;
+  kill_switch_engaged: boolean;
+}
+
+export interface KillSwitchState {
+  engaged: boolean;
+  changed_at: string | null;
+  reason: string;
+  actor: string;
+}
+
+export interface StartScanRequest {
+  module: ScanModule;
+  targets: string[];
+  profile?: string;
+  parameters?: Record<string, string | number | boolean | null>;
+  idempotency_key?: string;
+  confirmed: boolean;
 }
 
 export interface VersionInfo {

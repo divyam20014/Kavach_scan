@@ -156,3 +156,29 @@ Free disk space below `VAPT_DISK_WARNING_BYTES` is reported by the diagnostics (
 ## 12. Size limits (TBD-009 proposals)
 
 Enforced now: JSON record ≤ 5 MiB (`VAPT_MAX_RECORD_BYTES`), evidence excerpt ≤ 8 KiB, evidence blob ≤ 10 MiB, import upload ≤ 25 MiB, JSONL line ≤ 256 KiB, API request body ≤ 1 MiB (`VAPT_MAX_REQUEST_BYTES`), page size ≤ 500. Deeply nested JSON fails safely as `record_corrupt`. Archive limits (250 MiB / 10,000 entries) arrive with Phase 10.
+
+## 13. Jobs, events and recovery (implemented in Phase 04)
+
+| Path | Content |
+|---|---|
+| `projects/<pid>/scans/<sid>/scan.json` | Canonical `ScanJob`: state, timestamps, progress/stage/counters, warnings/errors, scope snapshot + hash, policy snapshot, authorized (canonical) targets, correlation ID, output refs, `retry_of`, `final_reason` |
+| `projects/<pid>/scans/<sid>/events.jsonl` | Structured, redacted `JobEvent` stream (rotated like the audit log) |
+| `projects/<pid>/scans/<sid>/console.log` | Concise human log, one redacted line per event (rotated, tail-read) |
+| `projects/<pid>/scans/<sid>/work/` | Tool output / partial results (written only via `write_scan_output`); subprocess working directory |
+| `jobs/spool/<sid>.json` | Queue entry `{scan_id, project_id, enqueued_at}`; FIFO dispatch |
+| `jobs/claims/<sid>.lock` | Claim lock held by the worker for the whole run (OS lock; dies with the process) |
+| `control/kill_switch.json` | `{engaged, changed_at, reason, actor}`; an unreadable file is treated as **engaged** (fail safe) |
+
+**State machine:** `app/jobs/states.py`. `queued → validating → running → {completed, completed_with_warnings, failed, cancelled, interrupted, expired_authorization}`; `validating → {blocked_scope, expired_authorization, cancelled, failed, interrupted}`; `queued → {cancelled, expired_authorization, blocked_scope}`. Terminal states have no outgoing transitions; every write goes through `check_transition` under the record lock.
+
+**Exactly-once claim:** a worker runs a job only after (1) acquiring `jobs/claims/<sid>.lock` non-blockingly and (2) re-reading `scan.json` in state `queued` with no cancel request. Tested with 8 threads racing for one job (`tests/test_jobs.py::test_concurrent_claims_run_a_job_exactly_once`).
+
+**Deterministic startup recovery** (`JobManager.recover`, run before dispatching starts; idempotent):
+
+1. Every scan in `queued` stays queued; a missing spool entry is re-created (order: `queued_at`).
+2. Every scan in `validating`/`running` whose claim lock can be acquired is marked **`interrupted`** with the reason "The application stopped while this job was active. Partial results are kept; the job was NOT replayed automatically." Ambiguous in-flight work is **never** replayed; the operator can start a new job (`retry` creates a new scan with `retry_of`).
+3. Spool entries that do not belong to a `queued` scan are removed.
+4. Leftover claim-lock files without an OS lock are ignored (harmless).
+5. Running `recover()` a second time changes nothing (tested).
+
+**Graceful shutdown:** dispatching stops, running jobs are signalled and end as `interrupted` (partial output kept).

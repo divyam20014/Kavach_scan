@@ -166,7 +166,7 @@ export function HelpPage() {
           </List>
           <Title order={2} size="h4">What it cannot do yet</Title>
           <List size="sm">
-            <List.Item>Run any scan. The scope safety gate exists (Phase 03), but the job manager (Phase 04) and scanners (Phases 05–07) are not built.</List.Item>
+            <List.Item>Run real scans: the scope gate (Phase 03) and job system (Phase 04) exist, but the scanners (Phases 05–07) are not built yet.</List.Item>
             <List.Item>Import external reports (Phase 08), generate reports (Phase 10), or detect external tools (Phase 11).</List.Item>
           </List>
           <Title order={2} size="h4">Safe use</Title>

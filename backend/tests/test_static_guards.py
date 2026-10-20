@@ -32,13 +32,18 @@ FILE_WRITE = re.compile(
     r"\.unlink\(|\.mkdir\(|os\.makedirs\(|os\.remove\(|rmtree\(|os\.open\("
 )
 ALLOWED_WRITERS = {APP / "storage"}
+# process.py uses shutil.which() only (no file writes); it is checked separately below.
+READ_ONLY_SHUTIL = {APP / "integrations" / "process.py"}
 
 
 @pytest.mark.parametrize("path", SOURCES, ids=lambda p: p.relative_to(APP).as_posix())
 def test_no_file_io_outside_storage(path: Path) -> None:
     if any(path.is_relative_to(a) for a in ALLOWED_WRITERS):
         return
-    hits = FILE_WRITE.findall(_code(path))
+    code = _code(path)
+    if path in READ_ONLY_SHUTIL:
+        code = code.replace("shutil.which(", "WHICH(")
+    hits = FILE_WRITE.findall(code)
     assert not hits, f"{path.relative_to(APP)} performs file I/O ({hits}); use StorageRepository"
 
 
@@ -73,7 +78,11 @@ NETWORK_OR_PROCESS = re.compile(
     re.M,
 )
 # socket is used only for gethostname() in the instance lease; it opens no connections.
-NETWORK_ALLOWED = {APP / "storage" / "locking.py": {"socket"}}
+NETWORK_ALLOWED = {
+    APP / "storage" / "locking.py": {"socket"},
+    # The sanctioned subprocess adapter (argv lists, allowlist, caps, tree kill).
+    APP / "integrations" / "process.py": {"subprocess"},
+}
 
 
 @pytest.mark.parametrize("path", SOURCES, ids=lambda p: p.relative_to(APP).as_posix())
@@ -121,3 +130,12 @@ def test_manifest_has_no_database_or_broker_dependencies() -> None:
     }
     assert not (names & banned), names & banned
     assert not any(b in deps for b in banned)
+
+
+def test_subprocess_only_in_process_adapter_and_never_with_shell() -> None:
+    for path in SOURCES:
+        code = _code(path)
+        if re.search(r"^\s*(import|from)\s+subprocess", code, re.M):
+            assert path == APP / "integrations" / "process.py", path
+        assert "shell=True" not in code, path
+        assert "os.system(" not in code and "os.popen(" not in code, path

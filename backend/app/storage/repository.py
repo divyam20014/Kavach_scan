@@ -65,18 +65,43 @@ from app.storage.errors import (
     StorageVersionError,
     UnsafePathError,
 )
-from app.storage.locking import InstanceLock, exclusive
+from app.storage.jsonl import JsonlLog, TextLog
+from app.storage.locking import ClaimLock, InstanceLock, exclusive
 from app.storage.migrations import CURRENT_VERSIONS, STORAGE_VERSION, migrate
 from app.storage.paths import SafePaths, is_link_like, resolve_data_root, validate_id
 
 M = TypeVar("M", bound=Record)
 
-LAYOUT_DIRS = ("projects", "index", "audit", "settings", "backups", "trash", "locks")
+LAYOUT_DIRS = (
+    "projects",
+    "index",
+    "audit",
+    "settings",
+    "backups",
+    "trash",
+    "locks",
+    "jobs",
+    "control",
+)
+JOB_SUBDIRS = ("spool", "claims")
 MAX_BLOB_BYTES = 10 * 1024 * 1024
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # TBD-009
 MAX_PAGE_SIZE = 500
 _SEVERITY_RANK = {s.value: i for i, s in enumerate(Severity)}  # critical=0 ... informational=4
 _OWN_ROOT_ENTRIES = {InstanceLock.LOCK_NAME, InstanceLock.INFO_NAME, ".instance.lock.lock"}
+
+
+class KillSwitchState(StrictModel):
+    engaged: bool = False
+    changed_at: UtcDatetime | None = None
+    reason: str = ""
+    actor: str = "local-operator"
+
+
+class SpoolEntry(StrictModel):
+    scan_id: str
+    project_id: str
+    enqueued_at: UtcDatetime
 
 
 class StorageMeta(StrictModel):
@@ -102,7 +127,7 @@ SCANS = CollectionSpec(
     "scan_id",
     "scans",
     "scan.json",
-    ("module", "state", "profile"),
+    ("module", "state", "profile", "idempotency_key", "queued_at"),
     ("updated_at", "created_at", "queued_at"),
 )
 FINDINGS = CollectionSpec(
@@ -244,6 +269,8 @@ class StorageRepository:
                 self.read_storage_meta()
             for name in LAYOUT_DIRS:
                 ensure_dir(self.paths.path(name))
+            for name in JOB_SUBDIRS:
+                ensure_dir(self.paths.path("jobs", name))
             # We hold the instance lock, so every temp file belongs to a dead process.
             self.temp_files_removed = cleanup_temp_files(self.root)
             self._purge_trash()
@@ -902,6 +929,115 @@ class StorageRepository:
             offset=offset,
             limit=limit,
         )
+
+    # ------------------------------------------------------------------ job storage (Phase 04)
+
+    def scan_dir(self, project_id: str, scan_id: str) -> Path:
+        return self._child_unit(SCANS, project_id, scan_id)
+
+    def scan_work_dir(self, project_id: str, scan_id: str) -> Path:
+        """Per-scan working directory for tool output (created on demand, inside the data root)."""
+        directory = self.paths.path(
+            "projects", project_id, "scans", validate_id("scan", scan_id), "work"
+        )
+        try:
+            ensure_dir(directory)
+        except FileNotFoundError as exc:
+            raise RecordNotFoundError("Scan not found") from exc
+        return directory
+
+    def scan_events(self, project_id: str, scan_id: str) -> JsonlLog:
+        return JsonlLog(
+            self.scan_dir(project_id, scan_id),
+            "events",
+            rotate_bytes=self.settings.audit_rotate_bytes,
+            lock_timeout=self.settings.lock_timeout_seconds,
+            lock_root=self.root / "locks",
+        )
+
+    def scan_console(self, project_id: str, scan_id: str) -> TextLog:
+        return TextLog(
+            self.scan_dir(project_id, scan_id),
+            "console",
+            rotate_bytes=self.settings.audit_rotate_bytes,
+            lock_timeout=self.settings.lock_timeout_seconds,
+            lock_root=self.root / "locks",
+        )
+
+    def write_scan_output(self, project_id: str, scan_id: str, name: str, data: bytes) -> str:
+        """Atomically store a scan output file in the scan's work dir; returns 'work/<name>'."""
+        if len(data) > MAX_BLOB_BYTES:
+            raise RecordTooLargeError(f"Scan output exceeds {MAX_BLOB_BYTES} bytes")
+        self.scan_work_dir(project_id, scan_id)
+        path = self.paths.path("projects", project_id, "scans", scan_id, "work", name)
+        self._atomic_write(path, data)
+        return f"work/{name}"
+
+    def _spool_path(self, scan_id: str) -> Path:
+        return self.paths.path("jobs", "spool", f"{validate_id('scan', scan_id)}.json")
+
+    def spool_add(self, project_id: str, scan_id: str) -> SpoolEntry:
+        entry = SpoolEntry(
+            scan_id=validate_id("scan", scan_id),
+            project_id=validate_id("project", project_id),
+            enqueued_at=utc_now(),
+        )
+        self._atomic_write(self._spool_path(scan_id), dumps_record(entry.model_dump(mode="json")))
+        return entry
+
+    def spool_remove(self, scan_id: str) -> None:
+        self._spool_path(scan_id).unlink(missing_ok=True)
+
+    def spool_entries(self) -> list[SpoolEntry]:
+        """Valid spool entries, oldest first; corrupt ones are dropped (scan.json is canonical)."""
+        out: list[SpoolEntry] = []
+        directory = self.paths.path("jobs", "spool")
+        for entry in os.scandir(directory):
+            if entry.name.startswith(".") or not entry.name.endswith(".json") or entry.is_symlink():
+                continue
+            path = Path(entry.path)
+            try:
+                out.append(SpoolEntry.model_validate(self._read_raw(path)))
+            except (StorageError, ValidationError):
+                path.unlink(missing_ok=True)
+        return sorted(out, key=lambda e: (e.enqueued_at, e.scan_id))
+
+    def claim_lock(self, scan_id: str) -> ClaimLock:
+        return ClaimLock(self.paths.path("jobs", "claims", f"{validate_id('scan', scan_id)}.lock"))
+
+    def get_kill_switch(self) -> KillSwitchState:
+        path = self.paths.path("control", "kill_switch.json")
+        if not path.exists():
+            return KillSwitchState()
+        try:
+            return KillSwitchState.model_validate(self._read_raw(path))
+        except (StorageError, ValidationError):
+            # Fail safe: an unreadable kill-switch file is treated as ENGAGED.
+            return KillSwitchState(
+                engaged=True, reason="kill_switch.json is unreadable; treated as engaged"
+            )
+
+    def set_kill_switch(
+        self, engaged: bool, reason: str, actor: str = "local-operator"
+    ) -> KillSwitchState:
+        state = KillSwitchState(
+            engaged=engaged, changed_at=utc_now(), reason=reason[:500], actor=actor
+        )
+        path = self.paths.path("control", "kill_switch.json")
+        with self._lock(path):
+            self._write_model(path, state)
+        return state
+
+    def all_scan_summaries(self) -> list[tuple[str, str, dict[str, Any]]]:
+        """(project_id, scan_id, summary) for every readable scan in every project."""
+        rows: list[tuple[str, str, dict[str, Any]]] = []
+        for pid in sorted(self.project_summaries()[0]):
+            try:
+                entries, _ = self.summaries("scan", pid)
+            except StorageError:
+                continue
+            rows.extend((pid, sid, e) for sid, e in entries.items())
+        return rows
 
     # ------------------------------------------------------------------ cross-project reads
 

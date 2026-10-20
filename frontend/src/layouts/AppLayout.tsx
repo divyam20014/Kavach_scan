@@ -2,6 +2,7 @@ import { AppShell, Burger, Divider, Group, NavLink, ScrollArea, Stack, Text, Tit
 import { useDisclosure } from "@mantine/hooks";
 import { NavLink as RouterNavLink, Outlet, useLocation } from "react-router-dom";
 import { useVersion } from "../api/hooks";
+import { KillSwitchControl } from "../components/JobControls";
 
 const NAV = [
   { to: "/", label: "Dashboard", end: true },
@@ -16,7 +17,7 @@ const NAV = [
 
 // Listed honestly as unavailable instead of rendering placeholder pages or controls.
 const NOT_YET = [
-  { label: "Scan jobs & scanners", phase: "Phases 04–07" },
+  { label: "Scanners (web, surface, API)", phase: "Phases 05–07" },
   { label: "API specifications", phase: "Phase 07" },
   { label: "Imports", phase: "Phase 08" },
   { label: "Reports", phase: "Phase 10" },
@@ -52,9 +53,12 @@ export function AppLayout() {
               VAPT Workbench
             </Title>
           </Group>
-          <Text size="xs" c="dimmed">
-            Local only · {version.data ? `v${version.data.version}` : "…"}
-          </Text>
+          <Group gap="md">
+            <KillSwitchControl />
+            <Text size="xs" c="dimmed">
+              Local only · {version.data ? `v${version.data.version}` : "…"}
+            </Text>
+          </Group>
         </Group>
       </AppShell.Header>
 
@@ -87,7 +91,7 @@ export function AppLayout() {
         </AppShell.Section>
         <AppShell.Section>
           <Text size="xs" c="dimmed" px="sm">
-            No scans can run in this build.
+            Job system ready; scanners arrive in Phases 05–07.
           </Text>
         </AppShell.Section>
       </AppShell.Navbar>

@@ -56,7 +56,8 @@ try {
   await waitReady();
   browser = await chromium.launch({ channel: "msedge", headless: true });
   const page = await browser.newPage();
-  page.on("console", (m) => m.type() === "error" && consoleErrors.push(m.text()));
+  // Connection-refused errors are expected while the script deliberately restarts the backend.
+  page.on("console", (m) => m.type() === "error" && !/ERR_CONNECTION_REFUSED/.test(m.text()) && consoleErrors.push(m.text()));
   page.on("pageerror", (e) => consoleErrors.push(String(e)));
 
   await page.goto(BASE + "/");

@@ -22,7 +22,8 @@ const assert = (cond, msg) => {
 function startBackend() {
   return spawn("poetry", ["run", "python", "-m", "app"], {
     cwd: BACKEND,
-    env: { ...process.env, VAPT_DATA_DIR: dataDir, VAPT_PORT: String(PORT) },
+    // Self-test jobs (network-free) are enabled ONLY for this verification run.
+    env: { ...process.env, VAPT_DATA_DIR: dataDir, VAPT_PORT: String(PORT), VAPT_ENABLE_SELFTEST_JOBS: "1" },
     shell: process.platform === "win32",
     stdio: "ignore",
   });
@@ -299,9 +300,81 @@ try {
   await card.getByText("✓ Would be allowed").waitFor();
   ok("scope policy card: gate status, suffix-confusion and metadata blocked, in-scope allowed (dry run)");
 
+
+  // 9. Phase 04: start a self-test job through the UI and watch live progress ---------------
+  await page.goto(`${BASE}/projects/${scoped.project_id}`);
+  const startCard = page.getByRole("region", { name: "Start a job" });
+  await startCard.getByRole("radio", { name: /self-test/ }).check();
+  await startCard.getByRole("textbox", { name: /targets/i }).fill("https://app.example.com/");
+  await startCard.getByRole("button", { name: /Review & confirm/ }).click();
+  const confirmDlg = page.getByRole("dialog");
+  assert(await confirmDlg.getByRole("button", { name: "Start job" }).isDisabled(), "start disabled until confirmed");
+  await confirmDlg.getByRole("checkbox", { name: /I confirm/ }).check();
+  await confirmDlg.getByRole("button", { name: "Start job" }).click();
+  await page.waitForURL(/\/scans\/scn_/);
+  const jobUrl = page.url();
+  const jobId = jobUrl.split("/").pop();
+  await page.getByText("Completed", { exact: true }).waitFor({ timeout: 30000 });
+  await page.getByRole("row", { name: /Steps done 5/ }).waitFor();
+  await page.getByRole("table", { name: "Job events" }).getByText(/stage: report/).waitFor();
+  await page.getByLabel("Console log output").getByText(/job completed/).waitFor();
+  const persisted = (await api("GET", `/api/projects/${scoped.project_id}/scans/${jobId}`)).json.scan;
+  assert(persisted.state === "completed" && persisted.progress.percent === 100, "progress persisted on disk");
+  ok("self-test job started via UI confirmation; live progress, counters, events and console shown; state persisted");
+
+  // 10. cancel a running job from its page ----------------------------------------------------
+  const long = (await api("POST", `/api/projects/${scoped.project_id}/scans`, {
+    module: "self_test", targets: ["https://app.example.com/"], confirmed: true, parameters: { steps: 50, step_seconds: 0.5 } })).json;
+  await page.goto(`${BASE}/projects/${scoped.project_id}/scans/${long.scan_id}`);
+  await page.getByText("Running", { exact: true }).waitFor({ timeout: 20000 });
+  await page.getByRole("button", { name: "Cancel job" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Cancel job" }).click();
+  await page.getByText("Cancelled", { exact: true }).waitFor({ timeout: 20000 });
+  const cancelled = (await api("GET", `/api/projects/${scoped.project_id}/scans/${long.scan_id}`)).json.scan;
+  const doneSteps = cancelled.progress.counters.steps_done ?? 0;
+  assert(cancelled.state === "cancelled" && doneSteps < 50, `stopped early (state=${cancelled.state}, steps=${doneSteps})`);
+  ok(`running job cancelled from the UI after ${doneSteps}/50 steps`);
+
+  // 11. crash during a running job -> restart -> interrupted, never replayed --------------------
+  const crashJob = (await api("POST", `/api/projects/${scoped.project_id}/scans`, {
+    module: "self_test", targets: ["https://app.example.com/"], confirmed: true, parameters: { steps: 50, step_seconds: 0.5 } })).json;
+  for (let i = 0; i < 40; i++) {
+    const st = (await api("GET", `/api/projects/${scoped.project_id}/scans/${crashJob.scan_id}`)).json.scan.state;
+    if (st === "running") break;
+    await new Promise((r) => setTimeout(r, 250));
+  }
+  await stop(backend); // taskkill /T /F: a hard crash, no graceful shutdown
+  backend = startBackend();
+  await waitReady();
+  await page.goto(`${BASE}/projects/${scoped.project_id}/scans/${crashJob.scan_id}`);
+  await page.getByText("Interrupted", { exact: true }).waitFor();
+  await page.getByText(/^Result: .*NOT replayed automatically/).waitFor();
+  await page.getByRole("button", { name: "Retry as new job" }).waitFor();
+  await page.goto(jobUrl);
+  await page.getByText("Completed", { exact: true }).waitFor();
+  await new Promise((r) => setTimeout(r, 1500));
+  const after = (await api("GET", `/api/projects/${scoped.project_id}/scans/${crashJob.scan_id}`)).json.scan;
+  assert(after.state === "interrupted", "interrupted job was not re-run after restart");
+  ok("hard crash mid-job: after restart the job is Interrupted (not replayed); completed job persisted");
+
+  // 12. kill switch from the header -------------------------------------------------------------
+  await page.getByRole("button", { name: "Kill switch…" }).click();
+  const ks = page.getByRole("dialog");
+  await ks.getByRole("textbox", { name: /reason/i }).fill("verification drill");
+  await ks.getByRole("button", { name: "Engage kill switch" }).click();
+  await page.getByText("Kill switch engaged", { exact: true }).waitFor();
+  const refused = await api("POST", `/api/projects/${scoped.project_id}/scans`, {
+    module: "self_test", targets: ["https://app.example.com/"], confirmed: true });
+  assert(refused.status === 409 && refused.json.error.code === "kill_switch_engaged", "start refused while engaged");
+  await page.getByRole("button", { name: "Release kill switch…" }).click();
+  await page.getByRole("dialog").getByRole("textbox", { name: /reason/i }).fill("drill over");
+  await page.getByRole("dialog").getByRole("button", { name: "Release" }).click();
+  await page.getByRole("button", { name: "Kill switch…" }).waitFor();
+  ok("kill switch engaged from the header blocks new jobs (409) and can be released");
+
   if (consoleErrors.length) throw new Error("console errors:\n" + consoleErrors.join("\n"));
   ok("no unexpected browser console errors or CSP violations");
-  console.log(`\nPhase 02 browser verification: ${passed} checks passed`);
+  console.log(`\nBrowser verification: ${passed} checks passed`);
 } catch (err) {
   console.error("\nVERIFICATION FAILED:", err.message);
   process.exitCode = 1;

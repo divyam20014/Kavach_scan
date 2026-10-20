@@ -89,6 +89,7 @@ build/
 # ---- Node / frontend ----
 node_modules/
 /frontend/dist/
+*.tsbuildinfo
 .vite/
 /coverage/
 /frontend/coverage/

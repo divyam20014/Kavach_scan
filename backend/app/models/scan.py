@@ -1,4 +1,4 @@
-"""Scan job record. State transitions are enforced by the job manager (Phase 04)."""
+"""Scan job record. State transitions are enforced by app/jobs/states.py (Phase 04)."""
 
 from __future__ import annotations
 
@@ -58,3 +58,14 @@ class ScanJob(Record):
     tool_versions: dict[Name, ShortText] = Field(default_factory=dict, max_length=50)
     warnings: list[ShortText] = Field(default_factory=list, max_length=500)
     errors: list[ShortText] = Field(default_factory=list, max_length=500)
+    correlation_id: ShortText | None = (
+        None  # carried from the start request into events/subprocesses
+    )
+    authorized_targets: list[Locator] = Field(
+        default_factory=list, max_length=1000
+    )  # canonical, scope-checked
+    output_refs: list[ShortText] = Field(
+        default_factory=list, max_length=200
+    )  # relative to the scan dir
+    retry_of: ScanId | None = None
+    final_reason: ShortText = ""  # human explanation of the terminal state

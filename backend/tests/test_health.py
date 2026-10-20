@@ -31,6 +31,16 @@ SYSTEM_ROUTES = {
     "/api/projects/{project_id}/scope/check",
     "/api/projects/{project_id}/scope/classify-host",
     "/api/projects/{project_id}/internal-override",
+    # Phase 04
+    "/api/jobs/modules",
+    "/api/jobs/status",
+    "/api/kill-switch",
+    "/api/projects/{project_id}/scans",
+    "/api/projects/{project_id}/scans/{scan_id}",
+    "/api/projects/{project_id}/scans/{scan_id}/events",
+    "/api/projects/{project_id}/scans/{scan_id}/console",
+    "/api/projects/{project_id}/scans/{scan_id}/cancel",
+    "/api/projects/{project_id}/scans/{scan_id}/retry",
 }
 
 # No lifespan: these endpoints must work without storage.
@@ -76,18 +86,28 @@ def test_health_endpoints_reject_writes() -> None:
     assert resp.json()["error"]["code"] == "method_not_allowed"
 
 
-def test_no_route_can_create_or_start_a_scan() -> None:
+SCAN_WRITE_ROUTES = {
+    ("/api/projects/{project_id}/scans", "post"),
+    ("/api/projects/{project_id}/scans/{scan_id}/cancel", "post"),
+    ("/api/projects/{project_id}/scans/{scan_id}/retry", "post"),
+}
+
+
+def test_scans_can_only_be_started_through_the_gated_job_routes() -> None:
     paths = create_app().openapi()["paths"]
     for path, ops in paths.items():
         if "scan" in path:
-            assert set(ops) <= {"get"}, (
-                f"{path} exposes {set(ops)}; scans cannot start before Phase 04"
+            writes = {(path, op) for op in ops if op != "get"}
+            assert writes <= SCAN_WRITE_ROUTES, (
+                f"unexpected scan write route(s): {writes - SCAN_WRITE_ROUTES}"
             )
+    start = paths["/api/projects/{project_id}/scans"]["post"]
+    schema = start["requestBody"]["content"]["application/json"]["schema"]
+    assert schema["$ref"].endswith("StartScanRequest")
 
 
 def test_unknown_routes_are_404_not_fake_200() -> None:
     for method, path in [
-        ("POST", "/api/projects/x/scans"),
         ("POST", "/api/projects/x/imports"),
         ("POST", "/api/reports"),
         ("GET", "/api/integrations"),

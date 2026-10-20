@@ -23,6 +23,29 @@ Run from `backend/` (see [DEVELOPMENT.md](DEVELOPMENT.md) for setup):
 
 Frontend (Phase 02+, planned): `npm test` (Vitest), `npm run lint` (ESLint), `npm run typecheck` (`tsc --noEmit`), `npm run build`.
 
+### Results recorded at Phase 04 verification (2026-10-21)
+
+| Command | Result |
+|---|---|
+| `poetry run pytest` | **1076 passed, 1 skipped** |
+| `poetry run pytest tests/test_jobs_verification.py` ×3 | 12/12 each run: 10 concurrent same-key submits → 1 job; cancel inside the claim window → cancelled; restart during validating / with a persisted cancel flag; corrupt spool entry and corrupt scan record do not stop dispatch; cancel / kill switch / shutdown each kill the child **and grandchild** process; 65 MB console log tailed with < 20 MB peak memory; event pages byte-bounded (4 MiB); secrets written raw into logs are redacted by the tail endpoints; kill switch prevents dispatch of jobs queued before it |
+| `ruff check` / `ruff format --check` / `mypy` | clean / formatted / no issues in 57 files |
+| `npm test` / `typecheck` / `lint` / `build` / `audit` | 40 passed / pass / pass / built / 0 vulnerabilities |
+| `npm run e2e:verify` / `npm run e2e` | 17/17 / 10/10 |
+
+### Results recorded at Phase 04 (2026-10-20)
+
+| Command | Result |
+|---|---|
+| `cd backend && poetry run pytest` | **1064 passed, 1 skipped** (adds `test_jobs.py`, `test_process.py`, `test_api_jobs.py`) |
+| `poetry run ruff check .` / `ruff format --check .` / `mypy` | clean / 90 files formatted / no issues in 57 files |
+| `cd frontend && npm test` | **40 passed** (2 consecutive runs; per-test timeout 15 s) |
+| `npm run typecheck` / `lint` / `build` / `npm audit` | pass / pass / built / 0 vulnerabilities |
+| `npm run e2e:verify` | **17/17**: adds self-test job started through the UI confirmation with live progress; cancel from the job page; **hard crash (process-tree kill) mid-job → restart → job shown Interrupted, not replayed**; kill switch from the header blocks new jobs |
+| `npm run e2e` | 10/10 |
+
+Process-tree kill is verified for real on Windows: a child spawns a grandchild; on timeout and on cancellation both are gone afterwards (`tests/test_process.py`).
+
 ### Results recorded at Phase 03 verification (2026-10-20)
 
 | Command | Result |

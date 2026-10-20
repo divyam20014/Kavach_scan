@@ -2,6 +2,12 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api, request } from "./client";
 import type {
   Asset,
+  EventPage,
+  KillSwitchState,
+  ManagerStatus,
+  ModuleAvailability,
+  ScanDetail,
+  StartScanRequest,
   InternalOverrideRequest,
   ScopeCheckResponse,
   ScopePolicyView,
@@ -146,6 +152,79 @@ export function useRemoveOverride(projectId: string) {
   return useMutation({
     mutationFn: (expectedRevision: number) =>
       api.delete<Project>(`/api/projects/${encodeURIComponent(projectId)}/internal-override`, { expected_revision: expectedRevision }),
+    onSuccess: invalidate,
+  });
+}
+
+// ---------------------------------------------------------------- jobs (Phase 04)
+
+const enc = encodeURIComponent;
+
+export function useModules() {
+  return useQuery({ queryKey: ["modules"], queryFn: () => api.get<ModuleAvailability[]>("/api/jobs/modules") });
+}
+
+export function useJobStatus() {
+  return useQuery({ queryKey: ["job-status"], queryFn: () => api.get<ManagerStatus>("/api/jobs/status"), refetchInterval: 5000 });
+}
+
+export function useKillSwitch() {
+  return useQuery({ queryKey: ["kill-switch"], queryFn: () => api.get<KillSwitchState>("/api/kill-switch"), refetchInterval: 5000 });
+}
+
+export function useSetKillSwitch() {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: (body: { engaged: boolean; reason: string }) => request<KillSwitchState>("PUT", "/api/kill-switch", { body }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useStartScan(projectId: string) {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: (body: StartScanRequest) => api.post<ScanJob>(`/api/projects/${enc(projectId)}/scans`, body),
+    onSuccess: invalidate,
+  });
+}
+
+/** Polls every 1.5 s while the job is not in a terminal state. */
+export function useScanDetail(projectId: string, scanId: string) {
+  return useQuery({
+    queryKey: ["scan", projectId, scanId],
+    queryFn: () => api.get<ScanDetail>(`/api/projects/${enc(projectId)}/scans/${enc(scanId)}`),
+    refetchInterval: (q) => (q.state.data && q.state.data.terminal ? false : 1500),
+  });
+}
+
+export function useScanEvents(projectId: string, scanId: string, live: boolean) {
+  return useQuery({
+    queryKey: ["scan-events", projectId, scanId],
+    queryFn: () => api.get<EventPage>(`/api/projects/${enc(projectId)}/scans/${enc(scanId)}/events`, { limit: 200 }),
+    refetchInterval: live ? 1500 : false,
+  });
+}
+
+export function useScanConsole(projectId: string, scanId: string, live: boolean) {
+  return useQuery({
+    queryKey: ["scan-console", projectId, scanId],
+    queryFn: () => api.get<{ lines: string[] }>(`/api/projects/${enc(projectId)}/scans/${enc(scanId)}/console`, { lines: 300 }),
+    refetchInterval: live ? 1500 : false,
+  });
+}
+
+export function useCancelScan(projectId: string, scanId: string) {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: () => api.post<ScanJob>(`/api/projects/${enc(projectId)}/scans/${enc(scanId)}/cancel`),
+    onSuccess: invalidate,
+  });
+}
+
+export function useRetryScan(projectId: string, scanId: string) {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: () => api.post<ScanJob>(`/api/projects/${enc(projectId)}/scans/${enc(scanId)}/retry`, { confirmed: true }),
     onSuccess: invalidate,
   });
 }

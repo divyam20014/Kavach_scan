@@ -44,6 +44,9 @@ Exit codes: 0 ok · 1 not ready (diagnose) · 2 configuration error · 3 storage
 | `VAPT_MAX_RECORD_BYTES` | `5242880` | Largest JSON record. |
 | `VAPT_MAX_REQUEST_BYTES` | `1048576` | Largest API request body (`python -m app` path). |
 | `VAPT_DISK_WARNING_BYTES` | `2147483648` | Low-disk warning threshold. |
+| `VAPT_MAX_ACTIVE_JOBS` | `1` | Concurrent jobs (hard cap 4). |
+| `VAPT_MAX_QUEUED_JOBS` | `20` | Queue length before new starts are refused. |
+| `VAPT_ENABLE_SELFTEST_JOBS` | off | Exposes the network-free job self-test module (development/testing only). |
 
 Any other `VAPT_*` variable is rejected as a probable typo (exit code 2). Only one app instance may use a data directory at a time.
 

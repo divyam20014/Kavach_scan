@@ -164,3 +164,30 @@ class InstanceLock:
             return "held"
         lock.release(force=True)
         return "free"
+
+
+class ClaimLock:
+    """Non-blocking exclusive claim on one job, held by the worker for the whole run.
+
+    A job whose record says it is active but whose claim lock can be acquired has no
+    live worker: it is stale (the process died or the app stopped).
+    """
+
+    def __init__(self, lock_path: Path) -> None:
+        self.lock_path = lock_path
+        self._lock = _new_lock(lock_path, timeout=0)
+
+    def try_acquire(self) -> bool:
+        try:
+            self._lock.acquire(timeout=0)
+        except Timeout:
+            return False
+        return True
+
+    @property
+    def held(self) -> bool:
+        return self._lock.is_locked
+
+    def release(self) -> None:
+        if self._lock.is_locked:
+            self._lock.release(force=True)

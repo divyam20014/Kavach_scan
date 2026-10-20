@@ -7,6 +7,7 @@ import { useAudit, useDeleteProject, useDeletionImpact, useProject, useUpdatePro
 import type { ProjectOverview, ScopeDefinition } from "../api/types";
 import { PageHeader } from "../components/PageHeader";
 import { ScopePolicyCard } from "../components/ScopePolicyCard";
+import { StartJobCard } from "../components/JobControls";
 import { ErrorAlert, Loading, QueryState } from "../components/QueryState";
 import { AuthorizationLabel, ProjectStatusLabel, ScanStateLabel } from "../components/StatusLabel";
 import { formatDateTime, humanize } from "../lib/format";
@@ -65,8 +66,8 @@ function ProjectDetail({ overview }: { overview: ProjectOverview }) {
           </Badge>
         </Group>
 
-        <Alert role="note" color="gray" title="Scanning is not available in this build" variant="light">
-          The scope safety gate below is enforced, but scans also need the job manager (Phase 04) and scanners (Phases 05–07).
+        <Alert role="note" color="gray" title="Scanners are not available yet" variant="light">
+          The job system and scope safety gate are ready. The web, attack-surface and API scanners arrive in Phases 05–07.
         </Alert>
 
         <SimpleGrid cols={{ base: 2, sm: 3, md: 6 }}>
@@ -152,6 +153,8 @@ function ProjectDetail({ overview }: { overview: ProjectOverview }) {
         </SimpleGrid>
 
         <ScopePolicyCard project={project} />
+
+        <StartJobCard project={project} />
 
         <RecentChanges projectId={project.project_id} />
       </Stack>

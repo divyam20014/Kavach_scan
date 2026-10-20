@@ -1,14 +1,14 @@
 # Implementation Status — VAPT Workbench
 
-> Last updated: 2026-10-20 (Phase 03 verification). Statuses use only `Not started` / `Partial` / `Implemented` / `Blocked`. `Implemented` requires a code reference **and** a passing test that was actually run. Design-only documentation does not count as implementation.
+> Last updated: 2026-10-21 (Phase 04 verification). Statuses use only `Not started` / `Partial` / `Implemented` / `Blocked`. `Implemented` requires a code reference **and** a passing test that was actually run. Design-only documentation does not count as implementation.
 
 ## Current baseline (observed 2026-10-20, Windows 11, Python 3.13.5)
 
 | Check | Result |
 |---|---|
-| Backend tests | `poetry run pytest` → **965 passed, 1 skipped** (POSIX permission bits; N/A on Windows) |
-| Frontend | `npm test` → **33 passed**; `npm run typecheck`, `npm run lint`, `npm run build` pass; `npm audit` 0 vulnerabilities |
-| Real-browser E2E | `npm run e2e` → **10/10**; `npm run e2e:verify` → **13/13** (KPIs equal captured network response; tampered response changes UI; offline + retry; backend 422; edit conflict; delete confirmation; keyboard-only) |
+| Backend tests | `poetry run pytest` → **1076 passed, 1 skipped** (POSIX permission bits; N/A on Windows) |
+| Frontend | `npm test` → **40 passed**; `npm run typecheck`, `npm run lint`, `npm run build` pass; `npm audit` 0 vulnerabilities |
+| Real-browser E2E | `npm run e2e` → **10/10**; `npm run e2e:verify` → **17/17** (KPIs equal captured network response; tampered response changes UI; offline + retry; backend 422; edit conflict; delete confirmation; keyboard-only) |
 | Lint / format / types | `ruff check .` passed · `ruff format --check .` 58 files formatted · `mypy` (strict) no issues in 37 files |
 | Database / broker dependencies | **None.** 30 locked packages; static + runtime guards in `tests/test_static_guards.py`, `tests/test_startup.py::test_importing_app_loads_no_database_or_broker_modules` |
 | Scanning / outbound network / subprocess code in `backend/app/` | **None.** Enforced by `tests/test_static_guards.py::test_no_network_or_subprocess_modules_yet` |
@@ -66,7 +66,14 @@ No option is out of scope.
 | **M3** Policy hook for all future HTTP/DNS/connect/subprocess entrypoints (`ScopeGuard`, `GuardedRequester`, IP pinning, kill-switch + authorization re-check per action, decision sink) | §4.2 | **Implemented** (real resolver/transport arrive in Phase 05 and must use it) | 03 | `app/scope/guard.py` | `tests/test_scope_guard.py` (incl. real local fixture server: zero requests for blocked targets) |
 | **M3** Internal-target override (explicit, narrow, time-bound, attested, audited) | §4.2 | **Implemented** | 03 | `app/services/projects.py`, `app/api/scope.py` | `tests/test_api_scope.py` |
 | **M3** Scope preview API + policy view + dry-run check + UI | §6 M3 | **Implemented** | 03 | `app/api/scope.py`, `app/services/scope_preview.py`, `frontend/src/components/ScopePolicyCard.tsx` | `test_api_scope.py`, `frontend/src/test/scope.test.tsx`, E2E check 12 |
-| **M4** Job manager, logs, cancellation, kill switch | §2, §6 M4 | Not started (ScanJob contract + storage exist) | 04 | `backend/app/jobs/` | — |
+| **M4** State machine (10 states, enforced transitions) | §6 M4 | **Implemented** | 04 | `app/jobs/states.py` | `tests/test_jobs.py` |
+| **M4** Filesystem spool, claim locks (exactly-once), bounded dispatcher/workers, queue cap, idempotent start | §2, §6 M4 | **Implemented** | 04 | `app/jobs/manager.py`, `app/storage/repository.py` | `tests/test_jobs.py`, `tests/test_api_jobs.py` |
+| **M4** Job context: rate budget, per-target request budget, concurrency cap, max duration, authorization re-check, guard refresh (TBD-046) | §4.3, §6 M4 | **Implemented** | 04 | `app/jobs/context.py` | `tests/test_jobs.py` |
+| **M4** Subprocess adapter (argv only, allowlist, caps, timeout/cancel kill whole tree, correlation ID) | §4.3, M11 | **Implemented** | 04 | `app/integrations/process.py` | `tests/test_process.py` |
+| **M4** Redacted JSONL events + human console log, correlation ID across request/job/subprocess | §6 M4 | **Implemented** | 04 | `app/jobs/context.py`, `app/storage/jsonl.py` | `tests/test_jobs.py::test_event_and_console_logs_are_redacted` |
+| **M4** Cancellation, global kill switch (persisted, fail-safe), deterministic restart recovery | §6 M4, M12 | **Implemented** | 04 | `app/jobs/manager.py` | `tests/test_jobs.py`, E2E checks 14–16 |
+| **M4** UI: scan history, job detail (live), start-job confirmation, cancel/retry, kill switch | §6 M13 | **Implemented** | 04 | `frontend/src/pages/ScanDetailPage.tsx`, `components/JobControls.tsx` | `frontend/src/test/jobs.test.tsx`, E2E checks 13–17 |
+| **M4** Real scanner runners (web/surface/API) | §6 M5–M7 | Not started (shown as unavailable with reason) | 05–07 | — | — |
 | Shared HTTP / DNS / subprocess adapters | §4.3 | Not started | 05 | `backend/app/integrations/` | — |
 | **M5** Web scanner (Option A) | §6 M5 | Not started | 05 | — | — |
 | **M6** Attack surface mapper (Option B) | §6 M6 | Not started | 06 | — | — |
@@ -89,4 +96,5 @@ No option is out of scope.
 | 01 | Verified | **PASS** (2026-10-20) | Verification fixed 3 defects: (1) project-delete race could resurrect folders / return 500 → central lock dir + 404 mapping + lexical containment; (2) junctions named like project IDs could crash the integrity check → skipped/reported; (3) log redaction missed dict/JSON/mid-line secrets → patterns extended. Tests: `tests/test_verification_phase01.py` (+78) |
 | 02 | Verified | **PASS** (2026-10-20) | Verification fixed: after delete the UI stuck on a 404 error screen instead of returning to Projects (query invalidation unmounted the dialog); added skip link; test-only build break. | UI shell, dashboard, projects, wizard, drill-down views, audit/settings pages; backend project/dashboard/scope-preview APIs; SPA served by backend with security headers |
 | 03 | Verified | **PASS** (2026-10-20) | Focused SSRF suite vs two real local servers (60 tests, mutation-checked). Verification cleanup: stub resolver raises RuntimeError. Earlier in-phase fixes: | Scope/authorization engine, policy hook, IP policy (TBD-037 decided), override endpoint, preview-hash gate, policy UI. Property tests found and fixed: NAT64-local and 6to4 gaps, metadata-in-6to4 precedence, connect-path bug |
-| 04 | Not started | — | Awaiting explicit prompt |
+| 04 | Verified | **PASS** (2026-10-21) | Verification fixed 2 races (concurrent same-key submits created 10 jobs → serialized; cancel during the claim window was ignored → worker honours persisted flag, cancel waits for registration), byte-bounded event pages, re-redaction of tailed logs, `ctx.last_process`. Tests: `tests/test_jobs_verification.py`. In-phase fixes: Job system end to end with a network-free self-test module (enabled only by `VAPT_ENABLE_SELFTEST_JOBS=1`). In-phase fixes: Windows share-delete reads (atomic replace vs concurrent readers), authorization-before-duration ordering, parameter-key validation (was 500), final-event refresh in UI, duplicate accessible name |
+| 05 | Not started | — | Awaiting explicit prompt |
