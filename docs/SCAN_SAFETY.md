@@ -1,6 +1,8 @@
 # Scan Safety Policy — VAPT Workbench
 
-> **Status:** Phase 00 policy baseline (2026-10-20). **No scanning capability exists in the codebase.** There is no HTTP client, DNS resolver, socket, or subprocess usage in `backend/app/`, and `/api/version` reports `scanning_available: false`. This document is the binding policy that Phases 03–07 must implement and test. Default values marked *(TBD-0xx)* are proposals awaiting owner confirmation.
+> **Status:** §2–5 **implemented in Phase 03** (`backend/app/scope/`); §6–8 are enforced from Phase 04/05 on. **No scanning capability exists yet**: there is still no HTTP client, DNS resolver or subprocess code; Phase 05 adapters must call `ScopeGuard`.
+>
+> Original baseline note: There is no HTTP client, DNS resolver, socket, or subprocess usage in `backend/app/`, and `/api/version` reports `scanning_available: false`. This document is the binding policy that Phases 03–07 must implement and test. Default values marked *(TBD-0xx)* are proposals awaiting owner confirmation.
 
 ## 1. Principles
 
@@ -79,7 +81,7 @@ Blocked by default. They are reachable only through an explicit project-level **
 | `192.0.2.0/24`, `198.51.100.0/24`, `203.0.113.0/24`, `2001:db8::/32` | Documentation |
 | `::ffff:0:0/96`, `64:ff9b::/96`, `2002::/16` | IPv4-mapped / NAT64 / 6to4. The **embedded IPv4 address is extracted and re-checked** |
 
-Phase 03 implements this list in code and tests each row. The UI shows the list (Phase 03 scope preview).
+**Implemented:** `app/scope/ip_policy.py` (`BLOCKED_RANGES`; TBD-037 decided). Property testing added `64:ff9b:1::/48`, `2002::/16` (whole), `3fff::/20` and `5f00::/16`. A non-overridable metadata match always wins over an overridable prefix (e.g. metadata embedded in 6to4). The UI shows the list in the wizard preview and on each project's scope policy card.
 
 ## 6. Conservative defaults *(TBD-011, TBD-012, TBD-017 — proposals)*
 

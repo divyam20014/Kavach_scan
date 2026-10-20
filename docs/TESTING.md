@@ -23,6 +23,30 @@ Run from `backend/` (see [DEVELOPMENT.md](DEVELOPMENT.md) for setup):
 
 Frontend (Phase 02+, planned): `npm test` (Vitest), `npm run lint` (ESLint), `npm run typecheck` (`tsc --noEmit`), `npm run build`.
 
+### Results recorded at Phase 03 verification (2026-10-20)
+
+| Command | Result |
+|---|---|
+| `poetry run pytest` | **965 passed, 1 skipped** |
+| `poetry run pytest tests/test_scope_ssrf_suite.py` | **60 passed**: 38 redirect attacks + 8 direct attacks against two real loopback servers (LAB, reachable only via an audited override; VICTIM, must never be reached). VICTIM received **0 requests**. Covers loopback/private/link-local/metadata redirects (incl. IPv4-mapped, NAT64, decimal/hex/octal/short hosts), user-info, protocol-relative, backslash, suffix confusion, IDN look-alike, fullwidth dot, zone IDs, non-HTTP schemes, encoded/double-encoded/semicolon traversal, port and path exclusions, CRLF/whitespace smuggling, DNS rebinding (between requests and inside a redirect chain), mixed DNS answers, expired/absent/unattested authorization, expired override, discovered subdomains |
+| Mutation check: `validate_redirect` forced to approve | **12 attacks followed → suite fails**; the other 26 were still stopped by independent layers (canonicalization, IP policy, scheme). Restored code: 60/60 |
+| `ruff` / `ruff format --check` / `mypy` | clean / 78 files formatted / no issues in 49 files |
+| `npm test` / `typecheck` / `lint` / `build` / `audit` | 33 passed / pass / pass / built / 0 vulnerabilities |
+| `npm run e2e:verify` / `npm run e2e` | 13/13 / 10/10 |
+
+### Results recorded at Phase 03 (2026-10-20)
+
+| Command | Result |
+|---|---|
+| `cd backend && poetry run pytest` | **905 passed, 1 skipped** (adds ~270 scope tests: canonical, IP policy, engine, guard with a real local fixture server, Hypothesis properties, API) |
+| `poetry run ruff check .` / `mypy` | clean / no issues in 49 files |
+| `cd frontend && npm test` | **33 passed** (adds scope policy card, URL checker, override form) |
+| `npm run typecheck` / `lint` / `build` | pass |
+| `npm run e2e:verify` | **13/13** (adds: suffix-confusion host and metadata IP blocked, in-scope URL allowed via the real policy card) |
+| `npm run e2e` | 10/10 |
+
+Hypothesis found 4 real defects during this phase (all fixed, with regression tests): local-use NAT64 not blocked; 6to4 not blocked; metadata embedded in 6to4 was overridable; `authorize_connect` wrongly applied URL path rules to raw connections.
+
 ### Results recorded at Phase 02 verification (2026-10-20)
 
 | Command | Result |

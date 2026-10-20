@@ -1,14 +1,14 @@
 # Implementation Status — VAPT Workbench
 
-> Last updated: 2026-10-20 (Phase 02 verification). Statuses use only `Not started` / `Partial` / `Implemented` / `Blocked`. `Implemented` requires a code reference **and** a passing test that was actually run. Design-only documentation does not count as implementation.
+> Last updated: 2026-10-20 (Phase 03 verification). Statuses use only `Not started` / `Partial` / `Implemented` / `Blocked`. `Implemented` requires a code reference **and** a passing test that was actually run. Design-only documentation does not count as implementation.
 
 ## Current baseline (observed 2026-10-20, Windows 11, Python 3.13.5)
 
 | Check | Result |
 |---|---|
-| Backend tests | `poetry run pytest` → **608 passed, 1 skipped** (POSIX permission bits; N/A on Windows) |
-| Frontend | `npm test` → **28 passed**; `npm run typecheck`, `npm run lint`, `npm run build` pass; `npm audit` 0 vulnerabilities |
-| Real-browser E2E | `npm run e2e` → **10/10**; `npm run e2e:verify` → **12/12** (KPIs equal captured network response; tampered response changes UI; offline + retry; backend 422; edit conflict; delete confirmation; keyboard-only) |
+| Backend tests | `poetry run pytest` → **965 passed, 1 skipped** (POSIX permission bits; N/A on Windows) |
+| Frontend | `npm test` → **33 passed**; `npm run typecheck`, `npm run lint`, `npm run build` pass; `npm audit` 0 vulnerabilities |
+| Real-browser E2E | `npm run e2e` → **10/10**; `npm run e2e:verify` → **13/13** (KPIs equal captured network response; tampered response changes UI; offline + retry; backend 422; edit conflict; delete confirmation; keyboard-only) |
 | Lint / format / types | `ruff check .` passed · `ruff format --check .` 58 files formatted · `mypy` (strict) no issues in 37 files |
 | Database / broker dependencies | **None.** 30 locked packages; static + runtime guards in `tests/test_static_guards.py`, `tests/test_startup.py::test_importing_app_loads_no_database_or_broker_modules` |
 | Scanning / outbound network / subprocess code in `backend/app/` | **None.** Enforced by `tests/test_static_guards.py::test_no_network_or_subprocess_modules_yet` |
@@ -60,7 +60,12 @@ No option is out of scope.
 | **M1** Project create/edit wizard with scope preview + attestation | §6 M1, §4.1 | **Implemented** (preview only; enforcement Phase 03) | 02 | `app/services/projects.py`, `app/services/scope_preview.py`, `ProjectWizardPage.tsx` | `test_api_projects.py`, `wizard.test.tsx`, E2E |
 | **M1** Archive / delete with impact + typed confirmation | §6 M1 | **Implemented** | 02 | `ProjectDetailPage.tsx`, `repository.delete_project` | `test_api_projects.py::test_delete_*`, `app.test.tsx` |
 | **M1** Duplicate project without secrets; project export/import | §6 M1 | Not started | 10 | — | — |
-| **M3** Scope & authorization engine | §4, §6 M3 | Not started (syntax-only scope validation in models) | 03 | `backend/app/scope/` | — |
+| **M3** Canonicalization (URLs, IDN, ports, IPv4/IPv6, paths; rejects user-info, numeric shorthand, encoded/double-encoded traversal, `..;`, zone IDs) | §4.2 | **Implemented** | 03 | `app/scope/canonical.py` | `tests/test_scope_canonical.py`, `test_scope_properties.py` |
+| **M3** Default-blocked IP policy incl. embedded IPv4, non-overridable metadata | §4.2, TBD-037 | **Implemented** | 03 | `app/scope/ip_policy.py` | `tests/test_scope_ip_policy.py`, property test vs Python's non-global classification |
+| **M3** `normalize_target`, `is_target_in_scope`, `is_port_allowed`, `is_path_allowed`, `validate_redirect`, `validate_resolved_ip`, `require_active_authorization` with auditable `Decision` | §6 M3 | **Implemented** | 03 | `app/scope/engine.py` | `tests/test_scope_engine.py` |
+| **M3** Policy hook for all future HTTP/DNS/connect/subprocess entrypoints (`ScopeGuard`, `GuardedRequester`, IP pinning, kill-switch + authorization re-check per action, decision sink) | §4.2 | **Implemented** (real resolver/transport arrive in Phase 05 and must use it) | 03 | `app/scope/guard.py` | `tests/test_scope_guard.py` (incl. real local fixture server: zero requests for blocked targets) |
+| **M3** Internal-target override (explicit, narrow, time-bound, attested, audited) | §4.2 | **Implemented** | 03 | `app/services/projects.py`, `app/api/scope.py` | `tests/test_api_scope.py` |
+| **M3** Scope preview API + policy view + dry-run check + UI | §6 M3 | **Implemented** | 03 | `app/api/scope.py`, `app/services/scope_preview.py`, `frontend/src/components/ScopePolicyCard.tsx` | `test_api_scope.py`, `frontend/src/test/scope.test.tsx`, E2E check 12 |
 | **M4** Job manager, logs, cancellation, kill switch | §2, §6 M4 | Not started (ScanJob contract + storage exist) | 04 | `backend/app/jobs/` | — |
 | Shared HTTP / DNS / subprocess adapters | §4.3 | Not started | 05 | `backend/app/integrations/` | — |
 | **M5** Web scanner (Option A) | §6 M5 | Not started | 05 | — | — |
@@ -83,4 +88,5 @@ No option is out of scope.
 | 00 | Verified | PASS (2026-10-20) | Docs, `.gitignore`, minimal FastAPI skeleton |
 | 01 | Verified | **PASS** (2026-10-20) | Verification fixed 3 defects: (1) project-delete race could resurrect folders / return 500 → central lock dir + 404 mapping + lexical containment; (2) junctions named like project IDs could crash the integrity check → skipped/reported; (3) log redaction missed dict/JSON/mid-line secrets → patterns extended. Tests: `tests/test_verification_phase01.py` (+78) |
 | 02 | Verified | **PASS** (2026-10-20) | Verification fixed: after delete the UI stuck on a 404 error screen instead of returning to Projects (query invalidation unmounted the dialog); added skip link; test-only build break. | UI shell, dashboard, projects, wizard, drill-down views, audit/settings pages; backend project/dashboard/scope-preview APIs; SPA served by backend with security headers |
-| 03 | Not started | — | Awaiting explicit prompt |
+| 03 | Verified | **PASS** (2026-10-20) | Focused SSRF suite vs two real local servers (60 tests, mutation-checked). Verification cleanup: stub resolver raises RuntimeError. Earlier in-phase fixes: | Scope/authorization engine, policy hook, IP policy (TBD-037 decided), override endpoint, preview-hash gate, policy UI. Property tests found and fixed: NAT64-local and 6to4 gaps, metadata-in-6to4 precedence, connect-path bug |
+| 04 | Not started | — | Awaiting explicit prompt |

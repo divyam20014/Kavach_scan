@@ -30,6 +30,7 @@ Transitive runtime packages: `starlette` 1.9.0 (BSD-3), `pydantic` 2.14.1 / `pyd
 | httpx | 0.28.1 | BSD-3-Clause | Required by `fastapi.testclient`. **Test-only for now**; the outbound scanner client (Phase 05) will be wrapped by the shared adapter. |
 | ruff | 0.17.1 | MIT | Lint and format |
 | mypy | 2.4.0 | MIT | Strict type checking |
+| hypothesis | 6.170.5 | MPL-2.0 | Property-based tests for the scope engine (Phase 03); depends only on `sortedcontainers` (Apache-2.0) |
 
 Transitive dev packages: `httpcore`, `certifi` (MPL-2.0), `iniconfig`, `pluggy`, `packaging`, `pygments`, `pathspec` (MPL-2.0), `mypy-extensions`, `ast-serialize`, `librt`.
 

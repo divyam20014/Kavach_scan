@@ -33,11 +33,19 @@ _LABEL = r"(?!-)[a-z0-9-]{1,63}(?<!-)"
 _HOST_RE = re.compile(rf"^{_LABEL}(\.{_LABEL})*\.?$")
 
 
+_NUMERIC_LABEL = re.compile(r"^(0x[0-9a-f]*|[0-9]+)$")
+
+
 def _hostname(value: str) -> str:
     value = value.lower()
     if len(value) > 253 or not _HOST_RE.fullmatch(value):
         raise ValueError("not a valid DNS hostname (use punycode for IDN hosts)")
-    return value.rstrip(".")
+    value = value.rstrip(".")
+    labels = value.split(".")
+    if _NUMERIC_LABEL.fullmatch(labels[-1]):
+        # "127.1", "2130706433", "10.0.0.1": numeric forms belong in ip_ranges, never hosts
+        raise ValueError("numeric host: list IP addresses under ip_ranges")
+    return value
 
 
 def _wildcard(value: str) -> str:

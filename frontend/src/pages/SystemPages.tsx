@@ -161,12 +161,12 @@ export function HelpPage() {
           <Title order={2} size="h4">What this build can do</Title>
           <List size="sm">
             <List.Item>Create, edit, archive and delete projects with an authorization record, scope and request limits.</List.Item>
-            <List.Item>Preview and normalize scope entries (hostnames, wildcards, IP ranges, URLs, ports, paths).</List.Item>
+            <List.Item>Preview and normalize scope entries, check any URL against a project's scope, and manage audited internal-target overrides.</List.Item>
             <List.Item>Show dashboard counts and lists computed from stored records, plus the audit log.</List.Item>
           </List>
           <Title order={2} size="h4">What it cannot do yet</Title>
           <List size="sm">
-            <List.Item>Run any scan. Scope enforcement (Phase 03), the job manager (Phase 04) and scanners (Phases 05–07) are not built.</List.Item>
+            <List.Item>Run any scan. The scope safety gate exists (Phase 03), but the job manager (Phase 04) and scanners (Phases 05–07) are not built.</List.Item>
             <List.Item>Import external reports (Phase 08), generate reports (Phase 10), or detect external tools (Phase 11).</List.Item>
           </List>
           <Title order={2} size="h4">Safe use</Title>

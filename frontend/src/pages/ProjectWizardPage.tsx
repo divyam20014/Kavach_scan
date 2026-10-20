@@ -31,6 +31,7 @@ import {
 import { PageHeader } from "../components/PageHeader";
 import { ErrorAlert, QueryState } from "../components/QueryState";
 import { isoToLocalInput, localInputToIso, splitLines } from "../lib/format";
+import { BlockedRangesTable } from "../components/ScopePolicyCard";
 import { ScopeSummary } from "./ProjectDetailPage";
 
 export interface WizardValues {
@@ -265,6 +266,7 @@ export function ProjectWizard({ existing }: { existing?: Project }) {
       labels: splitLines(values.labels),
       notes: values.notes,
       scope,
+      scope_preview_hash: preview?.scope_hash ?? null, // proves this exact scope was previewed
       scan_policy: buildPolicy(values),
     };
     const onError = () => setActive((a) => a); // errors render inline below
@@ -388,7 +390,7 @@ export function ProjectWizard({ existing }: { existing?: Project }) {
             <Stack>
               <Title order={2} size="h4">Scope</Title>
               <Alert role="note" color="blue" variant="light">
-                Preview normalizes and checks what you enter. Matching, DNS and private-address enforcement arrive with the scope engine (Phase 03).
+                Preview normalizes and checks what you enter with the scope engine. Saving requires a fresh preview of exactly this scope.
               </Alert>
               <Textarea label="In-scope targets" required description="One per line: hostname, *.wildcard.domain, IP/CIDR, or http(s) URL"
                 value={values.targets} error={errors.targets} onChange={(e) => set("targets", e.currentTarget.value)} autosize minRows={4} />
@@ -501,6 +503,7 @@ function PreviewTable({ preview }: { preview: ScopePreviewResponse }) {
       {preview.notes.map((n) => (
         <Text size="xs" c="dimmed" key={n}>{n}</Text>
       ))}
+      <BlockedRangesTable ranges={preview.blocked_ranges} />
       <Table.ScrollContainer minWidth={600}>
         <Table aria-label="Scope preview">
           <Table.Thead>

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
-import json
 from datetime import datetime, timedelta
 from typing import Any, Literal
 
@@ -23,7 +21,16 @@ from app.models.common import (
     new_id,
     utc_now,
 )
-from app.models.project import AuthorizationRecord, Project, ScanPolicy, ScopeDefinition
+from app.models.project import (
+    AuthorizationRecord,
+    InternalTargetOverride,
+    Network,
+    Project,
+    ScanPolicy,
+    ScopeDefinition,
+)
+from app.scope.engine import scope_hash
+from app.scope.ip_policy import network_blocked_overlap
 from app.storage.repository import StorageRepository
 
 EXPIRING_SOON = timedelta(days=7)
@@ -57,6 +64,9 @@ class ProjectCreate(StrictModel):
     notes: LongText = ""
     authorization: AuthorizationInput | None = None
     scope: ScopeDefinition = Field(default_factory=ScopeDefinition)
+    scope_preview_hash: str | None = Field(
+        default=None, description="scope_hash returned by /api/scope/preview for exactly this scope"
+    )
     scan_policy: ScanPolicy = Field(default_factory=ScanPolicy)
 
 
@@ -70,7 +80,43 @@ class ProjectUpdate(StrictModel):
     status: ProjectStatus | None = None
     authorization: AuthorizationInput | None = None
     scope: ScopeDefinition | None = None
+    scope_preview_hash: str | None = None
     scan_policy: ScanPolicy | None = None
+
+
+OVERRIDE_MAX_DAYS = 90
+OVERRIDE_MIN_PREFIX = {4: 16, 6: 48}
+
+
+class InternalOverrideRequest(StrictModel):
+    expected_revision: int = Field(ge=1)
+    ip_ranges: list[Network] = Field(min_length=1, max_length=50)
+    reason: ShortText = Field(min_length=10)
+    expires_at: UtcDatetime
+    attestation: bool
+
+    @model_validator(mode="after")
+    def _check(self) -> InternalOverrideRequest:
+        if not self.attestation:
+            raise ValueError("Operator attestation is required for an internal-target override")
+        now = utc_now()
+        if self.expires_at <= now:
+            raise ValueError("expires_at must be in the future")
+        if self.expires_at - now > timedelta(days=OVERRIDE_MAX_DAYS):
+            raise ValueError(f"overrides may last at most {OVERRIDE_MAX_DAYS} days")
+        for net in self.ip_ranges:
+            if net.prefixlen < OVERRIDE_MIN_PREFIX[net.version]:
+                raise ValueError(
+                    f"{net} is too broad; use /{OVERRIDE_MIN_PREFIX[net.version]} or narrower"
+                )
+            overlaps = network_blocked_overlap(net)
+            if any(not b.overridable for b in overlaps):
+                raise ValueError(
+                    f"{net} includes cloud metadata addresses, which can never be overridden"
+                )
+            if not overlaps:
+                raise ValueError(f"{net} is not a blocked range; no override is needed")
+        return self
 
 
 class LastScan(StrictModel):
@@ -106,12 +152,6 @@ def authorization_status(project: Project, now: datetime | None = None) -> Autho
     if auth.window_end - now <= EXPIRING_SOON:
         return "expiring_soon"
     return "active"
-
-
-def scope_hash(scope: ScopeDefinition) -> str:
-    return hashlib.sha256(
-        json.dumps(scope.model_dump(mode="json"), sort_keys=True).encode()
-    ).hexdigest()
 
 
 class ProjectService:
@@ -170,7 +210,23 @@ class ProjectService:
         data = auth.model_dump(exclude={"attestation"})
         return AuthorizationRecord(**data, attestation_event_id=event.event_id)
 
+    @staticmethod
+    def _check_scope_payload(scope: ScopeDefinition, preview_hash: str | None) -> None:
+        if scope.internal_override is not None:
+            raise ValidationFailedError(
+                "internal_override cannot be set through project create/update; "
+                "use the dedicated internal-target override endpoint"
+            )
+        if preview_hash != scope_hash(scope):
+            raise ValidationFailedError(
+                "Scope must be previewed before saving: scope_preview_hash does not "
+                "match this scope "
+                "(call /api/scope/preview and send back its scope_hash)"
+            )
+
     def create(self, req: ProjectCreate) -> Project:
+        if "scope" in req.model_fields_set:
+            self._check_scope_payload(req.scope, req.scope_preview_hash)
         project_id = new_id("project")
         authorization = self._attest(project_id, req.authorization) if req.authorization else None
         project = Project(
@@ -210,9 +266,15 @@ class ProjectService:
                 changes[field] = (
                     value.model_dump(mode="json") if hasattr(value, "model_dump") else value
                 )
-        scope_changed = req.scope is not None and scope_hash(req.scope) != scope_hash(current.scope)
+        new_scope = None
         if req.scope is not None:
-            changes["scope"] = req.scope.model_dump(mode="json")
+            self._check_scope_payload(req.scope, req.scope_preview_hash)
+            # the override is managed only by its own endpoint; keep the stored one
+            new_scope = req.scope.model_copy(
+                update={"internal_override": current.scope.internal_override}
+            )
+            changes["scope"] = new_scope.model_dump(mode="json")
+        scope_changed = new_scope is not None and scope_hash(new_scope) != scope_hash(current.scope)
         if req.authorization is not None:
             changes["authorization"] = self._attest(project_id, req.authorization).model_dump(
                 mode="json"
@@ -238,6 +300,53 @@ class ProjectService:
             project_id=project_id,
             metadata={"fields": sorted(changes), "revision": updated.revision},
         )
+        return updated
+
+    def set_internal_override(self, project_id: str, req: InternalOverrideRequest) -> Project:
+        current = self.repo.get_project(project_id)
+        event = self.repo.audit.record(
+            AuditAction.INTERNAL_OVERRIDE_SET,
+            project_id=project_id,
+            metadata={
+                "ip_ranges": [str(n) for n in req.ip_ranges],
+                "reason": req.reason,
+                "expires_at": req.expires_at.isoformat(),
+                "label": "operator attestation (not legal verification)",
+            },
+        )
+        override = InternalTargetOverride(
+            ip_ranges=req.ip_ranges,
+            reason=req.reason,
+            expires_at=req.expires_at,
+            audit_event_id=event.event_id,
+        )
+        scope = current.scope.model_copy(update={"internal_override": override})
+        try:
+            return self.repo.update_project(
+                project_id,
+                {"scope": scope.model_dump(mode="json")},
+                expected_revision=req.expected_revision,
+            )
+        except Exception:
+            self.repo.audit.record(
+                AuditAction.INTERNAL_OVERRIDE_SET,
+                project_id=project_id,
+                outcome="failure",
+                metadata={"audit_event_id": event.event_id},
+            )
+            raise
+
+    def remove_internal_override(self, project_id: str, expected_revision: int) -> Project:
+        current = self.repo.get_project(project_id)
+        if current.scope.internal_override is None:
+            raise ValidationFailedError("This project has no internal-target override")
+        scope = current.scope.model_copy(update={"internal_override": None})
+        updated = self.repo.update_project(
+            project_id,
+            {"scope": scope.model_dump(mode="json")},
+            expected_revision=expected_revision,
+        )
+        self.repo.audit.record(AuditAction.INTERNAL_OVERRIDE_REMOVED, project_id=project_id)
         return updated
 
     def deletion_impact(self, project_id: str) -> DeletionImpact:

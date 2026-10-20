@@ -1,7 +1,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api } from "./client";
+import { api, request } from "./client";
 import type {
   Asset,
+  InternalOverrideRequest,
+  ScopeCheckResponse,
+  ScopePolicyView,
   AuditPage,
   DashboardSummary,
   DeletionImpact,
@@ -113,4 +116,36 @@ export function useDeleteProject(projectId: string) {
 
 export function useScopePreview() {
   return useMutation({ mutationFn: (body: ScopePreviewRequest) => api.post<ScopePreviewResponse>("/api/scope/preview", body) });
+}
+
+export function useScopePolicy(projectId: string) {
+  return useQuery({
+    queryKey: ["scope-policy", projectId],
+    queryFn: () => api.get<ScopePolicyView>(`/api/projects/${encodeURIComponent(projectId)}/scope/policy`),
+  });
+}
+
+export function useScopeCheck(projectId: string) {
+  return useMutation({
+    mutationFn: (body: { url: string; resolved_ips: string[] }) =>
+      api.post<ScopeCheckResponse>(`/api/projects/${encodeURIComponent(projectId)}/scope/check`, body),
+  });
+}
+
+export function useSetOverride(projectId: string) {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: (body: InternalOverrideRequest) =>
+      request<Project>("PUT", `/api/projects/${encodeURIComponent(projectId)}/internal-override`, { body }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useRemoveOverride(projectId: string) {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: (expectedRevision: number) =>
+      api.delete<Project>(`/api/projects/${encodeURIComponent(projectId)}/internal-override`, { expected_revision: expectedRevision }),
+    onSuccess: invalidate,
+  });
 }

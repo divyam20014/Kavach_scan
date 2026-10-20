@@ -10,7 +10,12 @@ const VALID_PREVIEW: ScopePreviewResponse = {
   scope: overview().project.scope,
   entries: [{ field: "targets", input: "app.example.com", kind: "hostname", normalized: "app.example.com", error: null, warnings: [] }],
   error_count: 0,
-  notes: ["Preview only: enforcement in Phase 03."],
+  notes: ["Normalized by the scope engine."],
+  scope_hash: "f".repeat(64),
+  blocked_ranges: [
+    { network: "127.0.0.0/8", category: "loopback", label: "Loopback", overridable: true },
+    { network: "169.254.169.254/32", category: "cloud_metadata", label: "Instance metadata", overridable: false },
+  ],
 };
 
 function apiFor(overrides: Record<string, unknown> = {}) {
@@ -78,6 +83,8 @@ describe("project wizard validation", () => {
       entries: [{ field: "targets", input: "https://u:p@x.com", kind: "invalid", normalized: null, error: "URLs with embedded credentials are rejected", warnings: [] }],
       error_count: 1,
       notes: [],
+      scope_hash: null,
+      blocked_ranges: [],
     };
     apiFor({ "POST /api/scope/preview": { body: bad } });
     const u = user();
@@ -103,6 +110,7 @@ describe("project wizard submission", () => {
     await u.type(await screen.findByRole("textbox", { name: /in-scope targets/i }), "App.Example.com");
     await u.click(screen.getByRole("button", { name: "Preview scope" }));
     expect(await screen.findByText("✓ Scope is valid")).toBeInTheDocument();
+    expect(screen.getByText(/Blocked by default: 2 address ranges/)).toBeInTheDocument();
     await u.click(screen.getByRole("button", { name: "Next" }));
     await u.click(await screen.findByRole("checkbox", { name: /web application scanner/i }));
     await u.click(screen.getByRole("button", { name: "Next" }));
@@ -119,6 +127,7 @@ describe("project wizard submission", () => {
     expect(body.authorization.attestation).toBe(true);
     expect(body.authorization.window_start).toMatch(/Z$/); // sent with timezone
     expect(body.scan_policy.allowed_modules).toEqual(["web_app"]);
+    expect((body as unknown as { scope_preview_hash: string }).scope_preview_hash).toBe("f".repeat(64));
     expect(calls.find((c) => c.path === "/api/scope/preview")!.body).toMatchObject({ targets: ["App.Example.com"] });
   });
 

@@ -9,7 +9,6 @@ can run before then. Nothing here performs DNS resolution or any network access.
 from __future__ import annotations
 
 import ipaddress
-import re
 from typing import Literal
 from urllib.parse import urlsplit
 
@@ -17,22 +16,23 @@ from pydantic import Field, ValidationError
 
 from app.models.common import ShortText, StrictModel
 from app.models.project import Scheme, ScopeDefinition, ScopeExclusions, _default_schemes
+from app.scope.canonical import CanonicalizationError, normalize_hostname
+from app.scope.engine import scope_hash
+from app.scope.ip_policy import BLOCKED_RANGES, network_blocked_overlap
 
 EntryKind = Literal[
     "hostname", "wildcard", "ip_range", "url", "port", "path", "api_server_url", "invalid"
 ]
 
-_LABEL = r"(?!-)[a-z0-9-]{1,63}(?<!-)"
-_HOST_RE = re.compile(rf"^{_LABEL}(\.{_LABEL})*$")
 MAX_LINES = 1000
 
 NOTE_ENGINE = (
-    "Preview only: scope matching, DNS/IP checks and redirect validation are enforced by "
-    "the scope engine (Phase 03). No scan can run yet."
+    "Normalized by the scope engine. At request time every target, redirect and resolved IP "
+    "is re-checked; scanners that send traffic arrive in later phases."
 )
 NOTE_BLOCKED = (
     "Loopback, private, link-local and cloud-metadata ranges are blocked by default and "
-    "require an explicit, audited internal-target override (Phase 03)."
+    "require an explicit, audited internal-target override on the project page."
 )
 
 
@@ -56,40 +56,55 @@ class PreviewEntry(StrictModel):
     warnings: list[ShortText] = Field(default_factory=list)
 
 
+class BlockedRangeView(StrictModel):
+    network: str
+    category: str
+    label: str
+    overridable: bool
+
+
+def blocked_ranges_view() -> list[BlockedRangeView]:
+    return [
+        BlockedRangeView(
+            network=str(r.network), category=r.category, label=r.label, overridable=r.overridable
+        )
+        for r in BLOCKED_RANGES
+    ]
+
+
 class ScopePreviewResponse(StrictModel):
     valid: bool
     scope: ScopeDefinition | None
+    scope_hash: str | None = None  # send back as scope_preview_hash when saving this scope
     entries: list[PreviewEntry]
     error_count: int
     notes: list[ShortText]
+    blocked_ranges: list[BlockedRangeView] = Field(default_factory=blocked_ranges_view)
 
 
 def _host(value: str) -> str:
-    host = value.strip().rstrip(".")
     try:
-        host = host.encode("idna").decode("ascii").lower()  # IDN -> punycode (IDNA 2003 codec)
-    except UnicodeError as exc:
-        raise ValueError("not a valid hostname") from exc
-    if len(host) > 253 or not _HOST_RE.fullmatch(host):
-        raise ValueError("not a valid hostname")
-    return host
+        return normalize_hostname(value)
+    except CanonicalizationError as exc:
+        raise ValueError(exc.message) from exc
 
 
 def _network_warnings(net: ipaddress.IPv4Network | ipaddress.IPv6Network) -> list[str]:
-    if (
-        net.is_private
-        or net.is_loopback
-        or net.is_link_local
-        or net.is_multicast
-        or net.is_reserved
-        or net.is_unspecified
-    ):
-        return [
-            "Blocked by default (non-public range): needs an internal-target override in Phase 03"
-        ]
+    warnings = []
+    for blocked in network_blocked_overlap(net):
+        if not blocked.overridable:
+            warnings.append(
+                f"Overlaps {blocked.network} ({blocked.label}): "
+                "never reachable, even with an override"
+            )
+        else:
+            warnings.append(
+                f"Blocked by default: overlaps {blocked.network} ({blocked.label}); "
+                "needs an internal-target override"
+            )
     if net.num_addresses > 65536:
-        return [f"Large range ({net.num_addresses} addresses): confirm this is intended"]
-    return []
+        warnings.append(f"Large range ({net.num_addresses} addresses): confirm this is intended")
+    return warnings
 
 
 def _port(value: str) -> int:
@@ -298,5 +313,10 @@ def preview_scope(req: ScopePreviewRequest) -> ScopePreviewResponse:
     if any("Blocked by default" in w for e in entries for w in e.warnings):
         notes.append(NOTE_BLOCKED)
     return ScopePreviewResponse(
-        valid=scope is not None, scope=scope, entries=entries, error_count=error_count, notes=notes
+        valid=scope is not None,
+        scope=scope,
+        scope_hash=scope_hash(scope) if scope is not None else None,
+        entries=entries,
+        error_count=error_count,
+        notes=notes,
     )

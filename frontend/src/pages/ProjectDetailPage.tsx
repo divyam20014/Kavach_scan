@@ -6,6 +6,7 @@ import { ApiError } from "../api/client";
 import { useAudit, useDeleteProject, useDeletionImpact, useProject, useUpdateProject } from "../api/hooks";
 import type { ProjectOverview, ScopeDefinition } from "../api/types";
 import { PageHeader } from "../components/PageHeader";
+import { ScopePolicyCard } from "../components/ScopePolicyCard";
 import { ErrorAlert, Loading, QueryState } from "../components/QueryState";
 import { AuthorizationLabel, ProjectStatusLabel, ScanStateLabel } from "../components/StatusLabel";
 import { formatDateTime, humanize } from "../lib/format";
@@ -65,7 +66,7 @@ function ProjectDetail({ overview }: { overview: ProjectOverview }) {
         </Group>
 
         <Alert role="note" color="gray" title="Scanning is not available in this build" variant="light">
-          Scans require the scope engine (Phase 03) and job manager (Phase 04). This page shows stored project data only.
+          The scope safety gate below is enforced, but scans also need the job manager (Phase 04) and scanners (Phases 05–07).
         </Alert>
 
         <SimpleGrid cols={{ base: 2, sm: 3, md: 6 }}>
@@ -106,7 +107,7 @@ function ProjectDetail({ overview }: { overview: ProjectOverview }) {
           </Card>
           <Card withBorder component="section" aria-labelledby="scope-h">
             <Title order={2} size="h4" id="scope-h" mb="sm">
-              Scope (stored, not yet enforced)
+              Scope
             </Title>
             <ScopeSummary scope={project.scope} />
           </Card>
@@ -149,6 +150,8 @@ function ProjectDetail({ overview }: { overview: ProjectOverview }) {
             </Anchor>
           </Card>
         </SimpleGrid>
+
+        <ScopePolicyCard project={project} />
 
         <RecentChanges projectId={project.project_id} />
       </Stack>

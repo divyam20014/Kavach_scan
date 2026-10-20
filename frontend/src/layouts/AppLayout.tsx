@@ -16,7 +16,7 @@ const NAV = [
 
 // Listed honestly as unavailable instead of rendering placeholder pages or controls.
 const NOT_YET = [
-  { label: "Scope engine & scanning", phase: "Phases 03–07" },
+  { label: "Scan jobs & scanners", phase: "Phases 04–07" },
   { label: "API specifications", phase: "Phase 07" },
   { label: "Imports", phase: "Phase 08" },
   { label: "Reports", phase: "Phase 10" },

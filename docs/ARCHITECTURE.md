@@ -1,6 +1,6 @@
 # Architecture — VAPT Workbench (Kavach_scan)
 
-> **Status:** Updated for Phase 02 (2026-10-20).
+> **Status:** Updated for Phase 03 (2026-10-20). The `scope/` package (canonical, ip_policy, engine, guard) is implemented; `ScopeGuard` is the mandatory gate in §2.1.
 > **Implemented** means code and passing tests exist in this repository. **Design** means the agreed target, owned by the phase named, and not yet built. The implementation status of every module is tracked in [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
 
 Related documents: [SECURITY_MODEL.md](SECURITY_MODEL.md) · [SCAN_SAFETY.md](SCAN_SAFETY.md) · [STORAGE_FORMATS.md](STORAGE_FORMATS.md) · [TESTING.md](TESTING.md) · [DEPENDENCIES.md](DEPENDENCIES.md) · [DEVELOPMENT.md](DEVELOPMENT.md)

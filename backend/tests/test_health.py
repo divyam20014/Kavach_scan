@@ -25,6 +25,12 @@ SYSTEM_ROUTES = {
     "/api/assets",
     "/api/scans",
     "/api/audit",
+    # Phase 03
+    "/api/scope/blocked-ranges",
+    "/api/projects/{project_id}/scope/policy",
+    "/api/projects/{project_id}/scope/check",
+    "/api/projects/{project_id}/scope/classify-host",
+    "/api/projects/{project_id}/internal-override",
 }
 
 # No lifespan: these endpoints must work without storage.

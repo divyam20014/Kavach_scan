@@ -12,6 +12,8 @@ from fastapi.testclient import TestClient
 from app.core.settings import RuntimeSettings
 from app.main import create_app
 from app.models import ScanJob, new_id
+from app.models.project import ScopeDefinition
+from app.scope.engine import scope_hash
 from app.storage.repository import StorageRepository
 from app.web import mount_ui
 from tests.conftest import LOCAL_BASE_URL, LOCAL_CLIENT, make_asset, make_finding
@@ -33,6 +35,11 @@ def _auth(**overrides: Any) -> dict[str, Any]:
     return data
 
 
+def preview_hash(scope: dict[str, Any]) -> str:
+    """What a client gets back from /api/scope/preview for this exact scope."""
+    return scope_hash(ScopeDefinition.model_validate(scope))
+
+
 def _create(client: TestClient, **overrides: Any) -> dict[str, Any]:
     body: dict[str, Any] = {
         "name": "Web assessment",
@@ -41,6 +48,8 @@ def _create(client: TestClient, **overrides: Any) -> dict[str, Any]:
         "scope": {"hosts": ["app.example.com"], "schemes": ["https"], "ports": [443]},
     }
     body.update(overrides)
+    if "scope" in body:
+        body["scope_preview_hash"] = preview_hash(body["scope"])
     resp = client.post("/api/projects", json=body)
     assert resp.status_code == 201, resp.text
     return resp.json()  # type: ignore[no-any-return]
@@ -114,7 +123,12 @@ def test_update_with_revision_and_audit(client: TestClient, repo: StorageReposit
     pid = project["project_id"]
     resp = client.patch(
         f"/api/projects/{pid}",
-        json={"expected_revision": 1, "name": "Renamed", "scope": {"hosts": ["api.example.com"]}},
+        json={
+            "expected_revision": 1,
+            "name": "Renamed",
+            "scope": {"hosts": ["api.example.com"]},
+            "scope_preview_hash": preview_hash({"hosts": ["api.example.com"]}),
+        },
     )
     assert resp.status_code == 200, resp.text
     assert resp.json()["name"] == "Renamed" and resp.json()["revision"] == 2
@@ -271,7 +285,8 @@ def test_scope_preview_normalizes_and_classifies(client: TestClient) -> None:
     assert scope["exclusions"]["hosts"] == ["admin.example.com"]
     assert scope["exclusions"]["path_prefixes"] == ["/logout"]
     assert "admin.example.com" not in scope["hosts"]
-    assert any("Phase 03" in n for n in out["notes"])
+    assert any("re-checked" in n for n in out["notes"])
+    assert out["scope_hash"] and len(out["blocked_ranges"]) >= 25
 
 
 @pytest.mark.parametrize(
@@ -279,10 +294,10 @@ def test_scope_preview_normalizes_and_classifies(client: TestClient) -> None:
     [
         ("https://user:pass@example.com/", "credentials"),
         ("ftp://example.com", "only http and https"),
-        ("javascript:alert(1)", "not a valid hostname"),
-        ("exa mple.com", "not a valid hostname"),
-        ("-bad.example.com", "not a valid hostname"),
-        ("a" * 300 + ".com", "not a valid hostname"),
+        ("javascript:alert(1)", "hostname"),
+        ("exa mple.com", "forbidden characters"),
+        ("-bad.example.com", "not a valid DNS hostname"),
+        ("a" * 300 + ".com", "hostname"),
     ],
 )
 def test_scope_preview_rejects_bad_targets(client: TestClient, target: str, fragment: str) -> None:

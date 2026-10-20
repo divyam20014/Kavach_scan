@@ -35,6 +35,8 @@ class AuditAction(StrEnum):
     STORAGE_INITIALIZED = "storage_initialized"
     STORAGE_MIGRATED = "storage_migrated"
     INTEGRITY_CHECKED = "integrity_checked"
+    INTERNAL_OVERRIDE_SET = "internal_override_set"
+    INTERNAL_OVERRIDE_REMOVED = "internal_override_removed"
 
 
 class AuditEvent(StrictModel):

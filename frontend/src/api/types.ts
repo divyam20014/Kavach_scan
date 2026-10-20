@@ -165,6 +165,7 @@ export interface ProjectCreate {
   notes: string;
   authorization: AuthorizationInput | null;
   scope: ScopeDefinition;
+  scope_preview_hash: string | null;
   scan_policy: Partial<ScanPolicy>;
 }
 
@@ -201,12 +202,72 @@ export interface PreviewEntry {
   warnings: string[];
 }
 
+export interface BlockedRange {
+  network: string;
+  category: string;
+  label: string;
+  overridable: boolean;
+}
+
 export interface ScopePreviewResponse {
   valid: boolean;
   scope: ScopeDefinition | null;
+  scope_hash: string | null;
   entries: PreviewEntry[];
   error_count: number;
   notes: string[];
+  blocked_ranges: BlockedRange[];
+}
+
+export interface Decision {
+  decision_id: string;
+  at: string;
+  allowed: boolean;
+  reason: string;
+  message: string;
+  check: string;
+  input: string;
+  target: string | null;
+  ip: string | null;
+  rule: string | null;
+  project_id: string | null;
+  scope_hash: string | null;
+}
+
+export interface InternalTargetOverride {
+  ip_ranges: string[];
+  reason: string;
+  expires_at: string;
+  audit_event_id: string;
+}
+
+export interface ScopePolicyView {
+  project_id: string;
+  scope: ScopeDefinition;
+  scope_hash: string;
+  valid: boolean;
+  authorization: Decision;
+  can_start_active_work: boolean;
+  internal_override: { override: InternalTargetOverride; active: boolean } | null;
+  warnings: string[];
+  blocked_ranges: BlockedRange[];
+}
+
+export interface ScopeCheckResponse {
+  allowed: boolean;
+  summary: string;
+  authorization: Decision;
+  target: Decision;
+  resolved_ips: Decision[];
+  dns_note: string | null;
+}
+
+export interface InternalOverrideRequest {
+  expected_revision: number;
+  ip_ranges: string[];
+  reason: string;
+  expires_at: string;
+  attestation: boolean;
 }
 
 export interface AuditEvent {

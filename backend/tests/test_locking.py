@@ -1,3 +1,4 @@
+import queue
 import re
 import subprocess
 import sys
@@ -27,16 +28,33 @@ def _spawn(code: str, *args: str) -> subprocess.Popen[str]:
 
 
 def _wait_for_line(proc: subprocess.Popen[str], expected: str, timeout: float = 30) -> None:
+    """Wait for a line from the child without ever blocking past `timeout`.
+
+    readline() blocks indefinitely, so it runs in a daemon thread; a stalled child
+    fails this test instead of hanging the whole suite.
+    """
     assert proc.stdout is not None
+    lines: queue.Queue[str] = queue.Queue()
+    stdout = proc.stdout
+
+    def pump() -> None:
+        for line in stdout:
+            lines.put(line)
+
+    threading.Thread(target=pump, daemon=True).start()
     deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        line = proc.stdout.readline()
-        if line.strip() == expected:
-            return
-        if proc.poll() is not None:
-            break
+    while (remaining := deadline - time.monotonic()) > 0:
+        try:
+            if lines.get(timeout=min(remaining, 0.5)).strip() == expected:
+                return
+        except queue.Empty:
+            if proc.poll() is not None:
+                break
+    proc.kill()
     err = proc.stderr.read() if proc.stderr else ""
-    raise AssertionError(f"subprocess did not print {expected!r}; stderr: {err[-2000:]}")
+    raise AssertionError(
+        f"subprocess did not print {expected!r} within {timeout}s; stderr: {err[-2000:]}"
+    )
 
 
 HOLD_INSTANCE = """

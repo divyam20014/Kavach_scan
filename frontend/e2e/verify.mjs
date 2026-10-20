@@ -53,6 +53,12 @@ const api = async (method, path, body) => {
   return { status: r.status, json: await r.json() };
 };
 const day = 86400e3;
+// Saving a scope requires the hash returned by /api/scope/preview for exactly that scope (Phase 03).
+const previewed = async (targets) => {
+  const { json } = await api("POST", "/api/scope/preview", { targets });
+  if (!json.valid) throw new Error("preview failed: " + JSON.stringify(json.entries));
+  return { scope: json.scope, scope_preview_hash: json.scope_hash };
+};
 const auth = (startOffset, endOffset) => ({
   organization: "Org", target_owner: "Owner", authorized_by: "CISO", reference: "R1",
   window_start: new Date(Date.now() + startOffset).toISOString(), window_end: new Date(Date.now() + endOffset).toISOString(),
@@ -90,9 +96,9 @@ try {
   ok("empty states on projects and findings lists");
 
   // 2. KPIs come from the backend, not constants -------------------------------------
-  const a = (await api("POST", "/api/projects", { name: "Alpha", client_name: "C1", authorization: auth(-day, 30 * day), scope: { hosts: ["a.example.com"] } })).json;
-  await api("POST", "/api/projects", { name: "Bravo", client_name: "C2", authorization: auth(-10 * day, -day), scope: { hosts: ["b.example.com"] } });
-  await api("POST", "/api/projects", { name: "Charlie", client_name: "C3", authorization: null, scope: { hosts: ["c.example.com"] } });
+  const a = (await api("POST", "/api/projects", { name: "Alpha", client_name: "C1", authorization: auth(-day, 30 * day), ...(await previewed(["a.example.com"])) })).json;
+  await api("POST", "/api/projects", { name: "Bravo", client_name: "C2", authorization: auth(-10 * day, -day), ...(await previewed(["b.example.com"])) });
+  await api("POST", "/api/projects", { name: "Charlie", client_name: "C3", authorization: null, ...(await previewed(["c.example.com"])) });
   await api("PATCH", `/api/projects/${a.project_id}`, { expected_revision: 1, status: "archived" });
   const respPromise = page.waitForResponse((r) => r.url().endsWith("/api/dashboard/summary"));
   await page.goto(BASE + "/");
@@ -270,6 +276,28 @@ try {
   await page.keyboard.press("Space");
   assert(await page.getByRole("checkbox", { name: /operator attestation/i }).isChecked(), "Space toggles attestation");
   ok("keyboard: skip link, Tab to nav with visible focus ring, Enter activates, wizard operable without a mouse");
+
+
+  // 8. Phase 03: scope policy card and dry-run checker on a real project --------------------
+  const scoped = (await api("POST", "/api/projects", { name: "Scoped", client_name: "C", authorization: auth(-day, 10 * day), ...(await previewed(["app.example.com"])) })).json;
+  await page.goto(`${BASE}/projects/${scoped.project_id}`);
+  const card = page.getByRole("region", { name: /scope policy/i });
+  await card.getByText("Active work permitted").waitFor();
+  const urlBox = card.getByRole("textbox", { name: "URL" });
+  const checkOnce = async (url, ips = "") => {
+    await urlBox.fill(url);
+    await card.getByRole("textbox", { name: /simulated resolved ips/i }).fill(ips);
+    const resp = page.waitForResponse((r) => r.url().endsWith("/scope/check"));
+    await card.getByRole("button", { name: "Check" }).click();
+    return (await (await resp).json()).allowed;
+  };
+  assert((await checkOnce("https://app.example.com.evil.test/")) === false, "suffix-confusion host blocked");
+  await card.getByText("✕ Would be blocked").waitFor();
+  assert((await checkOnce("https://app.example.com/", "169.254.169.254")) === false, "metadata IP blocked");
+  await card.getByText(/cloud metadata address/).waitFor();
+  assert((await checkOnce("https://app.example.com/login", "93.184.216.34")) === true, "in-scope URL allowed");
+  await card.getByText("✓ Would be allowed").waitFor();
+  ok("scope policy card: gate status, suffix-confusion and metadata blocked, in-scope allowed (dry run)");
 
   if (consoleErrors.length) throw new Error("console errors:\n" + consoleErrors.join("\n"));
   ok("no unexpected browser console errors or CSP violations");

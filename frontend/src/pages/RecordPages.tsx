@@ -164,7 +164,7 @@ export function ScansPage() {
       title="Scans"
       base="/scans"
       kind="scans"
-      emptyText="No scans have been recorded. Scans cannot be started in this build: the scope engine (Phase 03) and job manager (Phase 04) come first."
+      emptyText="No scans have been recorded. Scans cannot be started in this build: the scope safety gate is ready, but the job manager (Phase 04) comes first."
       columns={["Scan", "Module", "State", "Project", "Updated"]}
       row={(s) => (
         <Table.Tr key={s.scan_id}>
