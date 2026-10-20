@@ -1,0 +1,86 @@
+# TBD Decisions — VAPT Platform
+
+Claude Code must keep this file current. Do not silently decide consequential behavior. For each item, record `OPEN`, `PROPOSED`, `DECIDED`, or `BLOCKED`, plus the chosen value, rationale, impact, and evidence/tests affected.
+
+> **Last updated:** 2026-10-20 (Phase 00). No decisions are `DECIDED`, because none has been confirmed by the owner. Where Phase 00 code already applies a proposal, the row says so, with the test reference.
+> **Owner input** column: **Yes** means the decision touches safety boundaries, secrets, data loss, externally visible network behavior, or compatibility (rule 3), so it needs explicit owner confirmation before the dependent phase. **No** means a safe default; work proceeds unless the owner objects.
+> **Merge note:** `TBD_DECISIONS_PACK.md` was not present at bootstrap, so no merge was performed. TBD-001 to TBD-029 keep their original IDs and wording. New items start at TBD-030.
+
+## Product and deployment
+
+| ID | Topic (original) | Status | Proposed value | Rationale / impact | Needed by | Owner input |
+|---|---|---|---|---|---|---|
+| TBD-001 | Target deployment model: local-only desktop-like web application (default proposal), or explicitly exposed internal service. | PROPOSED | Local-only, bound to `127.0.0.1`. Remote exposure is refused unless the TBD-003 secure mode is configured. | Smallest attack surface. Matches single-instance filesystem design. **Applied in Phase 00:** `backend/app/core/config.py`; `tests/test_bind_policy.py`. | 00 | Yes |
+| TBD-002 | Supported operating systems and external tool availability: Windows, Linux, macOS; whether WSL/Docker is acceptable for tools that are not native. | PROPOSED | Windows 11 (primary dev, observed) and Linux. macOS best-effort. Tools: `sslyze` (pip, cross-platform) as the primary TLS adapter. `testssl.sh` only on POSIX/WSL. Nmap optional, using a native binary. No Docker requirement. | Observed: Nmap, sslyze, and testssl.sh are not installed on the dev machine, so degraded "not configured" paths must be first-class. | 05 / 06 / 11 | Yes |
+| TBD-003 | Authentication model. Default proposal: localhost-only single-operator mode, with optional local file-backed login required if network binding is enabled. | PROPOSED | As proposed. A non-loopback bind fails at startup unless a local Argon2id password file and session secret are configured. | Security boundary. **Phase 00:** secure mode does not exist, so every non-loopback bind is refused (exit 2). The app also rejects non-loopback peers with 403 (`core/loopback_guard.py`), so a direct `uvicorn --host 0.0.0.0` launch cannot serve remote clients. Remote mode must replace this guard deliberately, not remove it. Full tests in Phase 12. | 12 | Yes |
+| TBD-004 | Branding, product name, logo, and report organization/company details. | OPEN | Interim name **"VAPT Workbench"** (per spec), set in one config value. The repository is named `Kavach_scan`, and "Kavach" may be the intended product name. | Cosmetic, but it appears on client reports. | 02 / 10 | No (interim) |
+| TBD-005 | Supported locale/time zone and report date format. | PROPOSED | Store UTC ISO-8601 everywhere. Display in browser local time. Reports use `YYYY-MM-DD HH:MM UTC±hh:mm` with an explicit zone. English only. | Low risk. | 02 / 10 | No |
+
+## Filesystem and persistence
+
+| ID | Topic (original) | Status | Proposed value | Rationale / impact | Needed by | Owner input |
+|---|---|---|---|---|---|---|
+| TBD-006 | Default data directory. Must be outside source-control directories and configurable with a documented environment variable. | PROPOSED | `VAPT_DATA_DIR` overrides. Default is the per-user app-data dir: Windows `%LOCALAPPDATA%\VAPTWorkbench\data`, Linux `${XDG_DATA_HOME:-~/.local/share}/vapt-workbench`, macOS `~/Library/Application Support/VAPTWorkbench`. Refuse a data dir inside the repository unless explicitly forced for tests. | Keeps evidence out of Git. Tests: data-root resolution (Phase 01). | 01 | No |
+| TBD-007 | Evidence retention period and maximum evidence storage; default proposal: unlimited until manually deleted, with configurable quotas and explicit delete/export controls. | PROPOSED | As proposed, plus a disk-space warning threshold (e.g., <2 GiB free) and a per-project evidence quota setting (default unset). | Data-loss implications only if auto-deletion were added, and it is not. | 01 / 10 | No |
+| TBD-008 | Backup format and frequency; default proposal: manual backup/export first, with scheduled local backups optional. | PROPOSED | Manual export only in the first release: a zip with `manifest.json`, SHA-256 checksums, and schema versions; evidence optional. Pre-migration automatic backup of affected files. | — | 10 | No |
+| TBD-009 | Maximum project, scan, import, and evidence sizes. Defaults must be conservative and configurable. | PROPOSED | Upload 25 MiB. Archive expanded size 250 MiB / 10,000 entries. Single evidence excerpt 8 KiB. Response read cap 1 MiB. OpenAPI spec 10 MiB / 2,000 operations / ref depth 32. JSON nesting depth 64. All configurable. | Conservative starting point; to be tuned with fixtures. | 01 / 07 / 08 | No |
+| TBD-010 | Whether OS keychain integration is required for supported environments or secrets are provided via environment variables only. | PROPOSED | First release: **environment-variable references only** (records store `env:NAME` aliases, never values). Optional `keyring` later. | Secret handling. No plaintext secrets in JSON either way. | 05 / 07 | Yes |
+
+## Scan policy
+
+| ID | Topic (original) | Status | Proposed value | Rationale / impact | Needed by | Owner input |
+|---|---|---|---|---|---|---|
+| TBD-011 | Default request rate, concurrency, timeouts, maximum crawl depth/pages, maximum response bytes, and maximum scan duration. | PROPOSED | 2 req/s per host. 2 concurrent requests per scan. 1 active job globally (hard cap 4). Connect timeout 5 s, read timeout 15 s. Max 5 redirects. Crawl depth 3 and 200 pages. Response cap 1 MiB. Max duration 30 min. | Externally visible network behavior. | 04 / 05 | Yes |
+| TBD-012 | Default port list for TCP connect scanning; do not silently default to a full 1–65535 scan. | PROPOSED | `21,22,25,53,80,110,143,443,445,993,995,3306,3389,5432,6379,8000,8080,8443,9200,27017` (TCP connect only). The report lists exactly which ports were tested. | Externally visible network behavior. | 06 | Yes |
+| TBD-013 | Whether passive subdomain sources are bundled, user-configured, or manual-input only. External source terms/rate limits must be respected. | PROPOSED | **Manual input and file import only** in the first release. Passive sources (e.g., CT logs) are added later as opt-in, user-configured adapters. | Third-party disclosure of client targets. | 06 | Yes |
+| TBD-014 | Whether active SQLi/XSS probes are available in the first release; default proposal: opt-in, low-impact, differential/error/reflection checks only. | PROPOSED | As proposed. Off by default, per-scan opt-in, small versioned catalog, capped per parameter. | Safety boundary. | 05 | Yes |
+| TBD-015 | IDOR authorization workflow and test-account secret source. Required proposal: user must configure two test identities and explicitly identify test-owned object IDs; never guess production identifiers. | PROPOSED | As required. Secrets via `env:` aliases (TBD-010). | Safety boundary. | 07 | Yes |
+| TBD-016 | Allowed mutating API operations. Default: disabled; enable only for explicitly designated test/staging endpoints with defined cleanup behavior. | PROPOSED | As stated. | Data-loss risk on targets. | 07 | Yes |
+| TBD-017 | Maximum low-impact rate-limit probe count; no credential brute forcing. | PROPOSED | Default 20 requests, configurable max 50, at most 5 req/s. Stop on the first 429/503 or when latency exceeds 3× baseline. | Externally visible. | 07 | Yes |
+| TBD-018 | Whether third-party APIs (NVD/CVE, certificate transparency, passive subdomain APIs) are allowed; network lookups must be optional and documented. | PROPOSED | All **disabled by default**. CVE data via local catalog import only in the first release. | Avoids leaking client data to third parties. | 06 / 11 | Yes |
+
+## Standards and scoring
+
+| ID | Topic (original) | Status | Proposed value | Rationale / impact | Needed by | Owner input |
+|---|---|---|---|---|---|---|
+| TBD-019 | CVSS versions to support. Proposal: store official CVSS vectors/scores when provided or calculated by a reliable implementation; otherwise use a clearly labelled heuristic, never present it as CVSS. | PROPOSED | Store supplied CVSS v3.1 and v4.0 vectors/scores after validation with a maintained library (candidate: `cvss` on PyPI, license to be checked under TBD-028). No self-calculated scores without that library. | — | 09 | No |
+| TBD-020 | Default standards catalogs and version labels. Proposal: OWASP Top 10:2025, OWASP API Security Top 10:2023, CWE, and CVSS versioned independently. | PROPOSED | As proposed. Each catalog file carries a version, source URL, and import date. | — | 09 | No |
+| TBD-021 | Default severities and confidence vocabulary. Proposal: Critical/High/Medium/Low/Informational and Confirmed/Probable/Potential/Needs Review. | PROPOSED | As proposed. | — | 01 | No |
+| TBD-022 | Branding and content for client-facing report disclaimer and methodology. | OPEN | Placeholder disclaimer stating only what was tested, with limits, and never "secure". Final text from the owner. Overlaps TBD-004. | Client-facing legal wording. | 10 | Yes |
+
+## Import and export
+
+| ID | Topic (original) | Status | Proposed value | Rationale / impact | Needed by | Owner input |
+|---|---|---|---|---|---|---|
+| TBD-023 | First-release import formats. Proposal: Nmap XML, Nuclei JSONL, ZAP JSON/HTML/XML where feasible, Burp XML/JSON export variants, Nessus CSV/XML, SARIF 2.1.0, and structured JSON/CSV; PDF parsing is best-effort only. | PROPOSED | Order: Nmap XML, Nuclei JSONL, SARIF 2.1.0, generic CSV/JSON, ZAP JSON/XML, Burp XML, Nessus `.nessus` XML/CSV. ZAP HTML and PDF last, best-effort. A format ships only with fixtures and tests. | — | 08 | No |
+| TBD-024 | Which PDF extraction engine/library is acceptable, its licensing, and confidence display. | OPEN | Candidate: `pypdf` (BSD). Avoid AGPL (e.g., PyMuPDF) unless the owner accepts that license. | Licensing. | 08 | Yes |
+| TBD-025 | Report output formats. Proposal: HTML and PDF, plus JSON/CSV export for normalized findings. | PROPOSED | As proposed. | — | 10 | No |
+
+## Development workflow
+
+| ID | Topic (original) | Status | Proposed value | Rationale / impact | Needed by | Owner input |
+|---|---|---|---|---|---|---|
+| TBD-026 | Package manager and lockfile strategy for Python and frontend dependencies. | PROPOSED (applied) | Python ≥3.12 (`requires-python = ">=3.12"`). **Poetry 2.x + `backend/poetry.lock`**, in-project venv (`backend/poetry.toml`). Frontend: **npm + `package-lock.json`** (Node 22). Dev venv uses **CPython 3.13.5**. Correction to bootstrap note: `py -3.12` does **not** resolve on the dev machine (the 3.12 install is uv-managed), and the default `python` is 3.11.9. | Applied in Phase 00 to unblock the skeleton. Switching to uv later is cheap (PEP 621 `[project]` metadata is already used). | 00 | No (object if preferred otherwise) |
+| TBD-027 | Linting, typing, test coverage threshold, and CI provider. | PROPOSED | Backend: `ruff` (lint + format), `mypy --strict` on `app/`, `pytest` + `pytest-asyncio`, coverage target 80% for `storage/`, `scope/`, `jobs/` (no global gate at first). Frontend: ESLint, `tsc --noEmit`, Vitest + Testing Library. CI: GitHub Actions (the remote is GitHub). | **Phase 00 applied:** ruff (rules E,F,W,I,B,UP,S,BLE), mypy strict, pytest. CI workflow not yet added (Phase 13, or earlier if the owner wants). | 00 / 01 | No |
+| TBD-028 | Licensing policy for bundled signatures, CVE data, wordlists, and third-party tools. | OPEN | Do not bundle third-party signatures, wordlists, or CVE data in the first release. Users import catalogs. External tools are never bundled. | Legal. | 05 / 11 | Yes |
+| TBD-029 | Update policy for signatures/CVE catalogs and how provenance/staleness will be displayed. | PROPOSED | Manual import. Display source, version, import date, and file hash. Staleness warning after 30 days. | — | 11 | No |
+
+## New items raised at bootstrap
+
+| ID | Topic | Status | Proposed value | Rationale / impact | Needed by | Owner input |
+|---|---|---|---|---|---|---|
+| TBD-030 | Frontend component library (spec: choose one and document it). | PROPOSED | **Mantine** (MIT; accessible primitives, tables, forms, notifications) with TanStack Query for data fetching. Alternative: MUI. | Avoids mixing UI systems. | 02 | No |
+| TBD-031 | PDF generation engine given "HTML is source of truth" plus Windows support. | OPEN | Option 1: WeasyPrint (BSD; HTML/CSS → PDF parity; needs GTK/Pango on Windows). Option 2: ReportLab (BSD; pure Python; separate templates, so parity risk). Option 3: headless Chromium via Playwright (heavy). Leaning: WeasyPrint, with a documented Windows prerequisite. | Install friction vs fidelity. | 10 | Yes |
+| TBD-032 | Cross-process file-lock implementation and Windows permission semantics. | PROPOSED | Use the maintained `filelock` (or `portalocker`) library rather than hand-rolled `msvcrt`/`fcntl`. On Windows, restrictive permissions rely on a per-user data dir under `%LOCALAPPDATA%` (inherited user-only ACL), and the limitation is documented. Symlink-escape tests are skipped with a reason when symlink creation is not permitted. | Platform correctness of locking and tests. | 01 | No |
+| TBD-033 | Root `README.md` ownership. It currently holds the build-pack README, and the operator asked that it not be overwritten. Phase 13 requires an app README. | OPEN | Option A: in Phase 13, append an "Application quick start" section to the existing README without changing pack content. Option B: move the pack README to `docs/BUILD_PACK.md` (owner approval needed). Until decided, put app run instructions in `docs/` only. **Phase 00:** dev instructions live in `docs/DEVELOPMENT.md`; `README.md` is untouched. | Avoids losing owner content. | 13 (00 for dev command docs) | Yes |
+| TBD-034 | Git workflow: there are no commits yet, and the remote `divyam20014/Kavach_scan` is empty. The pack README recommends a checkpoint commit per verified phase. | OPEN | The agent does not commit or push unless asked. If authorized, it makes one commit per verified phase on `main` (or feature branches if the owner prefers). | Outward-facing action on a shared remote. | Any | Yes |
+| TBD-035 | Spec layout lists `data/` inside the repository, but the spec also requires the data dir to default outside the repository. | PROPOSED | Default outside (TBD-006). `/data/` stays gitignored as a safety net only. | Prevents accidental evidence commits. | 01 | No |
+| TBD-036 | Default local API port and env var names. | PROPOSED (applied) | `VAPT_HOST` (default `127.0.0.1`), `VAPT_PORT` (default `8765`), `VAPT_DATA_DIR` (Phase 01). | Avoids the common 8000/8080 collisions with fixture targets and other dev servers. Applied in `backend/app/core/config.py`. | 00 | No |
+| TBD-037 | Exact list of default-blocked address ranges, including cloud-provider metadata and NAT64/6to4/IPv4-mapped handling. | PROPOSED | The table in `docs/SCAN_SAFETY.md` §5. | Safety boundary. Implemented and tested in Phase 03. | 03 | Yes |
+
+## Rules for handling TBDs
+
+1. Use safe, conservative defaults when the application can proceed without a decision.
+2. Never ask the user to decide every minor implementation detail. Propose a sensible default and record it.
+3. A decision that changes safety boundaries, secret handling, data loss risk, externally visible network behavior, or compatibility must be surfaced clearly.
+4. Do not mark a decision `DECIDED` merely because code was written. Record the rationale and corresponding tests.

@@ -1,0 +1,101 @@
+# =====================================================================
+# VAPT Workbench .gitignore
+# The default data dir (VAPT_DATA_DIR) lives OUTSIDE the repository
+# (TBD-006). Everything below is a safety net in case runtime output is
+# written inside the checkout. Runtime directories are anchored to the
+# repo root (or backend/ and frontend/) so that source packages such as
+# backend/app/reports/ or backend/app/imports/ are never ignored.
+# Verified by backend/tests/test_repo_hygiene.py.
+# =====================================================================
+
+# ---- Runtime data root (any accidental in-repo data dir) ----
+/data/
+/backend/data/
+vapt-data/
+.vapt/
+
+# ---- Uploaded files and imported scan reports ----
+/uploads/
+/imports/
+/backend/uploads/
+
+# ---- Scan jobs, scan logs and evidence ----
+/jobs/
+/scans/
+/scan-output/
+/scan_output/
+/evidence/
+/backend/evidence/
+*.evidence
+*.jsonl.gz
+
+# ---- Generated reports, exports and backups ----
+/reports/
+/reports-out/
+/generated-reports/
+/exports/
+/backups/
+*.vaptbak
+
+# ---- Logs and temporary tool output ----
+/logs/
+*.log
+/tmp/
+/.tmp/
+nmap-*.xml
+sslyze-*.json
+testssl-*.json
+# ...but committed, sanitized test fixtures with these names are allowed:
+!**/fixtures/**/*.log
+!**/fixtures/**/nmap-*.xml
+!**/fixtures/**/sslyze-*.json
+!**/fixtures/**/testssl-*.json
+
+# ---- Captured traffic and session material (may hold cookies/tokens) ----
+*.har
+!**/fixtures/**/*.har
+cookies.txt
+*.cookies
+
+# ---- Secrets (never re-included, not even under fixtures; generate test keys at runtime) ----
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*.kdbx
+/secrets/
+/backend/secrets/
+credentials*.json
+auth-profiles*.json
+
+# ---- Python ----
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+dist/
+build/
+*.egg-info/
+
+# ---- Node / frontend ----
+node_modules/
+/frontend/dist/
+.vite/
+/coverage/
+/frontend/coverage/
+
+# ---- Editors / OS ----
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
