@@ -23,6 +23,27 @@ Run from `backend/` (see [DEVELOPMENT.md](DEVELOPMENT.md) for setup):
 
 Frontend (Phase 02+, planned): `npm test` (Vitest), `npm run lint` (ESLint), `npm run typecheck` (`tsc --noEmit`), `npm run build`.
 
+### Results recorded at Phase 06 verification (2026-10-21)
+
+| Command | Result |
+|---|---|
+| `poetry run pytest` | **1364 passed, 1 skipped** (adds `test_surface_verification.py`, 10 tests) |
+| `poetry run pytest tests/test_surface_verification.py` | 10/10: re-resolution each scan + private rebind blocked and never connected; out-of-scope host never resolved; exact Nmap argv captured from a fixture (no shell/`-A`/`-sV`/`-sS`/`-sU`/NSE/range/UDP); Nmap timeout and oversized XML -> TCP-connect fallback (partial XML never trusted); partial Nmap scan marks unreported ports honestly; coverage lists exactly the ports tested and never claims "all ports"; TCP probe sends zero bytes to the service; banner secrets never reach outputs/evidence; Nmap absence and crt.sh are disclosed |
+| `ruff check` / `ruff format --check` / `mypy` | clean / all formatted / no issues in 85 source files |
+| `npm test` / `build` / `audit` | 48 passed / built / 0 vulnerabilities |
+| `npm run e2e:verify` / `npm run e2e` | 19/19 / 10/10 |
+
+### Results recorded at Phase 06 (2026-10-21)
+
+| Command | Result |
+|---|---|
+| `poetry run pytest` | **1354 passed, 1 skipped** (adds `test_surface_nmap.py`, `test_surface_core.py`, `test_surface_scan.py`, `test_surface_api.py`) |
+| `ruff check` / `ruff format --check` / `mypy` | clean / all files formatted / no issues in 85 source files |
+| `npm test` (2 runs) / `typecheck` / `lint` / `build` / `audit` | 48 passed both runs / pass / pass / built / 0 vulnerabilities |
+| `npm run e2e:verify` / `npm run e2e` | **19/19** (new check 14: attack-surface scan via the UI against a local fixture; hosts/ports, web origins, asset graph with priority) / 10/10 |
+
+Phase 06 fixtures (`backend/tests/surfacefixtures.py`): loopback TCP banner services (counted connections), a records-capable fake DNS (A/AAAA/CNAME, including a private and a cloud-metadata answer that must be blocked and never connected), and an out-of-scope host that must never be resolved. Nmap integration is tested with a fixture script (safe argv + pinned IP asserted inside it) and malformed/absent output; web-origin probing reuses the Phase 05 local HTTP app.
+
 ### Results recorded at Phase 05 verification (2026-10-21)
 
 | Command | Result |

@@ -185,6 +185,10 @@ RESULT_FILES = {
     "coverage": "coverage.json",
     "pages": "pages.json",
     "profile": "profile.json",
+    # attack surface (Phase 06)
+    "inventory": "inventory.json",
+    "changes": "changes.json",
+    "hosts": "hosts.json",
 }
 RESULT_MAX_BYTES = 16 * 1024 * 1024
 
@@ -231,7 +235,7 @@ def web_scan_profile(
 
 @router.get("/projects/{project_id}/scans/{scan_id}/results/{kind}")
 def scan_results(project_id: str, scan_id: str, kind: str, repo: Repository) -> Any:
-    """Web scanner outputs: summary, coverage, pages (inventory) or profile."""
+    """Scanner outputs: summary/coverage/profile; web: pages; surface: inventory/changes/hosts."""
     import json
 
     from app.core.errors import NotFoundError

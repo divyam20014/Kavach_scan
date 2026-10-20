@@ -321,6 +321,7 @@ export interface Finding {
   rule_id?: string;
   category?: string;
   parameter?: string;
+  component?: string;
   title: string;
   severity: Severity;
   confidence: Confidence;
@@ -334,9 +335,17 @@ export interface Asset {
   project_id: string;
   asset_type: AssetType;
   locator: string;
+  parent_asset_id?: string | null;
+  related_asset_ids?: string[];
   scope_status: string;
   confidence: Confidence;
   last_seen: string;
+  first_seen?: string;
+  revision?: number;
+  attributes?: Record<string, string | number | boolean | null>;
+  resolution_status?: string | null;
+  criticality?: "low" | "medium" | "high" | "critical" | null;
+  observations?: string[];
 }
 
 export interface ScanJob {
@@ -585,4 +594,91 @@ export interface PagesInventory {
   forms: FormRecord[];
   parameters: string[];
   resources: string[];
+}
+
+// ---------------------------------------------------------------- attack surface (Phase 06)
+
+export interface SourcePlan { name: string; label: string; enabled: boolean; disclosure: string }
+
+export interface SurfaceScanProfile {
+  profile_version: number;
+  roots: string[];
+  manual_hosts: number;
+  port_method: "auto" | "connect" | "nmap";
+  ports: { requested: number[]; tested: number[]; not_tested: Record<string, string> };
+  max_hosts: number;
+  probe_web: boolean;
+  web_max_pages: number;
+  read_banners: boolean;
+  tls_verify: boolean;
+  sources: SourcePlan[];
+  dns: string;
+  limitations: string[];
+}
+
+export interface SurfaceProfilePreview {
+  profile: SurfaceScanProfile;
+  problems: string[];
+  target_problems: string[];
+  nmap: string | null;
+}
+
+export interface SurfaceAsset {
+  asset: Asset;
+  candidate_status: string;
+  priority: number;
+  priority_factors: string[];
+  findings: number;
+}
+
+export interface SurfaceView {
+  items: SurfaceAsset[];
+  total: number;
+  counts: { type: Record<string, number>; status: Record<string, number> };
+  edges: [string, string][];
+  truncated: boolean;
+}
+
+export interface SurfaceSummary {
+  schema_version: number;
+  catalog_version: string;
+  stopped_early: string;
+  roots: string[];
+  candidates: number;
+  candidates_by_status: Record<string, number>;
+  rejected_inputs: string[];
+  sources: { name: string; label: string; candidates: number; disclosure: string; sent?: string; error?: string }[];
+  passive_sources_enabled: boolean;
+  dns: { resolved: number; unresolved: number; not_attempted: number; blocked_addresses: number; method: string };
+  port_method: string;
+  ports_requested: number[];
+  ports_tested: number[];
+  ports_not_tested: Record<string, string>;
+  hosts_checked: Record<string, { ips: string[]; ports_tested: number[]; method: string; open: number[] }>;
+  hosts_not_checked: Record<string, string>;
+  open_services: { host: string; ip: string; port: number; service: string; product: string; version: string; banner: string }[];
+  web_origins: { origin: string; status: number | null; title: string; server: string; error: string; tls: Record<string, unknown> }[];
+  check_outcomes: { outcome: CheckOutcome; count: number }[];
+  findings_created: number;
+  findings_reobserved: number;
+  assets_created: number;
+  assets_updated: number;
+  tool_versions: Record<string, string>;
+  components: ComponentInfo[];
+  changes: Record<string, number | boolean | string | null>;
+  warnings: string[];
+  limitations: string[];
+}
+
+export interface SurfaceChanges {
+  baseline: boolean;
+  previous_scan_id: string | null;
+  new_hosts: string[];
+  not_observed_hosts: string[];
+  status_changes: { host: string; from: string; to: string }[];
+  ip_changes: { host: string; from: string[]; to: string[] }[];
+  opened_ports: { host: string; port: number }[];
+  closed_ports: { host: string; port: number }[];
+  new_origins: string[];
+  not_observed_origins: string[];
 }

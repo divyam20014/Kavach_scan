@@ -65,7 +65,17 @@ def _iter_assets(repo: StorageRepository, project_id: str) -> Iterator[Asset]:
 
 
 class FindingWriter:
-    def __init__(self, repo: StorageRepository, project_id: str, scan_id: str) -> None:
+    def __init__(
+        self,
+        repo: StorageRepository,
+        project_id: str,
+        scan_id: str,
+        *,
+        tool_name: str = TOOL_NAME,
+        tool_version: str = f"{CATALOG_ID} {CATALOG_VERSION}",
+    ) -> None:
+        self.tool_name = tool_name
+        self.tool_version = tool_version
         self.repo = repo
         self.project_id = project_id
         self.scan_id = scan_id
@@ -118,7 +128,7 @@ class FindingWriter:
                 finding_ids=[finding_id],
                 evidence_type=draft.evidence_type,  # type: ignore[arg-type]
                 source_stage=result.rule.category,
-                source_tool=TOOL_NAME,
+                source_tool=self.tool_name,
                 request_excerpt=draft.request_excerpt,
                 response_excerpt=draft.response_excerpt,
                 excerpt_truncated=draft.truncated,
@@ -134,8 +144,8 @@ class FindingWriter:
         rule = result.rule
         fp = fingerprint(self.project_id, result)
         source = FindingSource(
-            tool=TOOL_NAME,
-            tool_version=f"{CATALOG_ID} {CATALOG_VERSION}",
+            tool=self.tool_name,
+            tool_version=self.tool_version,
             rule_id=rule.rule_id,
             scan_id=self.scan_id,
         )
@@ -190,7 +200,9 @@ class FindingWriter:
             summary=rule.summary,
             technical_detail=technical,
             category=rule.category,
-            affected_asset_ids=[asset_id] if asset_id else [],
+            affected_asset_ids=list(
+                result.data.get("asset_ids") or ([asset_id] if asset_id else [])
+            ),
             url=url[:2048] if url else None,
             method=result.method if url else None,
             parameter=redact_text(result.parameter, max_chars=400),

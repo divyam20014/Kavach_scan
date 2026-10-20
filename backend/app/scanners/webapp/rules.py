@@ -495,6 +495,15 @@ RULES: dict[str, Rule] = {
 }
 
 
+def register_rules(rules: list[Rule]) -> None:
+    """Add another module's rules to the shared registry (ids must be unique)."""
+    for rule in rules:
+        existing = RULES.get(rule.rule_id)
+        if existing is not None and existing != rule:
+            raise ValueError(f"duplicate rule id {rule.rule_id}")
+        RULES[rule.rule_id] = rule
+
+
 @dataclass
 class EvidenceDraft:
     evidence_type: str = "http_exchange"
@@ -525,7 +534,7 @@ class CheckResult:
         return RULES[self.rule_id]
 
 
-def catalog_summary() -> list[dict[str, Any]]:
+def catalog_summary(prefix: str = "WEB-") -> list[dict[str, Any]]:
     return [
         {
             "rule_id": r.rule_id,
@@ -537,4 +546,5 @@ def catalog_summary() -> list[dict[str, Any]]:
             "owasp": f"A{r.owasp[1:]}:{OWASP_VERSION}" if r.owasp else "",
         }
         for r in RULES.values()
+        if r.rule_id.startswith(prefix)
     ]

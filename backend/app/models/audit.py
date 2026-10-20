@@ -37,6 +37,8 @@ class AuditAction(StrEnum):
     INTEGRITY_CHECKED = "integrity_checked"
     INTERNAL_OVERRIDE_SET = "internal_override_set"
     INTERNAL_OVERRIDE_REMOVED = "internal_override_removed"
+    ASSET_APPROVED = "asset_approved"  # discovered host added to scope by the operator
+    ASSET_CRITICALITY_CHANGED = "asset_criticality_changed"
 
 
 class AuditEvent(StrictModel):

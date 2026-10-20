@@ -445,6 +445,46 @@ try {
   fixture.close();
   ok(`web scan via UI: ${fixtureHits.length} requests to a local fixture; pages, findings, coverage tabs; global findings filtered by scan; robots and scope respected`);
 
+  // 14. Phase 06: attack-surface scan through the UI against a local HTTP fixture --------------
+  const surfaceHits = [];
+  const surfaceApp = createServer((req, res) => {
+    surfaceHits.push(req.url);
+    res.writeHead(200, { "Content-Type": "text/html", Server: "nginx/1.18.0" });
+    res.end("<!doctype html><title>Surface lab</title><a href='/a'>a</a>");
+  });
+  await new Promise((r) => surfaceApp.listen(0, "127.0.0.1", r));
+  const sport = surfaceApp.address().port;
+  const surfProj = (await api("POST", "/api/projects", { name: "Surface lab", client_name: "C", authorization: auth(-day, 10 * day),
+    scan_policy: { allowed_modules: ["attack_surface"] }, ...(await previewed([`http://127.0.0.1:${sport}/`])) })).json;
+  // The scope is the loopback IP + port; the internal override authorizes the blocked range.
+  // The surface target is the in-range IP literal, so no DNS resolution is needed.
+  await api("PUT", `/api/projects/${surfProj.project_id}/internal-override`, { expected_revision: surfProj.revision,
+    ip_ranges: ["127.0.0.1/32"], reason: "local fixture app for browser verification", expires_at: new Date(Date.now() + day).toISOString(), attestation: true });
+  await page.goto(`${BASE}/projects/${surfProj.project_id}`);
+  const surfCard = page.getByRole("region", { name: "Start a job" });
+  await surfCard.getByRole("radio", { name: /Attack surface mapper/ }).check();
+  await surfCard.getByRole("textbox", { name: /targets/i }).fill("127.0.0.1");
+  await surfCard.getByRole("textbox", { name: /Ports/ }).fill(String(sport));
+  const surfPlan = page.getByLabel("Surface scan profile");
+  await surfPlan.getByText(new RegExp(`Ports to test: ${sport}`)).waitFor();
+  await surfCard.getByRole("button", { name: /Review & confirm/ }).click();
+  const surfDlg = page.getByRole("dialog");
+  await surfDlg.getByRole("checkbox", { name: /I confirm/ }).check();
+  await surfDlg.getByRole("button", { name: "Start job" }).click();
+  await page.waitForURL(/\/scans\/scn_/);
+  await page.getByText(/^Completed( with warnings)?$/).waitFor({ timeout: 60000 });
+  await page.getByText("Candidates", { exact: false }).first().waitFor();
+  await page.getByRole("tab", { name: "Hosts / ports" }).click();
+  await page.getByRole("table", { name: "Open services" }).getByText(String(sport)).first().waitFor();
+  await page.getByRole("tab", { name: "Web origins" }).click();
+  await page.getByRole("table", { name: "Web origins" }).getByText("Surface lab").waitFor();
+  // the asset graph page lists discovered assets with a priority column
+  await page.goto(`${BASE}/projects/${surfProj.project_id}/surface`);
+  await page.getByRole("columnheader", { name: "Priority" }).waitFor();
+  await page.getByText("127.0.0.1", { exact: false }).first().waitFor();
+  surfaceApp.close();
+  ok(`attack-surface scan via UI: ${surfaceHits.length} request(s) to a local fixture; hosts/ports, web origins, asset graph with priority`);
+
   if (consoleErrors.length) throw new Error("console errors:\n" + consoleErrors.join("\n"));
   ok("no unexpected browser console errors or CSP violations");
   console.log(`\nBrowser verification: ${passed} checks passed`);

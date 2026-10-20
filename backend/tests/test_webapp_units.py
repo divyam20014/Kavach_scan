@@ -31,11 +31,12 @@ from tests.webfixtures import lab_project
 
 def test_catalog_is_versioned_and_complete() -> None:
     assert CATALOG_VERSION == "1.0.0"
-    for rule in RULES.values():
-        assert rule.rule_id.startswith("WEB-") and rule.title and rule.summary
+    web_rules = [r for r in RULES.values() if r.rule_id.startswith("WEB-")]
+    for rule in web_rules:
+        assert rule.title and rule.summary
         assert rule.owasp in ("", "A01", "A02", "A03", "A04", "A05", "A10")
-    rows = catalog_summary()
-    assert len(rows) == len(RULES) and all(
+    rows = catalog_summary("WEB-")  # the web catalog view filters to WEB- rules
+    assert len(rows) == len(web_rules) and all(
         r["owasp"].endswith(":2025") or not r["owasp"] for r in rows
     )
 
@@ -380,4 +381,5 @@ def test_results_endpoint_and_findings_scan_filter(
 def test_web_module_is_available(client: TestClient) -> None:
     modules = {m["module"]: m for m in client.get("/api/jobs/modules").json()}
     assert modules["web_app"]["available"] is True
-    assert modules["attack_surface"]["available"] is False
+    assert modules["attack_surface"]["available"] is True  # Phase 06
+    assert modules["api_security"]["available"] is False  # Phase 07

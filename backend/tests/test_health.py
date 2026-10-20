@@ -44,6 +44,11 @@ SYSTEM_ROUTES = {
     # Phase 05
     "/api/projects/{project_id}/web-scan-profile",
     "/api/projects/{project_id}/scans/{scan_id}/results/{kind}",
+    # Phase 06
+    "/api/projects/{project_id}/surface-scan-profile",
+    "/api/projects/{project_id}/surface",
+    "/api/projects/{project_id}/assets/{asset_id}",
+    "/api/projects/{project_id}/assets/{asset_id}/approve",
 }
 
 # No lifespan: these endpoints must work without storage.

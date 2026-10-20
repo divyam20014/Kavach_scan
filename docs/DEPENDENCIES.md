@@ -49,7 +49,8 @@ Transitive dev packages: `httpcore`, `certifi` (MPL-2.0), `iniconfig`, `pluggy`,
 | 05 | ~~`httpx` (runtime)~~ | Not added: stdlib `http.client` pinned transport (TBD-051) | decided |
 | 05 | ~~`beautifulsoup4` + `lxml`~~ | Not added: stdlib `html.parser` is sufficient (links, forms, metadata; no JS) | decided |
 | 05 | `cryptography` (dev) | **Installed (dev only)**: TLS fixture certificates | decided |
-| 06 | `dnspython` | DNS record types beyond A/AAAA for the surface mapper (Phase 05 uses `getaddrinfo`) | — |
+| 06 | ~~`dnspython`~~ | Not added: A/AAAA/CNAME via stdlib `socket.getaddrinfo` suffice (TBD-055). | decided |
+| 06 | ~~`python-nmap`~~ | Not added: the Nmap adapter builds argv and parses `-oX` output with stdlib ElementTree (DTD-rejecting, size-capped). | decided |
 | 07 | `PyYAML` (`safe_load` only) | OpenAPI YAML | — |
 | 08 | `defusedxml` | Hardened XML parsing (XXE-safe) | — |
 | 08 | `pypdf` | Best-effort PDF text import | TBD-024 |

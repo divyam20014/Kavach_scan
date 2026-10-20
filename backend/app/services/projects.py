@@ -302,6 +302,47 @@ class ProjectService:
         )
         return updated
 
+    def approve_discovered_host(
+        self, project_id: str, host: str, expected_revision: int
+    ) -> Project:
+        """Add a discovered hostname to the scope's exact hosts (explicit operator action).
+
+        Only candidates that the scope policy classifies as `pending_approval` (subdomains of
+        an authorized host/root) can be approved here; anything else needs a scope edit with
+        a fresh preview. The change is audited like any scope edit.
+        """
+        from app.models.common import ScopeStatus
+        from app.scope.engine import ScopePolicy
+
+        current = self.repo.get_project(project_id)
+        status, _ = ScopePolicy(current).host_status(host)
+        if status != ScopeStatus.PENDING_APPROVAL:
+            raise ValidationFailedError(
+                f"{host} is {status.value}; only pending-approval candidates can be approved here"
+            )
+        scope = current.scope.model_copy(update={"hosts": [*current.scope.hosts, host]})
+        updated = self.repo.update_project(
+            project_id,
+            {"scope": scope.model_dump(mode="json")},
+            expected_revision=expected_revision,
+        )
+        self.repo.audit.record(
+            AuditAction.SCOPE_CHANGED,
+            project_id=project_id,
+            metadata={
+                "old_scope_hash": scope_hash(current.scope),
+                "new_scope_hash": scope_hash(updated.scope),
+                "reason": f"discovered host approved: {host}",
+            },
+        )
+        self.repo.audit.record(
+            AuditAction.ASSET_APPROVED,
+            project_id=project_id,
+            target_ids=[host],
+            metadata={"host": host, "label": "operator approval of a discovered host"},
+        )
+        return updated
+
     def set_internal_override(self, project_id: str, req: InternalOverrideRequest) -> Project:
         current = self.repo.get_project(project_id)
         event = self.repo.audit.record(

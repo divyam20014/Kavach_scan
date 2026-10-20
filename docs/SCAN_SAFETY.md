@@ -138,10 +138,19 @@ Backoff: on 429/503 honor `Retry-After` (capped), otherwise exponential backoff 
 | Job creation API | authorization + target scope + module availability + kill switch | 04 |
 | HTTP adapter (each request and redirect hop) | full §4 decision with IP pinning | 03 / 05, fixture-server zero-request tests |
 | DNS adapter | IP policy on every answer | 03 / 05 |
-| TCP connect probe | host + IP + port decision | 06 |
-| Subprocess adapter (nmap, sslyze) | each target argument + argv allowlist | 05 / 06 / 11 |
+| TCP connect probe (`app/integrations/tcp.py`) | host + IP + port decision; pinned IP only; nothing sent | **06 (implemented)** |
+| Subprocess adapter (nmap, sslyze) | each target argument + argv allowlist (`validate_argv`) | **05/06 (implemented)** / 11 |
 | OpenAPI server URL / remote `$ref` | scope decision; remote refs off by default | 07 |
 | Static guard | no `httpx`/`requests`/`socket`/`ssl`/`subprocess`/`dns`/`asyncio` imports outside the three adapters; scanners never construct transports or resolve DNS | **05 (implemented)** / 12 |
+
+## 12. Attack surface mapper request path (implemented, Phase 06)
+
+1. Candidates come from targets, the manual/imported `hosts` list, and (opt-in) crt.sh. crt.sh is disclosed in the summary, rate-limited, and contacted only on its public pinned IPs; the target is never contacted for passive discovery.
+2. Each candidate is classified DNS-free (`classify_discovered_host`). **Only `in_scope` hosts are resolved for scanning and port-checked/probed**; pending/out-of-scope/excluded candidates are inventoried but never connected. A pending host is admitted only by explicit, audited operator approval.
+3. DNS returns A/AAAA/CNAME; every resolved address is validated by the IP policy. Private/link-local/loopback(without override)/cloud-metadata addresses are inventoried as excluded and never connected.
+4. Port checks test only ports that are both requested and in scope (explicit conservative list; no ranges). TCP connect opens a full connection to a pinned IP and reads the greeting passively (nothing sent). Optional Nmap runs through the subprocess adapter with a fixed safe argv validated by `validate_argv`; XML parsing rejects DTD/entities and caps size; failure falls back to TCP connect, never a crash. No SYN/stealth, UDP, full-range, `-A/-O/-sV`, or NSE/vuln scripts.
+5. Banners are sanitized (printable, redacted, capped); no login is attempted. Web origins reuse Module 5's pinned transport and passive checks.
+6. Coverage is reported honestly: which ports/hosts were tested and which were not, with reasons.
 
 ## 11. Web scanner request path (implemented, Phase 05)
 

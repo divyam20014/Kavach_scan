@@ -430,7 +430,7 @@ export function ProjectWizard({ existing }: { existing?: Project }) {
           {active === 3 && (
             <Stack>
               <Title order={2} size="h4">Allowed modules & request limits</Title>
-              <Checkbox.Group label="Modules this project may use later" description="Selecting a module does not start anything. The web scanner is available; surface/API scanners arrive in Phases 06–07."
+              <Checkbox.Group label="Modules this project may use later" description="Selecting a module does not start anything. Web and attack-surface scanners are available; the API scanner arrives in Phase 07."
                 value={values.allowed_modules} onChange={(v) => set("allowed_modules", v as ScanModule[])}>
                 <Stack mt={4} gap={6}>
                   {SCAN_MODULES.map((m) => (

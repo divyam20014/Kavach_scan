@@ -356,7 +356,21 @@ class JobManager:
                         for p in problems
                     ],
                 )
-        decisions = [policy.is_target_in_scope(t) for t in req.targets]
+        target_check = getattr(runner, "check_targets", None)
+        if target_check is not None:
+            # Modules whose targets are not URLs (e.g. root domains, hosts) validate them here.
+            canonical_targets, problems = target_check(list(req.targets), policy)
+            if problems:
+                raise ValidationFailedError(
+                    "One or more targets are outside the project scope; nothing was started",
+                    details=[
+                        ErrorDetail(loc=["targets", i], message=msg[:480], type="target_rejected")
+                        for i, msg in problems
+                    ],
+                )
+            decisions = []
+        else:
+            decisions = [policy.is_target_in_scope(t) for t in req.targets]
         blocked = [d for d in decisions if not d.allowed]
         if blocked:
             raise ValidationFailedError(
@@ -375,7 +389,11 @@ class JobManager:
             raise JobRejectedError(
                 "queue_full", f"The job queue is full ({self.settings.max_queued_jobs} jobs)"
             )
-        canonical = list(dict.fromkeys(normalize_target(t).url for t in req.targets))
+        canonical = (
+            canonical_targets
+            if target_check is not None
+            else list(dict.fromkeys(normalize_target(t).url for t in req.targets))
+        )
         correlation = get_correlation_id() or new_id("event")[4:]
         scan = ScanJob(
             scan_id=new_id("scan"),
@@ -588,21 +606,23 @@ class JobManager:
                 project.model_copy(update={"scope": scan.scope_snapshot or project.scope}),
                 clock=self.clock,
             )
-            blocked = [
-                d
-                for d in (policy.is_target_in_scope(t) for t in scan.authorized_targets)
-                if not d.allowed
-            ]
-            if blocked or not policy.valid:
-                final_state = S.BLOCKED_SCOPE
-                reason = (
-                    "; ".join(f"{d.input}: {d.message}" for d in blocked)[:480]
-                    or "scope is invalid"
-                )
-                return
             runner = self.runners.get(scan.module)
             if runner is None:
                 final_state, reason = S.FAILED, f"module {scan.module.value} is not available"
+                return
+            target_check = getattr(runner, "check_targets", None)
+            if target_check is not None:
+                _, problems = target_check(list(scan.authorized_targets), policy)
+                blocked_msgs = [msg for _, msg in problems]
+            else:
+                blocked_msgs = [
+                    f"{d.input}: {d.message}"
+                    for d in (policy.is_target_in_scope(t) for t in scan.authorized_targets)
+                    if not d.allowed
+                ]
+            if blocked_msgs or not policy.valid:
+                final_state = S.BLOCKED_SCOPE
+                reason = "; ".join(blocked_msgs)[:480] or "scope is invalid"
                 return
             ctx = JobContext(
                 repo=self.repo,
@@ -719,9 +739,13 @@ class JobManager:
 
 def default_runners(settings: RuntimeSettings) -> dict[ScanModule, Runner]:
     from app.jobs.selftest import SelfTestRunner
+    from app.scanners.surface.runner import SurfaceRunner
     from app.scanners.webapp.runner import WebAppRunner
 
-    runners: dict[ScanModule, Runner] = {ScanModule.WEB_APP: WebAppRunner()}
+    runners: dict[ScanModule, Runner] = {
+        ScanModule.WEB_APP: WebAppRunner(),
+        ScanModule.ATTACK_SURFACE: SurfaceRunner(),
+    }
     if settings.enable_selftest_jobs:
         runners[ScanModule.SELF_TEST] = SelfTestRunner()
     return runners

@@ -87,6 +87,8 @@ NETWORK_ALLOWED = {
     APP / "integrations" / "dns.py": {"socket"},
     # The pinned HTTP(S) transport (connects only to guard-pinned IPs).
     APP / "integrations" / "http_client.py": {"socket", "ssl", "http.client"},
+    # The TCP connect adapter (pinned IPs only, passive banner read, never sends data).
+    APP / "integrations" / "tcp.py": {"socket"},
 }
 
 

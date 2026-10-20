@@ -3,11 +3,12 @@ import { notifications } from "@mantine/notifications";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ApiError } from "../api/client";
-import { useKillSwitch, useModules, useScopePolicy, useSetKillSwitch, useStartScan, useWebScanProfile } from "../api/hooks";
+import { useKillSwitch, useModules, useScopePolicy, useSetKillSwitch, useStartScan, useSurfaceProfile, useWebScanProfile } from "../api/hooks";
 import type { Project, ScanModule } from "../api/types";
 import { humanize, splitLines } from "../lib/format";
 import { ErrorAlert, QueryState } from "./QueryState";
 import { DEFAULT_WEB_OPTIONS, WebProfileSummary, WebScanOptions, webParams, type WebOptions } from "./WebScanProfile";
+import { DEFAULT_SURFACE_OPTIONS, SurfaceProfileSummary, SurfaceScanOptions, surfaceParams, type SurfaceOptions } from "./SurfaceScanProfile";
 
 /** Start-a-job panel with an explicit confirmation step (MASTER_SPEC §4.1). */
 export function StartJobCard({ project }: { project: Project }) {
@@ -25,10 +26,20 @@ export function StartJobCard({ project }: { project: Project }) {
   const gateOpen = policy.data?.can_start_active_work && !killSwitch.data?.engaged;
   const p = project.scan_policy;
   const [webOptions, setWebOptions] = useState<WebOptions>(DEFAULT_WEB_OPTIONS);
+  const [surfaceOptions, setSurfaceOptions] = useState<SurfaceOptions>(DEFAULT_SURFACE_OPTIONS);
   const isWeb = module === "web_app";
-  const parameters = isWeb ? webParams(webOptions) : {};
+  const isSurface = module === "attack_surface";
+  const targetList = splitLines(targets);
+  const parameters = isWeb ? webParams(webOptions) : isSurface ? surfaceParams(surfaceOptions) : {};
   const profile = useWebScanProfile(project.project_id, parameters, isWeb);
-  const profileInvalid = isWeb && (profile.data?.problems.length ?? 0) > 0;
+  const surfaceProfile = useSurfaceProfile(
+    project.project_id,
+    { ...surfaceParams(surfaceOptions), targets: targetList } as Record<string, string | number | boolean | string[] | undefined>,
+    isSurface && targetList.length > 0,
+  );
+  const profileInvalid =
+    (isWeb && (profile.data?.problems.length ?? 0) > 0) ||
+    (isSurface && ((surfaceProfile.data?.problems.length ?? 0) > 0 || (surfaceProfile.data?.target_problems.length ?? 0) > 0));
 
   const submit = () =>
     start.mutate(
@@ -61,8 +72,9 @@ export function StartJobCard({ project }: { project: Project }) {
                 ))}
               </Stack>
             </Radio.Group>
-            <Textarea label="Targets (one URL per line, must be in scope)" value={targets} onChange={(e) => setTargets(e.currentTarget.value)}
-              autosize minRows={2} placeholder="https://app.example.com/" />
+            <Textarea label={isSurface ? "Targets (one in-scope host or authorized root domain per line)" : "Targets (one URL per line, must be in scope)"}
+              value={targets} onChange={(e) => setTargets(e.currentTarget.value)}
+              autosize minRows={2} placeholder={isSurface ? "example.com" : "https://app.example.com/"} />
             {isWeb && (
               <Card withBorder padding="sm" component="section" aria-labelledby="web-profile-h">
                 <Title order={3} size="h5" id="web-profile-h" mb="xs">Web scan profile</Title>
@@ -71,6 +83,21 @@ export function StartJobCard({ project }: { project: Project }) {
                   <QueryState query={profile} loadingLabel="Loading scan profile…">
                     {(preview) => <WebProfileSummary preview={preview} />}
                   </QueryState>
+                </Stack>
+              </Card>
+            )}
+            {isSurface && (
+              <Card withBorder padding="sm" component="section" aria-labelledby="surface-profile-h">
+                <Title order={3} size="h5" id="surface-profile-h" mb="xs">Attack surface profile</Title>
+                <Stack gap="sm">
+                  <SurfaceScanOptions value={surfaceOptions} onChange={setSurfaceOptions} />
+                  {targetList.length === 0 ? (
+                    <Text size="sm" c="dimmed">Enter at least one in-scope host or authorized root domain above to preview the plan.</Text>
+                  ) : (
+                    <QueryState query={surfaceProfile} loadingLabel="Loading surface plan…">
+                      {(preview) => <SurfaceProfileSummary preview={preview} />}
+                    </QueryState>
+                  )}
                 </Stack>
               </Card>
             )}
@@ -93,6 +120,13 @@ export function StartJobCard({ project }: { project: Project }) {
             Limits: {p.requests_per_second} req/s per host · concurrency {p.max_concurrency} · max {p.max_requests_per_target} requests per target ·
             max {Math.round(p.max_duration_seconds / 60)} min
           </Text>
+          {isSurface && surfaceProfile.data && (
+            <Text size="sm">
+              Surface map: {surfaceProfile.data.profile.ports.tested.length} port(s) via {surfaceProfile.data.profile.port_method} ·{" "}
+              max {surfaceProfile.data.profile.max_hosts} hosts ·{" "}
+              crt.sh {surfaceProfile.data.profile.sources.find((s) => s.name === "crtsh")?.enabled ? "on" : "off"}
+            </Text>
+          )}
           {isWeb && profile.data && (
             <>
               <Text size="sm">

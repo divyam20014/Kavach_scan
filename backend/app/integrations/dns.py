@@ -49,6 +49,46 @@ def system_lookup(host: str) -> list[str]:
     return out
 
 
+@dataclass(frozen=True)
+class DnsRecords:
+    """What the OS resolver returned for a name. TTLs are not exposed by the OS resolver,
+    so `ttl` is None ("unknown") rather than a guess."""
+
+    host: str
+    a: tuple[str, ...] = ()
+    aaaa: tuple[str, ...] = ()
+    cname: str | None = None  # canonical name when it differs from `host`
+    ttl: int | None = None
+    source: str = "os-resolver"
+
+    @property
+    def addresses(self) -> list[str]:
+        return [*self.a, *self.aaaa]
+
+
+def system_records(host: str) -> DnsRecords:
+    """A/AAAA (+ CNAME target via AI_CANONNAME) through the operating system resolver."""
+    try:
+        infos = socket.getaddrinfo(host, None, type=socket.SOCK_STREAM, flags=socket.AI_CANONNAME)
+    except (socket.gaierror, UnicodeError, OSError) as exc:
+        raise ResolutionError(str(exc) or "lookup failed") from exc
+    a: list[str] = []
+    aaaa: list[str] = []
+    canonical = ""
+    for family, _type, _proto, canon, sockaddr in infos:
+        canonical = canonical or (canon or "")
+        address = str(sockaddr[0]).split("%", 1)[0]
+        bucket = aaaa if family == socket.AF_INET6 else a
+        if address not in bucket:
+            bucket.append(address)
+    cname = canonical.lower().rstrip(".") or None
+    if cname == host.lower().rstrip("."):
+        cname = None
+    return DnsRecords(
+        host=host, a=tuple(a[:MAX_ADDRESSES]), aaaa=tuple(aaaa[:MAX_ADDRESSES]), cname=cname
+    )
+
+
 @dataclass
 class _Entry:
     addresses: list[str] | None  # None = cached failure
@@ -68,8 +108,10 @@ class CachingResolver:
         timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
         max_entries: int = 256,
         clock: Callable[[], float] = time.monotonic,
+        records_lookup: Callable[[str], DnsRecords] | None = None,
     ) -> None:
         self.lookup = lookup
+        self.records_lookup = records_lookup
         self.ttl = max(0.0, ttl_seconds)
         self.negative_ttl = max(0.0, negative_ttl_seconds)
         self.timeout = timeout_seconds
@@ -133,6 +175,38 @@ class CachingResolver:
             raise ResolutionError("no addresses")
         return addresses
 
+    def records(self, host: str) -> DnsRecords:
+        """Detailed records (not cached: used once per candidate during discovery).
+
+        Uses `records_lookup` when one was injected, else derives A/AAAA from `resolve`.
+        """
+        if self.records_lookup is not None:
+            result: list[DnsRecords] = []
+            error: list[BaseException] = []
+
+            def work() -> None:
+                try:
+                    result.append(self.records_lookup(host))  # type: ignore[misc]
+                except BaseException as exc:  # noqa: BLE001 - re-raised below
+                    error.append(exc)
+
+            self.lookups += 1
+            worker = threading.Thread(target=work, daemon=True)
+            worker.start()
+            worker.join(self.timeout)
+            if worker.is_alive():
+                raise ResolutionError(f"lookup timed out after {self.timeout:.0f}s")
+            if error:
+                exc = error[0]
+                raise exc if isinstance(exc, ResolutionError) else ResolutionError(str(exc))
+            return result[0]
+        addresses = self.resolve(host)
+        return DnsRecords(
+            host=host,
+            a=tuple(x for x in addresses if ":" not in x),
+            aaaa=tuple(x for x in addresses if ":" in x),
+        )
+
     def invalidate(self, host: str | None = None) -> None:
         with self._lock:
             if host is None:
@@ -143,4 +217,4 @@ class CachingResolver:
 
 def default_resolver_factory() -> CachingResolver:
     """Resolver used by the job manager: one fresh cache per job."""
-    return CachingResolver()
+    return CachingResolver(records_lookup=system_records)

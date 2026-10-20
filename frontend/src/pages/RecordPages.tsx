@@ -145,7 +145,7 @@ export function AssetsPage() {
       title="Assets"
       base="/assets"
       kind="assets"
-      emptyText="Assets are discovered by the attack surface mapper (Phase 06) or imported (Phase 08). None exist yet."
+      emptyText="Assets are discovered by the attack surface mapper or imported (Phase 08). None exist yet."
       columns={["Locator", "Type", "Scope status", "Confidence", "Project", "Last seen"]}
       row={(a) => (
         <Table.Tr key={a.asset_id}>
@@ -167,7 +167,7 @@ export function ScansPage() {
       title="Scans"
       base="/scans"
       kind="scans"
-      emptyText="No jobs have been recorded. Start a job from a project page (web scanner available; surface/API scanners in Phases 06–07)."
+      emptyText="No jobs have been recorded. Start a job from a project page (web and attack-surface scanners available; API scanner in Phase 07)."
       columns={["Scan", "Module", "State", "Project", "Updated"]}
       row={(s) => (
         <Table.Tr key={s.scan_id}>

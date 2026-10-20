@@ -121,8 +121,12 @@ class HttpService:
         backoff_base: float = 0.5,
         max_retry_after: float = 30.0,
         default_headers: tuple[tuple[str, str], ...] = (),
+        cache: bool = False,
     ) -> None:
         self.ctx = ctx
+        # Optional per-run cache of plain GETs (no extra headers/body), so modules that
+        # reuse each other's pages (surface mapper → web checks) never repeat a request.
+        self._cache: dict[tuple[str, bool], HttpExchange] | None = {} if cache else None
         self.transport = transport
         self.max_redirects = max_redirects
         self.max_retries = max_retries
@@ -144,6 +148,24 @@ class HttpService:
         follow_redirects: bool = True,
     ) -> HttpExchange:
         method = method.upper()
+        cache_key = (url, follow_redirects)
+        cacheable = self._cache is not None and method == "GET" and not headers and body is None
+        if cacheable and cache_key in self._cache:  # type: ignore[operator]
+            self.ctx.incr("cache_hits")
+            return self._cache[cache_key]  # type: ignore[index]
+        exchange = self._fetch(method, url, headers, body, follow_redirects)
+        if cacheable and exchange.error_kind not in ("connect", "timeout"):
+            self._cache[cache_key] = exchange  # type: ignore[index]
+        return exchange
+
+    def _fetch(
+        self,
+        method: str,
+        url: str,
+        headers: tuple[tuple[str, str], ...],
+        body: bytes | None,
+        follow_redirects: bool,
+    ) -> HttpExchange:
         merged = self.default_headers + headers
         exchange = HttpExchange(
             method=method, url=url, request_headers=redact_headers(list(merged))

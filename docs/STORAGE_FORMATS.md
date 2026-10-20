@@ -197,3 +197,9 @@ Written via `JobContext.write_output` into `projects/<pid>/scans/<sid>/work/`, r
 | `work/tmp/` | Subprocess TEMP/TMP/TMPDIR |
 
 Findings, evidence and URL assets created by a web scan use the normal collections; `scan.json` additionally records `tool_versions`. Evidence records are linked to their finding (`finding_ids`).
+
+## 15. Attack surface outputs and assets (implemented in Phase 06)
+
+Surface scans write to `projects/<pid>/scans/<sid>/work/` (redacted at write and on read): `profile.json`, `summary.json`, `coverage.json`, `inventory.json` (snapshot used as the baseline for the next scan's `changes.json`), `changes.json`, `hosts.json` (per-host DNS and port states).
+
+Assets use the normal `assets` collection with optional Phase-06 fields (backward compatible): `related_asset_ids` (extra graph edges), `attributes` (port, service, product, version, sanitized banner, DNS note, cert days-left...), `resolution_status` (`resolved`/`unresolved`/`not_attempted`), `criticality` (operator-entered). Relationships, first/last-seen and attributes persist across restarts; a re-observed asset is updated, not duplicated. New audit actions: `asset_approved`, `asset_criticality_changed`.

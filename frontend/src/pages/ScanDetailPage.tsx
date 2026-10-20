@@ -10,6 +10,7 @@ import { ErrorAlert, QueryState } from "../components/QueryState";
 import { ScanStateLabel } from "../components/StatusLabel";
 import { formatDateTime, humanize } from "../lib/format";
 import { WebCoverageTab, WebFindingsTab, WebPagesTab, WebSummaryPanel, WebWarningsPanel } from "./ScanResultTabs";
+import { SurfaceChangesTab, SurfaceCoverageTab, SurfaceFindingsTab, SurfaceHostsTab, SurfaceOriginsTab, SurfaceSummaryPanel } from "./SurfaceResultTabs";
 
 const RETRYABLE = new Set(["failed", "interrupted", "cancelled", "expired_authorization", "blocked_scope", "completed_with_warnings"]);
 
@@ -32,6 +33,8 @@ function ScanDetailView({ detail }: { detail: ScanDetail }) {
   const [confirmCancel, setConfirmCancel] = useState(false);
   const counters = Object.entries(scan.progress.counters);
   const isWeb = scan.module === "web_app";
+  const isSurface = scan.module === "attack_surface";
+  const hasResults = isWeb || isSurface;
   // Web outputs are written at the end of the run (also on cancellation/limits).
   const resultsReady = detail.terminal && scan.output_refs.includes("work/summary.json");
 
@@ -112,14 +115,18 @@ function ScanDetailView({ detail }: { detail: ScanDetail }) {
           <Tabs.List aria-label="Job detail sections">
             <Tabs.Tab value="summary">Summary</Tabs.Tab>
             {isWeb && <Tabs.Tab value="pages">Pages / endpoints</Tabs.Tab>}
-            {isWeb && <Tabs.Tab value="findings">Findings</Tabs.Tab>}
+            {isSurface && <Tabs.Tab value="hosts">Hosts / ports</Tabs.Tab>}
+            {isSurface && <Tabs.Tab value="origins">Web origins</Tabs.Tab>}
+            {hasResults && <Tabs.Tab value="findings">Findings</Tabs.Tab>}
+            {isSurface && <Tabs.Tab value="changes">Changes</Tabs.Tab>}
             <Tabs.Tab value="logs">Logs</Tabs.Tab>
             <Tabs.Tab value="warnings">Warnings ({scan.warnings.length + scan.errors.length})</Tabs.Tab>
-            {isWeb && <Tabs.Tab value="coverage">Coverage</Tabs.Tab>}
+            {hasResults && <Tabs.Tab value="coverage">Coverage</Tabs.Tab>}
           </Tabs.List>
           <Tabs.Panel value="summary" pt="md">
             <Stack gap="md">
               {isWeb && <WebSummaryPanel scan={scan} ready={resultsReady} />}
+              {isSurface && <SurfaceSummaryPanel scan={scan} ready={resultsReady} />}
         <SimpleGrid cols={{ base: 1, md: 2 }}>
           <Card withBorder component="section" aria-labelledby="targets-h">
             <Title order={2} size="h4" id="targets-h" mb="sm">Targets (scope-checked)</Title>
@@ -157,9 +164,24 @@ function ScanDetailView({ detail }: { detail: ScanDetail }) {
               <WebPagesTab scan={scan} ready={resultsReady} />
             </Tabs.Panel>
           )}
-          {isWeb && (
+          {isSurface && (
+            <Tabs.Panel value="hosts" pt="md">
+              <SurfaceHostsTab scan={scan} ready={resultsReady} />
+            </Tabs.Panel>
+          )}
+          {isSurface && (
+            <Tabs.Panel value="origins" pt="md">
+              <SurfaceOriginsTab scan={scan} ready={resultsReady} />
+            </Tabs.Panel>
+          )}
+          {hasResults && (
             <Tabs.Panel value="findings" pt="md">
-              <WebFindingsTab scan={scan} />
+              {isWeb ? <WebFindingsTab scan={scan} /> : <SurfaceFindingsTab scan={scan} />}
+            </Tabs.Panel>
+          )}
+          {isSurface && (
+            <Tabs.Panel value="changes" pt="md">
+              <SurfaceChangesTab scan={scan} ready={resultsReady} />
             </Tabs.Panel>
           )}
           <Tabs.Panel value="logs" pt="md">
@@ -173,9 +195,9 @@ function ScanDetailView({ detail }: { detail: ScanDetail }) {
               {isWeb && <WebWarningsPanel scan={scan} ready={resultsReady} />}
             </Stack>
           </Tabs.Panel>
-          {isWeb && (
+          {hasResults && (
             <Tabs.Panel value="coverage" pt="md">
-              <WebCoverageTab scan={scan} ready={resultsReady} />
+              {isWeb ? <WebCoverageTab scan={scan} ready={resultsReady} /> : <SurfaceCoverageTab scan={scan} ready={resultsReady} />}
             </Tabs.Panel>
           )}
         </Tabs>

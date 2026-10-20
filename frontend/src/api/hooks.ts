@@ -9,6 +9,8 @@ import type {
   ScanDetail,
   ScanParams,
   StartScanRequest,
+  SurfaceProfilePreview,
+  SurfaceView,
   WebProfilePreview,
   InternalOverrideRequest,
   ScopeCheckResponse,
@@ -243,11 +245,46 @@ export function useWebScanProfile(projectId: string, params: ScanParams, enabled
 }
 
 /** Web scanner outputs (summary / coverage / pages); available once the job wrote them. */
-export function useScanResult<T>(projectId: string, scanId: string, kind: "summary" | "coverage" | "pages", enabled: boolean) {
+export function useScanResult<T>(projectId: string, scanId: string, kind: "summary" | "coverage" | "pages" | "changes", enabled: boolean) {
   return useQuery({
     queryKey: ["scan-result", projectId, scanId, kind],
     queryFn: () => api.get<T>(`/api/projects/${enc(projectId)}/scans/${enc(scanId)}/results/${kind}`),
     enabled,
     retry: false,
+  });
+}
+
+// ---------------------------------------------------------------- attack surface (Phase 06)
+
+export function useSurfaceProfile(projectId: string, params: Record<string, string | number | boolean | string[] | undefined>, enabled: boolean) {
+  return useQuery({
+    queryKey: ["surface-profile", projectId, params],
+    queryFn: () => api.get<SurfaceProfilePreview>(`/api/projects/${enc(projectId)}/surface-scan-profile`, params),
+    enabled,
+  });
+}
+
+export function useSurface(projectId: string, query: Record<string, string | string[] | undefined>) {
+  return useQuery({
+    queryKey: ["surface", projectId, query],
+    queryFn: () => api.get<SurfaceView>(`/api/projects/${enc(projectId)}/surface`, query),
+  });
+}
+
+export function useSetCriticality(projectId: string) {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: ({ assetId, expectedRevision, criticality }: { assetId: string; expectedRevision: number; criticality: string | null }) =>
+      request("PATCH", `/api/projects/${enc(projectId)}/assets/${enc(assetId)}`, { body: { expected_revision: expectedRevision, criticality } }),
+    onSuccess: invalidate,
+  });
+}
+
+export function useApproveAsset(projectId: string) {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: ({ assetId, expectedProjectRevision }: { assetId: string; expectedProjectRevision: number }) =>
+      api.post(`/api/projects/${enc(projectId)}/assets/${enc(assetId)}/approve`, { expected_project_revision: expectedProjectRevision, confirmed: true }),
+    onSuccess: invalidate,
   });
 }

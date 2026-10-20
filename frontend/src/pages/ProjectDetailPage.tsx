@@ -48,6 +48,9 @@ function ProjectDetail({ overview }: { overview: ProjectOverview }) {
             <Button component={Link} to={`/projects/${project.project_id}/edit`} variant="default">
               Edit
             </Button>
+            <Button component={Link} to={`/projects/${project.project_id}/surface`} variant="default">
+              Attack surface
+            </Button>
             <Button variant="default" onClick={toggleArchive} loading={update.isPending}>
               {archived ? "Restore" : "Archive"}
             </Button>
@@ -67,7 +70,7 @@ function ProjectDetail({ overview }: { overview: ProjectOverview }) {
         </Group>
 
         <Alert role="note" color="gray" title="Scanner availability" variant="light">
-          The web application scanner is available (safe mode: no injection test input). The attack-surface and API scanners arrive in Phases 06–07.
+          The web application scanner (safe mode) and the attack-surface mapper are available. The API scanner arrives in Phase 07.
         </Alert>
 
         <SimpleGrid cols={{ base: 2, sm: 3, md: 6 }}>
