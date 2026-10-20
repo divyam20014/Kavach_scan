@@ -65,4 +65,16 @@ Expected results are recorded in [TESTING.md](TESTING.md) §2. Tests always use 
 
 ## Frontend
 
-Not created yet (Phase 02).
+React 18 + TypeScript + Vite 7 + Mantine 7 + TanStack Query + React Router 7 (TBD-030). Requires Node 20.19+ (tested on 22.16).
+
+```bash
+cd frontend
+npm install              # .npmrc sets legacy-peer-deps (TBD-042)
+npm run dev              # http://127.0.0.1:5173, proxies /api to the backend on 127.0.0.1:8765
+npm test                 # Vitest (jsdom)
+npm run typecheck && npm run lint
+npm run build            # -> frontend/dist; `python -m app` then serves the UI at http://127.0.0.1:8765/
+npm run e2e              # real-browser smoke test with the installed Microsoft Edge (needs a build first)
+```
+
+Run the backend (`cd backend && poetry run python -m app`) before `npm run dev`. The browser talks only to `/api`; it never touches the filesystem.

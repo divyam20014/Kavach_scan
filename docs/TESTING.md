@@ -23,6 +23,30 @@ Run from `backend/` (see [DEVELOPMENT.md](DEVELOPMENT.md) for setup):
 
 Frontend (Phase 02+, planned): `npm test` (Vitest), `npm run lint` (ESLint), `npm run typecheck` (`tsc --noEmit`), `npm run build`.
 
+### Results recorded at Phase 02 verification (2026-10-20)
+
+| Command | Result |
+|---|---|
+| `cd backend && poetry run pytest` / `ruff` / `mypy` | 608 passed, 1 skipped / clean / clean |
+| `cd frontend && npm test` | **28 passed** (adds keyboard, source-hygiene, hostile-content tests) |
+| `npm run typecheck` / `lint` / `build` / `npm audit` | pass / pass / built / 0 vulnerabilities |
+| `npm run e2e:verify` (Edge, real backend) | **12/12**: empty states; 8 KPIs equal the captured `/api/dashboard/summary` response; tampered response changes the UI; create/edit survive reload; backend offline alert + retry; backend 422 field message; stale-edit 409; delete confirmation (disabled until exact name, cancel safe, audited); keyboard-only navigation with visible focus; no console/CSP errors |
+| `npm run e2e` | 10/10 |
+| Mutation check: delete regression test with the old hook | fails as expected; passes with the fix |
+
+### Results recorded at Phase 02 (2026-10-20, Windows 11, Python 3.13.5, Node 22.16)
+
+| Command | Result |
+|---|---|
+| `cd backend && poetry run pytest` | **608 passed, 1 skipped** |
+| `poetry run ruff check .` / `mypy` | passed / no issues in 43 files |
+| `cd frontend && npm test` (Vitest 4 + Testing Library, jsdom) | **21 passed** (3 consecutive runs) |
+| `npm run typecheck` / `npm run lint` / `npm run build` | pass / pass / built (517 kB JS, size warning only) |
+| `npm audit` (all deps) | 0 vulnerabilities |
+| `npm run e2e`: real Edge, backend serving `frontend/dist`, temp data dir | **10/10 checks**: honest zeros; attestation enforced; preview errors shown; create via UI; reload persists; edit via UI; backend restart persists; dashboard counter; audit events; no console/CSP errors |
+
+Frontend tests mock `fetch` per route (`src/test/utils.tsx`); unmatched requests fail with a 404, so no test can reach a network. The E2E script contacts only `127.0.0.1`.
+
 ### Results recorded at Phase 01 verification (2026-10-20, Windows 11, Python 3.13.5)
 
 | Command | Result |

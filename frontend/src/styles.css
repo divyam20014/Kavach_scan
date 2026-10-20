@@ -1,0 +1,16 @@
+/* Keyboard users: first Tab stop on every page; visible only when focused. */
+.skip-link {
+  position: absolute;
+  left: 8px;
+  top: -48px;
+  z-index: 1000;
+  padding: 8px 12px;
+  background: #1c7ed6;
+  color: #fff;
+  border-radius: 6px;
+  text-decoration: none;
+}
+.skip-link:focus {
+  top: 8px;
+  outline: 3px solid #fab005;
+}

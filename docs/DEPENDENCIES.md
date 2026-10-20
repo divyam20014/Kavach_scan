@@ -55,6 +55,22 @@ Transitive dev packages: `httpcore`, `certifi` (MPL-2.0), `iniconfig`, `pluggy`,
 | 10 | WeasyPrint / ReportLab / Playwright | PDF rendering | TBD-031 |
 | 02 | React, Vite, TypeScript, Mantine, TanStack Query, Vitest, Testing Library | Frontend | TBD-030 |
 
+## 5a. Frontend dependencies (Phase 02; exact pins in `frontend/package.json` + `package-lock.json`)
+
+| Package | Version | Kind | Purpose |
+|---|---|---|---|
+| react / react-dom | 18.3.1 | runtime | UI |
+| @mantine/core, hooks, notifications | 7.17.8 | runtime | Component library (TBD-030) |
+| @tanstack/react-query | 5.104.5 | runtime | Data fetching/caching |
+| react-router-dom | 7.18.4 | runtime | Routing. 6.x carries GHSA-wrjc-x8rr-h8h6 (open redirect), so 7.18.4 is used |
+| vite / @vitejs/plugin-react | 7.3.7 / 5.2.0 | dev | Build/dev server (5.x pulled vulnerable esbuild) |
+| vitest / jsdom | 4.1.12 / 26.1.0 | dev | Tests (2.x pulled critical tinypool + @vitest/mocker advisories) |
+| @testing-library/react, dom, user-event, jest-dom | 16.3.3, 10.4.2, 14.6.8, 6.10.0 | dev | Component tests |
+| typescript / eslint / typescript-eslint / eslint-plugin-react-hooks | 5.9.3 / 9.39.5 / 8.72.0 / 5.2.0 | dev | Types and lint (ESLint 9 is past end of support; TBD-042) |
+| playwright-core | 1.64.1 | dev | Drives the locally installed Edge for `npm run e2e`; downloads no browsers |
+
+`npm audit` (runtime and dev): **0 vulnerabilities** on 2026-10-20. No icon or chart library was added: statuses use text + shapes, and no graphs exist yet.
+
 ## 6. External tools (optional, never bundled)
 
 | Tool | Status on dev machine (2026-10-20) | Used by | Behaviour if absent |

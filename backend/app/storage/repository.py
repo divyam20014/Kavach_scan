@@ -903,6 +903,78 @@ class StorageRepository:
             limit=limit,
         )
 
+    # ------------------------------------------------------------------ cross-project reads
+
+    def _spec(self, kind: str) -> CollectionSpec[Any]:
+        for spec in CHILD_COLLECTIONS:
+            if spec.kind == kind:
+                return spec
+        raise InvalidRecordError(f"Unknown record kind {kind!r}")
+
+    def summaries(
+        self, kind: str, project_id: str
+    ) -> tuple[dict[str, dict[str, Any]], list[RecordError]]:
+        """Index summaries (id -> summary fields + revision) for one project's collection.
+
+        Cheap aggregation input for dashboards; values come from canonical records via the
+        derived index (rebuilt automatically when it disagrees with the files on disk)."""
+        spec = self._spec(kind)
+        self.get_project(project_id)
+        index, errors = self._ensure_child_index(spec, project_id)
+        return dict(index["entries"]), errors
+
+    def project_summaries(self) -> tuple[dict[str, dict[str, Any]], list[RecordError]]:
+        index, errors = self._ensure_projects_index()
+        return dict(index["entries"]), errors
+
+    def list_across_projects(
+        self,
+        kind: str,
+        *,
+        project_id: str | None = None,
+        filters: dict[str, set[str] | None] | None = None,
+        sort: str = "updated_at",
+        descending: bool = True,
+        offset: int = 0,
+        limit: int = 50,
+    ) -> Page[Any]:
+        """Filtered, sorted, paginated listing of one record kind over all (or one) projects."""
+        spec = self._spec(kind)
+        self._check_paging(sort, spec.sort_fields, offset, limit)
+        filters = filters or {}
+        project_ids = (
+            [validate_id("project", project_id)]
+            if project_id
+            else sorted(self.project_summaries()[0])
+        )
+        rows: list[tuple[str, str, dict[str, Any]]] = []
+        errors: list[RecordError] = []
+        for pid in project_ids:
+            try:
+                entries, errs = self.summaries(kind, pid)
+            except RecordNotFoundError:
+                continue
+            errors.extend(errs)
+            for rid, entry in entries.items():
+                if all(
+                    not allowed or str(entry.get(f)) in allowed for f, allowed in filters.items()
+                ):
+                    rows.append((pid, rid, entry))
+        key = _sort_key(sort)
+        rows.sort(key=lambda r: key((r[1], r[2])), reverse=descending)
+        items: list[Any] = []
+        for pid, rid, _ in rows[offset : offset + limit]:
+            try:
+                items.append(self._get_child(spec, pid, rid))
+            except StorageError as exc:
+                errors.append(
+                    RecordError(record_id=rid, project_id=pid, kind=exc.code, message=exc.message)
+                )
+        page: Page[Any] = Page[Any](
+            items=items, total=len(rows), offset=offset, limit=limit, errors=errors
+        )
+        return page
+
     # ------------------------------------------------------------------ settings
 
     def get_settings(self) -> AppSettings:

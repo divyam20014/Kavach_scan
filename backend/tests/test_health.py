@@ -15,6 +15,16 @@ SYSTEM_ROUTES = {
     "/api/readiness",
     "/api/diagnostics/storage",
     "/api/diagnostics/integrity-check",
+    # Phase 02
+    "/api/projects",
+    "/api/projects/{project_id}",
+    "/api/projects/{project_id}/deletion-impact",
+    "/api/scope/preview",
+    "/api/dashboard/summary",
+    "/api/findings",
+    "/api/assets",
+    "/api/scans",
+    "/api/audit",
 }
 
 # No lifespan: these endpoints must work without storage.
@@ -40,8 +50,8 @@ def test_version_matches_pyproject() -> None:
     assert tomllib.loads(pyproject.read_text("utf-8"))["project"]["version"] == __version__
 
 
-def test_only_system_routes_exist() -> None:
-    """Guard: no scan, project, or import routes may exist before their phases."""
+def test_only_known_routes_exist() -> None:
+    """Guard: routes for later phases (scan start, imports, reports...) must not appear early."""
     app = create_app()
     assert set(app.openapi()["paths"]) == SYSTEM_ROUTES
     top_level = {r.path for r in app.routes if isinstance(r, Route | APIRoute)}
@@ -60,14 +70,23 @@ def test_health_endpoints_reject_writes() -> None:
     assert resp.json()["error"]["code"] == "method_not_allowed"
 
 
+def test_no_route_can_create_or_start_a_scan() -> None:
+    paths = create_app().openapi()["paths"]
+    for path, ops in paths.items():
+        if "scan" in path:
+            assert set(ops) <= {"get"}, (
+                f"{path} exposes {set(ops)}; scans cannot start before Phase 04"
+            )
+
+
 def test_unknown_routes_are_404_not_fake_200() -> None:
     for method, path in [
-        ("POST", "/api/scans"),
-        ("POST", "/api/projects"),
-        ("GET", "/api/projects"),
+        ("POST", "/api/projects/x/scans"),
         ("POST", "/api/projects/x/imports"),
-        ("GET", "/api/findings"),
+        ("POST", "/api/reports"),
+        ("GET", "/api/integrations"),
     ]:
         resp = bare.request(method, path)
         assert resp.status_code == 404, (method, path)
         assert resp.json()["error"]["code"] == "not_found"
+    assert bare.post("/api/scans").status_code == 405  # list exists; nothing can create a scan

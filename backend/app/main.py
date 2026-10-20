@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app import __version__
-from app.api import health
+from app.api import health, projects
 from app.core.config import PRODUCT_NAME
 from app.core.correlation import CorrelationIdMiddleware
 from app.core.errors import ErrorResponse, install_error_handlers
@@ -23,6 +23,7 @@ from app.core.request_guards import RequestLogMiddleware, RequestSizeLimitMiddle
 from app.core.settings import RuntimeSettings, load_settings
 from app.storage.integrity import check_integrity
 from app.storage.repository import StorageRepository
+from app.web import SecurityHeadersMiddleware, mount_ui
 
 log = logging.getLogger("app.main")
 
@@ -30,7 +31,11 @@ log = logging.getLogger("app.main")
 def create_app(
     settings: RuntimeSettings | None = None,
     repository: StorageRepository | None = None,
+    *,
+    serve_ui: bool = False,
 ) -> FastAPI:
+    """Build the app. `serve_ui=True` also serves the built frontend (frontend/dist)."""
+
     @asynccontextmanager
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         owned = repository is None
@@ -50,7 +55,7 @@ def create_app(
             if owned:
                 repo.close()
 
-    effective = settings or RuntimeSettings()
+    effective = settings or load_settings()
     app = FastAPI(
         title=PRODUCT_NAME,
         version=__version__,
@@ -59,7 +64,11 @@ def create_app(
     )
     install_error_handlers(app)
     app.include_router(health.router)
+    app.include_router(projects.router)
+    if serve_ui and not mount_ui(app):
+        log.info("frontend build not found; serving the API only")
     # add_middleware prepends: the last added runs first (outermost).
+    app.add_middleware(SecurityHeadersMiddleware)
     app.add_middleware(RequestLogMiddleware)
     app.add_middleware(CorrelationIdMiddleware)
     app.add_middleware(RequestSizeLimitMiddleware, max_bytes=effective.max_request_bytes)
@@ -67,4 +76,4 @@ def create_app(
     return app
 
 
-app = create_app()
+app = create_app(serve_ui=True)

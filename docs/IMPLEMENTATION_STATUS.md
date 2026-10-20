@@ -1,14 +1,15 @@
 # Implementation Status — VAPT Workbench
 
-> Last updated: 2026-10-20 (Phase 01 verification). Statuses use only `Not started` / `Partial` / `Implemented` / `Blocked`. `Implemented` requires a code reference **and** a passing test that was actually run. Design-only documentation does not count as implementation.
+> Last updated: 2026-10-20 (Phase 02 verification). Statuses use only `Not started` / `Partial` / `Implemented` / `Blocked`. `Implemented` requires a code reference **and** a passing test that was actually run. Design-only documentation does not count as implementation.
 
 ## Current baseline (observed 2026-10-20, Windows 11, Python 3.13.5)
 
 | Check | Result |
 |---|---|
-| Backend tests | `poetry run pytest` → **543 passed, 1 skipped** (POSIX permission bits; not applicable on Windows), 1 warning (Starlette TestClient deprecation notice) |
+| Backend tests | `poetry run pytest` → **608 passed, 1 skipped** (POSIX permission bits; N/A on Windows) |
+| Frontend | `npm test` → **28 passed**; `npm run typecheck`, `npm run lint`, `npm run build` pass; `npm audit` 0 vulnerabilities |
+| Real-browser E2E | `npm run e2e` → **10/10**; `npm run e2e:verify` → **12/12** (KPIs equal captured network response; tampered response changes UI; offline + retry; backend 422; edit conflict; delete confirmation; keyboard-only) |
 | Lint / format / types | `ruff check .` passed · `ruff format --check .` 58 files formatted · `mypy` (strict) no issues in 37 files |
-| Frontend | None (Phase 02) |
 | Database / broker dependencies | **None.** 30 locked packages; static + runtime guards in `tests/test_static_guards.py`, `tests/test_startup.py::test_importing_app_loads_no_database_or_broker_modules` |
 | Scanning / outbound network / subprocess code in `backend/app/` | **None.** Enforced by `tests/test_static_guards.py::test_no_network_or_subprocess_modules_yet` |
 | File writes outside `app/storage/` | **None.** Enforced by `tests/test_static_guards.py::test_no_file_io_outside_storage` |
@@ -50,10 +51,15 @@ No option is out of scope.
 | **M2** Schema versioning + migration hooks + backups | §2 | **Implemented** (no real migrations yet; v1 everywhere) | 01 | `app/storage/migrations.py`, `repository.migrate_all` | `tests/test_migrations.py` |
 | **M2** Integrity checker + index rebuild | §6 M2 | **Implemented** (stale-job check is Phase 04) | 01 | `app/storage/integrity.py` | `tests/test_integrity.py`, `tests/test_indexes.py` |
 | **M2** Append-only JSONL audit log: redaction, rotation, corruption tolerance | §5.7 | **Implemented** | 01 | `app/storage/jsonl.py`, `app/storage/audit.py`, `app/core/redaction.py` | `tests/test_audit_jsonl.py`, `tests/test_redaction.py` |
-| Audit events for project create/update/delete, scope edits, attestations | §5.7 | Not started (emitted by services/routes in Phase 02/03; storage-level events emitted: storage_initialized, storage_migrated, integrity_checked) | 02 | — | — |
+| Audit events for project create/update/archive/delete, scope edits, attestations | §5.7 | **Implemented** | 02 | `app/services/projects.py` | `test_api_projects.py` |
 | Export/backup/restore archives | §6 M2, M10 | Not started | 10 | — | — |
-| Settings UI (data dir, disk, versions) | §6 M2 | Partial (API only) | 02 | `app/api/health.py` | `tests/test_api_system.py` |
-| **M1** App shell, dashboard, projects | §6 M1 | Not started | 02 | `frontend/src/` | — |
+| Settings UI (data dir, disk, versions; tools shown as not checked) | §6 M2 | **Implemented** (backup status: Phase 10) | 02 | `SystemPages.tsx` | `app.test.tsx` |
+| **M1** App shell, navigation, breadcrumbs, toasts, loading/empty/error states | §6 M1 | **Implemented** | 02 | `frontend/src/layouts/AppLayout.tsx`, `components/` | `frontend/src/test/app.test.tsx` |
+| **M1** Dashboard (API-derived KPIs, clickable pre-filtered views, recent activity) | §6 M1 | **Implemented** (trend charts deferred until comparable scans exist, Phase 09) | 02 | `app/services/dashboard.py`, `frontend/src/pages/DashboardPage.tsx` | `tests/test_api_projects.py::test_dashboard_*`, `app.test.tsx` |
+| **M1** Projects list (search/sort/pagination, status, authorization expiry, last scan) | §6 M1 | **Implemented** | 02 | `app/api/projects.py`, `ProjectsPage.tsx` | `test_api_projects.py`, `app.test.tsx` |
+| **M1** Project create/edit wizard with scope preview + attestation | §6 M1, §4.1 | **Implemented** (preview only; enforcement Phase 03) | 02 | `app/services/projects.py`, `app/services/scope_preview.py`, `ProjectWizardPage.tsx` | `test_api_projects.py`, `wizard.test.tsx`, E2E |
+| **M1** Archive / delete with impact + typed confirmation | §6 M1 | **Implemented** | 02 | `ProjectDetailPage.tsx`, `repository.delete_project` | `test_api_projects.py::test_delete_*`, `app.test.tsx` |
+| **M1** Duplicate project without secrets; project export/import | §6 M1 | Not started | 10 | — | — |
 | **M3** Scope & authorization engine | §4, §6 M3 | Not started (syntax-only scope validation in models) | 03 | `backend/app/scope/` | — |
 | **M4** Job manager, logs, cancellation, kill switch | §2, §6 M4 | Not started (ScanJob contract + storage exist) | 04 | `backend/app/jobs/` | — |
 | Shared HTTP / DNS / subprocess adapters | §4.3 | Not started | 05 | `backend/app/integrations/` | — |
@@ -76,4 +82,5 @@ No option is out of scope.
 | Bootstrap | Done | n/a | Empty repo confirmed |
 | 00 | Verified | PASS (2026-10-20) | Docs, `.gitignore`, minimal FastAPI skeleton |
 | 01 | Verified | **PASS** (2026-10-20) | Verification fixed 3 defects: (1) project-delete race could resurrect folders / return 500 → central lock dir + 404 mapping + lexical containment; (2) junctions named like project IDs could crash the integrity check → skipped/reported; (3) log redaction missed dict/JSON/mid-line secrets → patterns extended. Tests: `tests/test_verification_phase01.py` (+78) |
-| 02 | Not started | — | Awaiting explicit prompt |
+| 02 | Verified | **PASS** (2026-10-20) | Verification fixed: after delete the UI stuck on a 404 error screen instead of returning to Projects (query invalidation unmounted the dialog); added skip link; test-only build break. | UI shell, dashboard, projects, wizard, drill-down views, audit/settings pages; backend project/dashboard/scope-preview APIs; SPA served by backend with security headers |
+| 03 | Not started | — | Awaiting explicit prompt |

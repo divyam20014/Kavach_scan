@@ -48,7 +48,7 @@ def _serve() -> int:
         print(f"error: {exc.message}", file=sys.stderr)
         return 3
     try:
-        app = create_app(settings, repository=repo)
+        app = create_app(settings, repository=repo, serve_ui=True)
         uvicorn.run(app, host=bind.host, port=bind.port, access_log=False, log_config=None)
     finally:
         repo.close()

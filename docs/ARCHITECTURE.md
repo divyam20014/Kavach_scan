@@ -1,6 +1,6 @@
 # Architecture — VAPT Workbench (Kavach_scan)
 
-> **Status:** Updated for Phase 01 (2026-10-20).
+> **Status:** Updated for Phase 02 (2026-10-20).
 > **Implemented** means code and passing tests exist in this repository. **Design** means the agreed target, owned by the phase named, and not yet built. The implementation status of every module is tracked in [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md).
 
 Related documents: [SECURITY_MODEL.md](SECURITY_MODEL.md) · [SCAN_SAFETY.md](SCAN_SAFETY.md) · [STORAGE_FORMATS.md](STORAGE_FORMATS.md) · [TESTING.md](TESTING.md) · [DEPENDENCIES.md](DEPENDENCIES.md) · [DEVELOPMENT.md](DEVELOPMENT.md)
@@ -15,7 +15,7 @@ Related documents: [SECURITY_MODEL.md](SECURITY_MODEL.md) · [SCAN_SAFETY.md](SC
 | Backend foundation | FastAPI app factory with lifespan-managed storage. Typed error envelope, correlation IDs, redacting JSON logs, strict `VAPT_*` settings, loopback-peer + Host-header guards, request-size limit. Endpoints: `/api/health`, `/api/version`, `/api/readiness`, `/api/diagnostics/storage`, `POST /api/diagnostics/integrity-check`. CLI: `python -m app [serve\|diagnose\|--version]`. | `backend/app/{api,core}/`; 465 tests pass |
 | Contracts | Pydantic v2 models for Project, AuthorizationRecord, ScopeDefinition, ScanPolicy, ScanJob, Asset, Finding, EvidenceMetadata, ImportArtifact, AuditEvent, ReportMetadata, AppSettings. All have `schema_version`, `extra="forbid"`, enums and bounds. | `backend/app/models/`; `tests/test_models.py` |
 | Persistence | **Filesystem only**: `StorageRepository` is the single owner of `VAPT_DATA_DIR`. It provides atomic writes, two-level record locks, a single-instance lock, derived indexes, a JSONL audit log, migration hooks, an integrity checker and diagnostics. | `backend/app/storage/`; [STORAGE_FORMATS.md](STORAGE_FORMATS.md) |
-| Frontend | **None.** Planned for Phase 02. | — |
+| Frontend | React + TypeScript + Vite + Mantine SPA: dashboard, projects, setup wizard, drill-down lists, audit, settings, help. Served by the backend from `frontend/dist` (`python -m app`) or by the Vite dev server (proxying `/api`). | `frontend/src/`; 21 Vitest tests; Edge E2E |
 | Scanning / outbound network / subprocess | **None.** `/api/version` reports `scanning_available: false`. Static guards fail the build if `httpx`/`socket`/`subprocess`/`dns` (or similar) appear in `app/`; `socket` is used only for `gethostname()` in the instance lease. | `tests/test_static_guards.py`, `tests/test_health.py::test_only_system_routes_exist` |
 | Database / broker | **None.** 30 locked packages, none a database or broker. Importing the app loads no `sqlite3`/`redis`. | `tests/test_static_guards.py`, `tests/test_startup.py` |
 
