@@ -167,7 +167,7 @@ export function ScansPage() {
       title="Scans"
       base="/scans"
       kind="scans"
-      emptyText="No jobs have been recorded. Start a job from a project page (web and attack-surface scanners available; API scanner in Phase 07)."
+      emptyText="No jobs have been recorded. Start a job from a project page (web, attack-surface and API scanners available)."
       columns={["Scan", "Module", "State", "Project", "Updated"]}
       row={(s) => (
         <Table.Tr key={s.scan_id}>

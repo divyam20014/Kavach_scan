@@ -23,6 +23,25 @@ Run from `backend/` (see [DEVELOPMENT.md](DEVELOPMENT.md) for setup):
 
 Frontend (Phase 02+, planned): `npm test` (Vitest), `npm run lint` (ESLint), `npm run typecheck` (`tsc --noEmit`), `npm run build`.
 
+### Results recorded at Phase 07 (2026-10-21)
+
+| Command | Result |
+|---|---|
+| `poetry run pytest` | **1516 passed, 1 skipped** (adds `test_apisec_spec.py`, `test_apisec_scan.py`, `test_apisec_api.py`) |
+| `ruff check` / `ruff format --check` / `mypy` | clean / all formatted / no issues in 92 source files |
+| `npm test` / `typecheck` / `lint` / `build` / `audit` | 51 passed / pass / pass / built / 0 vulnerabilities |
+
+Phase 07 fixtures (`backend/tests/apifixtures.py`): OpenAPI 3 + Swagger 2 specs (JSON & YAML), external-ref, cyclic-ref, malformed and non-spec documents, and a loopback fixture API (health, owner-scoped orders, a `leaky` BOLA object, a stack-trace endpoint, an un-throttled endpoint) that counts requests so tests prove exactly what was contacted.
+
+### Results recorded at Phase 07 verification (2026-10-21)
+
+| Command | Result |
+|---|---|
+| `poetry run pytest` | **1542 passed, 1 skipped** (adds `test_apisec_verification.py`, 26 tests) |
+| `poetry run pytest tests/test_apisec_verification.py` | 26/26: malformed/oversized specs rejected before parsing; out-of-scope server blocks every network check; path-parameter injection cannot redirect to another host or inject CRLF (fixed defect, see IMPLEMENTATION_STATUS); nonstandard method keys (connect/x-vendor/query) are never inventoried as operations; a path-item `$ref` is resolved so no operation is missed; dry inventory against a live fixture API sends zero requests; IDOR refuses to run for every missing precondition (no identities, one identity, no ownership map, unknown alias); write methods are never sent and no ID-guessing loop runs; mass-assignment write stays skipped even when nominally enabled; rate probe backs off on 429 and on unstable latency with an exact, undercounting-free request total (fixed defect) |
+| `ruff check` / `ruff format --check` / `mypy` | clean / all formatted / no issues in 92 source files |
+| `npm test` (2 runs) / `build` / `audit` | 51 passed both runs / built / 0 vulnerabilities |
+
 ### Results recorded at Phase 06 verification (2026-10-21)
 
 | Command | Result |

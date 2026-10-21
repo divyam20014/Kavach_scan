@@ -10,6 +10,7 @@ import { ProjectDetailPage } from "./pages/ProjectDetailPage";
 import { ProjectsPage } from "./pages/ProjectsPage";
 import { ScanDetailPage } from "./pages/ScanDetailPage";
 import { SurfacePage } from "./pages/SurfacePage";
+import { ApiSpecPage } from "./pages/ApiSpecPage";
 import { ProjectWizardPage } from "./pages/ProjectWizardPage";
 import { AssetsPage, FindingsPage, ScansPage } from "./pages/RecordPages";
 import { AuditPage, HelpPage, NotFoundPage, SettingsPage } from "./pages/SystemPages";
@@ -55,6 +56,7 @@ export function AppRoutes() {
         <Route path="projects/:projectId/edit" element={<ProjectWizardPage />} />
         <Route path="projects/:projectId/scans/:scanId" element={<ScanDetailPage />} />
         <Route path="projects/:projectId/surface" element={<SurfacePage />} />
+        <Route path="projects/:projectId/api-specs" element={<ApiSpecPage />} />
         <Route path="findings" element={<FindingsPage />} />
         <Route path="assets" element={<AssetsPage />} />
         <Route path="scans" element={<ScansPage />} />

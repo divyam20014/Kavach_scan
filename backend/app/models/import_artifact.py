@@ -46,6 +46,7 @@ ImportSourceType = Literal[
     "generic_csv",
     "generic_json",
     "pdf_text",
+    "openapi_spec",
     "unknown",
 ]
 

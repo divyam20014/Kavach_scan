@@ -164,3 +164,18 @@ def test_scanners_never_touch_raw_transport_or_dns(path: Path) -> None:
         r"(?<!\.)run_process\(",
     ):
         assert not re.search(banned, code), f"{path.relative_to(APP)} matches {banned}"
+
+
+@pytest.mark.parametrize("path", SOURCES, ids=lambda p: p.relative_to(APP).as_posix())
+def test_yaml_is_loaded_safely(path: Path) -> None:
+    """YAML must be parsed with safe_load only; the unsafe loaders are never used."""
+    code = _code(path)
+    for banned in (
+        "yaml.load(",
+        "yaml.unsafe_load(",
+        "yaml.full_load(",
+        "Loader=yaml.Loader",
+        "Loader=yaml.UnsafeLoader",
+        "Loader=yaml.FullLoader",
+    ):
+        assert banned not in code, f"{path.relative_to(APP)} uses an unsafe YAML load ({banned})"

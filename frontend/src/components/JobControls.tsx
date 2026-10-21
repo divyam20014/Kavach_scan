@@ -3,12 +3,13 @@ import { notifications } from "@mantine/notifications";
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { ApiError } from "../api/client";
-import { useKillSwitch, useModules, useScopePolicy, useSetKillSwitch, useStartScan, useSurfaceProfile, useWebScanProfile } from "../api/hooks";
+import { useApiScanPlan, useKillSwitch, useModules, useScopePolicy, useSetKillSwitch, useStartScan, useSurfaceProfile, useWebScanProfile } from "../api/hooks";
 import type { Project, ScanModule } from "../api/types";
 import { humanize, splitLines } from "../lib/format";
 import { ErrorAlert, QueryState } from "./QueryState";
 import { DEFAULT_WEB_OPTIONS, WebProfileSummary, WebScanOptions, webParams, type WebOptions } from "./WebScanProfile";
 import { DEFAULT_SURFACE_OPTIONS, SurfaceProfileSummary, SurfaceScanOptions, surfaceParams, type SurfaceOptions } from "./SurfaceScanProfile";
+import { DEFAULT_API_OPTIONS, ApiScanOptions, apiParams, type ApiOptions } from "./ApiScanProfile";
 
 /** Start-a-job panel with an explicit confirmation step (MASTER_SPEC §4.1). */
 export function StartJobCard({ project }: { project: Project }) {
@@ -27,23 +28,27 @@ export function StartJobCard({ project }: { project: Project }) {
   const p = project.scan_policy;
   const [webOptions, setWebOptions] = useState<WebOptions>(DEFAULT_WEB_OPTIONS);
   const [surfaceOptions, setSurfaceOptions] = useState<SurfaceOptions>(DEFAULT_SURFACE_OPTIONS);
+  const [apiOptions, setApiOptions] = useState<ApiOptions>(DEFAULT_API_OPTIONS);
   const isWeb = module === "web_app";
   const isSurface = module === "attack_surface";
+  const isApi = module === "api_security";
   const targetList = splitLines(targets);
-  const parameters = isWeb ? webParams(webOptions) : isSurface ? surfaceParams(surfaceOptions) : {};
+  const parameters = isWeb ? webParams(webOptions) : isSurface ? surfaceParams(surfaceOptions) : isApi ? apiParams(apiOptions) : {};
   const profile = useWebScanProfile(project.project_id, parameters, isWeb);
   const surfaceProfile = useSurfaceProfile(
     project.project_id,
     { ...surfaceParams(surfaceOptions), targets: targetList } as Record<string, string | number | boolean | string[] | undefined>,
     isSurface && targetList.length > 0,
   );
+  const apiPlan = useApiScanPlan(project.project_id, parameters as Record<string, unknown>, isApi && Boolean(apiOptions.import_id));
   const profileInvalid =
     (isWeb && (profile.data?.problems.length ?? 0) > 0) ||
-    (isSurface && ((surfaceProfile.data?.problems.length ?? 0) > 0 || (surfaceProfile.data?.target_problems.length ?? 0) > 0));
+    (isSurface && ((surfaceProfile.data?.problems.length ?? 0) > 0 || (surfaceProfile.data?.target_problems.length ?? 0) > 0)) ||
+    (isApi && (!apiOptions.import_id || (apiPlan.data?.problems.length ?? 0) > 0 || (!apiOptions.inventory_only && !apiPlan.data?.server_in_scope)));
 
   const submit = () =>
     start.mutate(
-      { module: module as ScanModule, targets: splitLines(targets), parameters, confirmed, idempotency_key: idempotencyKey },
+      { module: module as ScanModule, targets: isApi ? ["api-spec"] : splitLines(targets), parameters, confirmed, idempotency_key: idempotencyKey },
       {
         onSuccess: (scan) => {
           setReviewing(false);
@@ -72,9 +77,13 @@ export function StartJobCard({ project }: { project: Project }) {
                 ))}
               </Stack>
             </Radio.Group>
-            <Textarea label={isSurface ? "Targets (one in-scope host or authorized root domain per line)" : "Targets (one URL per line, must be in scope)"}
-              value={targets} onChange={(e) => setTargets(e.currentTarget.value)}
-              autosize minRows={2} placeholder={isSurface ? "example.com" : "https://app.example.com/"} />
+            {isApi ? (
+              <Text size="sm" c="dimmed">Targets come from the selected API spec's in-scope server; no target list is needed.</Text>
+            ) : (
+              <Textarea label={isSurface ? "Targets (one in-scope host or authorized root domain per line)" : "Targets (one URL per line, must be in scope)"}
+                value={targets} onChange={(e) => setTargets(e.currentTarget.value)}
+                autosize minRows={2} placeholder={isSurface ? "example.com" : "https://app.example.com/"} />
+            )}
             {isWeb && (
               <Card withBorder padding="sm" component="section" aria-labelledby="web-profile-h">
                 <Title order={3} size="h5" id="web-profile-h" mb="xs">Web scan profile</Title>
@@ -83,6 +92,23 @@ export function StartJobCard({ project }: { project: Project }) {
                   <QueryState query={profile} loadingLabel="Loading scan profile…">
                     {(preview) => <WebProfileSummary preview={preview} />}
                   </QueryState>
+                </Stack>
+              </Card>
+            )}
+            {isApi && (
+              <Card withBorder padding="sm" component="section" aria-labelledby="api-profile-h">
+                <Title order={3} size="h5" id="api-profile-h" mb="xs">API security scan</Title>
+                <Stack gap="sm">
+                  <ApiScanOptions projectId={project.project_id} value={apiOptions} onChange={setApiOptions} />
+                  {apiPlan.data && apiPlan.data.problems.length > 0 && (
+                    <Alert color="red" role="alert" title="Fix before starting">
+                      {apiPlan.data.problems.map((pr) => <Text size="sm" key={pr}>✕ {pr}</Text>)}
+                    </Alert>
+                  )}
+                  {apiPlan.data && !apiOptions.inventory_only && (
+                    <Text size="sm">Server: {apiPlan.data.server_in_scope ? "in scope" : <Text span c="red">out of scope — {apiPlan.data.server_reason}</Text>}</Text>
+                  )}
+                  {apiPlan.data && <Text size="sm" c="dimmed">{apiPlan.data.operations_total} operations · {apiOptions.inventory_only ? "inventory only (no requests)" : "bounded network checks"}</Text>}
                 </Stack>
               </Card>
             )}
@@ -101,7 +127,7 @@ export function StartJobCard({ project }: { project: Project }) {
                 </Stack>
               </Card>
             )}
-            <Button w="fit-content" disabled={!module || !splitLines(targets).length || !gateOpen || profileInvalid}
+            <Button w="fit-content" disabled={!module || (!isApi && !splitLines(targets).length) || !gateOpen || profileInvalid}
               onClick={() => { setConfirmed(false); start.reset(); setIdempotencyKey(`ui-${crypto.randomUUID()}`); setReviewing(true); }}>
               Review &amp; confirm…
             </Button>

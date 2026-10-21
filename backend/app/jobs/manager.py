@@ -739,12 +739,14 @@ class JobManager:
 
 def default_runners(settings: RuntimeSettings) -> dict[ScanModule, Runner]:
     from app.jobs.selftest import SelfTestRunner
+    from app.scanners.apisec.runner import ApiSecRunner
     from app.scanners.surface.runner import SurfaceRunner
     from app.scanners.webapp.runner import WebAppRunner
 
     runners: dict[ScanModule, Runner] = {
         ScanModule.WEB_APP: WebAppRunner(),
         ScanModule.ATTACK_SURFACE: SurfaceRunner(),
+        ScanModule.API_SECURITY: ApiSecRunner(),
     }
     if settings.enable_selftest_jobs:
         runners[ScanModule.SELF_TEST] = SelfTestRunner()

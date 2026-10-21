@@ -49,6 +49,11 @@ SYSTEM_ROUTES = {
     "/api/projects/{project_id}/surface",
     "/api/projects/{project_id}/assets/{asset_id}",
     "/api/projects/{project_id}/assets/{asset_id}/approve",
+    # Phase 07
+    "/api/projects/{project_id}/api-specs",
+    "/api/projects/{project_id}/api-specs/{import_id}",
+    "/api/projects/{project_id}/api-specs/{import_id}/validate",
+    "/api/projects/{project_id}/api-security-plan",
 }
 
 # No lifespan: these endpoints must work without storage.

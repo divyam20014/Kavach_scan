@@ -122,11 +122,12 @@ def test_scanner_sends_no_crafted_input(
 
 
 def test_catalog_has_no_active_rules_and_no_confirmed_xss_claim() -> None:
-    assert not [r for r in RULES.values() if r.kind == Kind.ACTIVE]
+    web = [r for r in RULES.values() if r.rule_id.startswith("WEB-")]
+    assert not [r for r in web if r.kind == Kind.ACTIVE]  # the web scanner has no active rules
     refl = RULES["WEB-REFL-001"]
     assert refl.confidence == Confidence.POTENTIAL and "passive" in refl.title.lower()
     assert "neither confirmed" in refl.summary
-    for rule in RULES.values():
+    for rule in web:
         assert "confirmed executable" not in rule.title.lower()
 
 

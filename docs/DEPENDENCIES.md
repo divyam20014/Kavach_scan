@@ -51,7 +51,8 @@ Transitive dev packages: `httpcore`, `certifi` (MPL-2.0), `iniconfig`, `pluggy`,
 | 05 | `cryptography` (dev) | **Installed (dev only)**: TLS fixture certificates | decided |
 | 06 | ~~`dnspython`~~ | Not added: A/AAAA/CNAME via stdlib `socket.getaddrinfo` suffice (TBD-055). | decided |
 | 06 | ~~`python-nmap`~~ | Not added: the Nmap adapter builds argv and parses `-oX` output with stdlib ElementTree (DTD-rejecting, size-capped). | decided |
-| 07 | `PyYAML` (`safe_load` only) | OpenAPI YAML | — |
+| 07 | ~~`PyYAML`~~ | **Installed** (runtime, `safe_load` only): OpenAPI/Swagger YAML. `types-PyYAML` dev. | done |
+| 07 | `python-multipart` | **Installed** (runtime): spec file upload (FastAPI `UploadFile`). | done |
 | 08 | `defusedxml` | Hardened XML parsing (XXE-safe) | — |
 | 08 | `pypdf` | Best-effort PDF text import | TBD-024 |
 | 09 | `cvss` | CVSS vector validation and scoring | TBD-019 |

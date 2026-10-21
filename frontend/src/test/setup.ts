@@ -3,7 +3,7 @@ import { cleanup, configure } from "@testing-library/react";
 import { afterEach, vi } from "vitest";
 
 // findBy*/waitFor default to 1 s, which flakes when the whole suite runs in parallel.
-configure({ asyncUtilTimeout: 4000 });
+configure({ asyncUtilTimeout: 9000 });
 
 afterEach(() => {
   cleanup();

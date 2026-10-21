@@ -111,7 +111,13 @@ def surface_dns() -> RecordsResolver:
     )
 
 
-def surface_project(ports: list[int], *, hosts: list[str] | None = None, **policy: Any) -> Project:
+def surface_project(
+    ports: list[int],
+    *,
+    hosts: list[str] | None = None,
+    ip_ranges: list[str] | None = None,
+    **policy: Any,
+) -> Project:
     now = datetime.now(UTC)
     override = InternalTargetOverride(
         ip_ranges=["127.0.0.1/32"],
@@ -124,6 +130,7 @@ def surface_project(ports: list[int], *, hosts: list[str] | None = None, **polic
         hosts=hosts
         if hosts is not None
         else ["lab.test", "www.lab.test", "internal.lab.test", "meta.lab.test"],
+        ip_ranges=ip_ranges or [],
         ports=ports,
         path_prefixes=["/"],
         internal_override=override,

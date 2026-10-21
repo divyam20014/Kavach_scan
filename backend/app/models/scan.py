@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import Field, StringConstraints
 
@@ -24,7 +24,9 @@ from app.models.project import ScanPolicy, ScopeDefinition
 SCAN_SCHEMA_VERSION: Literal[1] = 1
 
 CounterName = Annotated[str, StringConstraints(pattern=r"^[a-z][a-z0-9_]{0,63}$")]
-ParamValue = str | int | float | bool | None
+# Scalars for simple modules; nested JSON (list/dict) for structured module configs
+# (e.g. API security auth profiles / ownership maps), re-validated by the module.
+ParamValue = str | int | float | bool | None | list["Any"] | dict[str, "Any"]
 
 
 class ScanProgress(StrictModel):

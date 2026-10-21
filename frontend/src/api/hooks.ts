@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { api, request } from "./client";
+import { ApiError, api, request } from "./client";
 import type {
   Asset,
   EventPage,
@@ -9,6 +9,9 @@ import type {
   ScanDetail,
   ScanParams,
   StartScanRequest,
+  ApiScanPlan,
+  ApiSpecDetail,
+  ApiSpecSummary,
   SurfaceProfilePreview,
   SurfaceView,
   WebProfilePreview,
@@ -286,5 +289,45 @@ export function useApproveAsset(projectId: string) {
     mutationFn: ({ assetId, expectedProjectRevision }: { assetId: string; expectedProjectRevision: number }) =>
       api.post(`/api/projects/${enc(projectId)}/assets/${enc(assetId)}/approve`, { expected_project_revision: expectedProjectRevision, confirmed: true }),
     onSuccess: invalidate,
+  });
+}
+
+// ---------------------------------------------------------------- API security (Phase 07)
+
+export function useApiSpecs(projectId: string) {
+  return useQuery({ queryKey: ["api-specs", projectId], queryFn: () => api.get<ApiSpecSummary[]>(`/api/projects/${enc(projectId)}/api-specs`) });
+}
+
+export function useApiSpecDetail(projectId: string, importId: string | null) {
+  return useQuery({
+    queryKey: ["api-spec", projectId, importId],
+    queryFn: () => api.get<ApiSpecDetail>(`/api/projects/${enc(projectId)}/api-specs/${enc(importId ?? "")}`),
+    enabled: Boolean(importId),
+  });
+}
+
+export function useUploadApiSpec(projectId: string) {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: async (file: File) => {
+      const form = new FormData();
+      form.append("file", file);
+      const res = await fetch(`/api/projects/${enc(projectId)}/api-specs`, { method: "POST", body: form });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) {
+        const err = (body as { error?: { code?: string; message?: string } } | null)?.error;
+        throw new ApiError(res.status, err?.code ?? "http_error", err?.message ?? `Upload failed (${res.status})`);
+      }
+      return body as ApiSpecDetail;
+    },
+    onSuccess: invalidate,
+  });
+}
+
+export function useApiScanPlan(projectId: string, body: Record<string, unknown>, enabled: boolean) {
+  return useQuery({
+    queryKey: ["api-plan", projectId, body],
+    queryFn: () => request<ApiScanPlan>("POST", `/api/projects/${enc(projectId)}/api-security-plan`, { body }),
+    enabled,
   });
 }

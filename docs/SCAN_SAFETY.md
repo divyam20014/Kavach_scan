@@ -140,8 +140,16 @@ Backoff: on 429/503 honor `Retry-After` (capped), otherwise exponential backoff 
 | DNS adapter | IP policy on every answer | 03 / 05 |
 | TCP connect probe (`app/integrations/tcp.py`) | host + IP + port decision; pinned IP only; nothing sent | **06 (implemented)** |
 | Subprocess adapter (nmap, sslyze) | each target argument + argv allowlist (`validate_argv`) | **05/06 (implemented)** / 11 |
-| OpenAPI server URL / remote `$ref` | scope decision; remote refs off by default | 07 |
+| OpenAPI server URL / remote `$ref` | scope decision; remote refs never fetched; server validated before any request | **07 (implemented)**, `tests/test_apisec_scan.py` |
 | Static guard | no `httpx`/`requests`/`socket`/`ssl`/`subprocess`/`dns`/`asyncio` imports outside the three adapters; scanners never construct transports or resolve DNS | **05 (implemented)** / 12 |
+
+## 13. API security scanner request path (implemented, Phase 07)
+
+1. Spec import, validation and inventory are **offline** (zero network). YAML is parsed with `safe_load` only; remote `$ref` is never fetched; local refs are cycle/depth bounded; size/depth/operation limits reject oversized specs.
+2. A server URL from the spec is contacted only when the operator turns off inventory-only AND the chosen server passes `ScopeGuard.is_target_in_scope`. Every request then goes through `HttpService -> ScopeGuard -> budgeted pinned transport`; nothing else is contacted.
+3. Credentials are env/keychain aliases resolved at request time and never stored; evidence and outputs are redacted.
+4. BOLA/IDOR runs only with two operator identities and an explicit object-ownership map (read-only, bounded owner-vs-other; no enumeration, no mutation of another user's resource). Mass-assignment writes against live systems are never performed. The rate probe is a small capped benign sequence on one designated safe operation and backs off on 429/503/latency.
+5. Coverage reports tested/skipped operations with reasons; a skipped precondition is never a pass; HTTP status alone is never treated as proof.
 
 ## 12. Attack surface mapper request path (implemented, Phase 06)
 

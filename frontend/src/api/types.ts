@@ -682,3 +682,38 @@ export interface SurfaceChanges {
   new_origins: string[];
   not_observed_origins: string[];
 }
+
+// ---------------------------------------------------------------- API security (Phase 07)
+
+export interface ApiParamInfo { name: string; location: string; required: boolean; type: string }
+export interface ApiOperation {
+  op_id: string; method: string; path: string; key: string; summary: string; tags: string[];
+  deprecated: boolean; auth_schemes: string[]; security_required: boolean; parameters: ApiParamInfo[];
+  request_content_types: string[]; request_schema_props: string[]; request_required_props: string[];
+  response_codes: string[]; response_content_types: string[]; mutating: boolean;
+}
+export interface ApiServerView { raw: string; expanded: string; in_scope: boolean; reason: string }
+export interface ApiSpecSummary {
+  import_id: string; display_filename: string; sha256: string; size_bytes: number; status: string;
+  uploaded_at: string; kind: string; version: string; title: string; operation_count: number; warnings: string[];
+}
+export interface ApiSpecDetail {
+  summary: ApiSpecSummary;
+  inventory: {
+    kind: string; version: string; title: string; servers: { raw: string; expanded: string }[];
+    operations: ApiOperation[]; security_schemes: Record<string, string>; warnings: string[];
+    remote_refs: string[]; cyclic_refs: string[]; global_security: boolean; operation_count: number;
+  };
+  servers: ApiServerView[];
+}
+export interface ApiScanPlan {
+  problems: string[]; inventory_only: boolean; server_in_scope: boolean; server_reason: string; operations_total: number;
+}
+export interface ApiSummary {
+  schema_version: number; catalog_version: string; stopped_early: string; import_id: string;
+  spec: string; spec_kind: string; spec_version: string; server: string; inventory_only: boolean;
+  operations_total: number; operations_tested: string[]; operations_skipped: Record<string, string>;
+  requests_sent: number; auth_aliases_used: string[]; idor_enabled: boolean; mass_write_enabled: boolean;
+  rate_probe_enabled: boolean; check_outcomes: { outcome: CheckOutcome; count: number }[];
+  findings_created: number; findings_reobserved: number; warnings: string[]; remote_refs: string[]; limitations: string[];
+}

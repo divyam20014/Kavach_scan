@@ -382,4 +382,4 @@ def test_web_module_is_available(client: TestClient) -> None:
     modules = {m["module"]: m for m in client.get("/api/jobs/modules").json()}
     assert modules["web_app"]["available"] is True
     assert modules["attack_surface"]["available"] is True  # Phase 06
-    assert modules["api_security"]["available"] is False  # Phase 07
+    assert modules["api_security"]["available"] is True  # Phase 07

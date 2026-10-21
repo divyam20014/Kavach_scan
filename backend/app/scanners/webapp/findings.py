@@ -177,7 +177,20 @@ class FindingWriter:
         url = result.subject if result.subject.startswith(("http://", "https://")) else None
         asset_id = self.asset_for(url) if url else None
         mappings = []
-        if rule.owasp:
+        if rule.owasp and rule.owasp.startswith("API"):
+            from app.scanners.apisec.rules import OWASP_API_TITLES, OWASP_API_VERSION
+
+            mappings.append(
+                StandardMapping(
+                    catalog="owasp_api_top10",
+                    catalog_version=OWASP_API_VERSION,
+                    entry_id=rule.owasp,
+                    title=OWASP_API_TITLES.get(rule.owasp, ""),
+                    rationale="Related category assigned by the rule catalog (not a 1:1 mapping)",
+                    confidence=Confidence.PROBABLE,
+                )
+            )
+        elif rule.owasp:
             mappings.append(
                 StandardMapping(
                     catalog="owasp_top10",

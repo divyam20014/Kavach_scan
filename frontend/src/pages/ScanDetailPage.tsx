@@ -11,6 +11,7 @@ import { ScanStateLabel } from "../components/StatusLabel";
 import { formatDateTime, humanize } from "../lib/format";
 import { WebCoverageTab, WebFindingsTab, WebPagesTab, WebSummaryPanel, WebWarningsPanel } from "./ScanResultTabs";
 import { SurfaceChangesTab, SurfaceCoverageTab, SurfaceFindingsTab, SurfaceHostsTab, SurfaceOriginsTab, SurfaceSummaryPanel } from "./SurfaceResultTabs";
+import { ApiCoverageTab, ApiFindingsTab, ApiSummaryPanel } from "./ApiResultTabs";
 
 const RETRYABLE = new Set(["failed", "interrupted", "cancelled", "expired_authorization", "blocked_scope", "completed_with_warnings"]);
 
@@ -34,7 +35,8 @@ function ScanDetailView({ detail }: { detail: ScanDetail }) {
   const counters = Object.entries(scan.progress.counters);
   const isWeb = scan.module === "web_app";
   const isSurface = scan.module === "attack_surface";
-  const hasResults = isWeb || isSurface;
+  const isApi = scan.module === "api_security";
+  const hasResults = isWeb || isSurface || isApi;
   // Web outputs are written at the end of the run (also on cancellation/limits).
   const resultsReady = detail.terminal && scan.output_refs.includes("work/summary.json");
 
@@ -127,6 +129,7 @@ function ScanDetailView({ detail }: { detail: ScanDetail }) {
             <Stack gap="md">
               {isWeb && <WebSummaryPanel scan={scan} ready={resultsReady} />}
               {isSurface && <SurfaceSummaryPanel scan={scan} ready={resultsReady} />}
+              {isApi && <ApiSummaryPanel scan={scan} ready={resultsReady} />}
         <SimpleGrid cols={{ base: 1, md: 2 }}>
           <Card withBorder component="section" aria-labelledby="targets-h">
             <Title order={2} size="h4" id="targets-h" mb="sm">Targets (scope-checked)</Title>
@@ -176,7 +179,7 @@ function ScanDetailView({ detail }: { detail: ScanDetail }) {
           )}
           {hasResults && (
             <Tabs.Panel value="findings" pt="md">
-              {isWeb ? <WebFindingsTab scan={scan} /> : <SurfaceFindingsTab scan={scan} />}
+              {isWeb ? <WebFindingsTab scan={scan} /> : isSurface ? <SurfaceFindingsTab scan={scan} /> : <ApiFindingsTab scan={scan} />}
             </Tabs.Panel>
           )}
           {isSurface && (
@@ -197,7 +200,7 @@ function ScanDetailView({ detail }: { detail: ScanDetail }) {
           </Tabs.Panel>
           {hasResults && (
             <Tabs.Panel value="coverage" pt="md">
-              {isWeb ? <WebCoverageTab scan={scan} ready={resultsReady} /> : <SurfaceCoverageTab scan={scan} ready={resultsReady} />}
+              {isWeb ? <WebCoverageTab scan={scan} ready={resultsReady} /> : isSurface ? <SurfaceCoverageTab scan={scan} ready={resultsReady} /> : <ApiCoverageTab scan={scan} ready={resultsReady} />}
             </Tabs.Panel>
           )}
         </Tabs>

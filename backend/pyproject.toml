@@ -7,6 +7,8 @@ dependencies = [
     "fastapi>=0.115,<1",
     "uvicorn>=0.30,<1",
     "filelock (>=4.2,<5)",
+    "pyyaml (>=6.0,<7.0)",
+    "python-multipart (>=0.0.9,<0.0.10)",
 ]
 
 [tool.poetry]
@@ -20,6 +22,7 @@ ruff = ">=0.6"
 mypy = ">=1.11"
 hypothesis = ">=6.100,<7"
 cryptography = "^50.0.2"
+types-pyyaml = "^6.0.12.20260906"
 
 [build-system]
 requires = ["poetry-core>=2.0,<3"]
