@@ -709,6 +709,39 @@ export interface ApiSpecDetail {
 export interface ApiScanPlan {
   problems: string[]; inventory_only: boolean; server_in_scope: boolean; server_reason: string; operations_total: number;
 }
+// ---------------------------------------------------------------- Import Center (Phase 08)
+export interface ImportSummary {
+  import_id: string; revision: number; display_filename: string; sha256: string; size_bytes: number;
+  source_type: string; source_tool_version: string; status: string; uploaded_at: string;
+  parser_version: string; warnings: string[]; record_count: number; mapped_count: number;
+  rejected_count: number;
+}
+export interface ImportPreviewRecord {
+  index: number; title: string; severity: string; confidence: string; host: string | null;
+  url: string | null; rule_id: string; action: "new" | "update_existing" | "duplicate_in_import";
+  existing_finding_id: string | null; duplicate_of_index: number | null;
+}
+export interface ImportDuplicateCandidate {
+  title: string; index_a: number; index_b: number | null; existing_finding_id: string | null;
+}
+export interface ImportPreview {
+  source_type: string; label: string; parser_version: string; source_tool_version: string;
+  parsed_count: number; rejected_count: number; warnings: string[];
+  records: ImportPreviewRecord[]; duplicate_candidates: ImportDuplicateCandidate[];
+  mapping_gaps: string[]; asset_count: number; truncated_sample: boolean;
+}
+export interface ImportDetail {
+  summary: ImportSummary; preview: ImportPreview | null; error: string;
+}
+export interface ImportCommitResponse {
+  import_id: string; findings_created: number; findings_reobserved: number;
+  assets_created: number; assets_updated: number;
+}
+export interface ImportFormats {
+  supported: { source_type: string; label: string }[];
+  unsupported: { source_type: string; reason: string }[];
+}
+
 export interface ApiSummary {
   schema_version: number; catalog_version: string; stopped_early: string; import_id: string;
   spec: string; spec_kind: string; spec_version: string; server: string; inventory_only: boolean;

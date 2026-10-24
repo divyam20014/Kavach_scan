@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import re
 import unicodedata
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import AfterValidator, Field, StringConstraints
 
@@ -69,3 +69,7 @@ class ImportArtifact(Record):
     record_count: int = Field(default=0, ge=0)
     mapped_count: int = Field(default=0, ge=0)
     rejected_count: int = Field(default=0, ge=0)
+    # Phase 08 (optional, backward compatible): the resolved adapter options (e.g. a CSV
+    # column_map / JSON field_map override) so a later re-read or commit reproduces the
+    # exact same parse as the original dry-run, instead of re-detecting from scratch.
+    source_options: dict[str, Any] = Field(default_factory=dict, max_length=20)

@@ -23,6 +23,27 @@ Run from `backend/` (see [DEVELOPMENT.md](DEVELOPMENT.md) for setup):
 
 Frontend (Phase 02+, planned): `npm test` (Vitest), `npm run lint` (ESLint), `npm run typecheck` (`tsc --noEmit`), `npm run build`.
 
+### Results recorded at Phase 08 verification (2026-10-25)
+
+| Command | Result |
+|---|---|
+| `poetry run pytest` | **1685 passed, 1 skipped** (adds 15 tests across `test_import_service.py`, `test_import_adapters.py`, `test_import_safety.py`, `test_import_api.py`) |
+| `poetry run pytest tests/test_static_guards.py tests/test_startup.py` | 565/565 (no-database/broker guards re-run directly) |
+| `ruff check` / `mypy` | clean / no issues in 106 source files |
+| `npm test` / `typecheck` / `lint` / `build` / `audit` | 55 passed / pass / pass / built / 0 vulnerabilities |
+
+Verification fixed 3 defects found while writing the required edge-case tests (duplicate IDs, malformed records, false-positive dedupe, provenance preservation — see IMPLEMENTATION_STATUS Phase 08 row for full detail): (1) generic CSV/JSON fabricated a synthetic per-row `source_finding_id` that always out-prioritized the real `rule_id` in the dedup fingerprint, so two rows describing the same vulnerability with no explicit ID column were never recognized as duplicates; (2) the dry-run preview never checked a record's fingerprint against earlier records in the *same* import, so two duplicate rows in one file were both shown as "new" though commit would correctly collapse them to one Finding; (3) the CSV "did not decode cleanly" warning could never fire because `decode_text()`'s Latin-1 fallback never produces a replacement character. Also added: `mapping_gaps` reporting (required-work item 6), Windows drive-letter/absolute-path zip-slip tests, zip symlink-entry rejection, oversized-record-count truncation, XSS-in-title storage/render-escaping tests (backend storage integrity + frontend DOM-injection check), and 404/409 tests for commit on an unknown import and a stale `expected_revision`.
+
+### Results recorded at Phase 08 (2026-10-25)
+
+| Command | Result |
+|---|---|
+| `poetry run pytest` | **1671 passed, 1 skipped** (adds `test_import_adapters.py`, `test_import_safety.py`, `test_import_dedup.py`, `test_import_service.py`, `test_import_api.py`) |
+| `ruff check` / `mypy` | clean / no issues in 106 source files |
+| `npm test` / `typecheck` / `lint` / `build` / `audit` | 53 passed / pass / pass / built / 0 vulnerabilities |
+
+Phase 08 fixtures (`backend/tests/importfixtures.py`): representative byte-level samples for every supported format — Nmap XML (incl. an XXE payload variant), Nessus `.nessus` XML, Nuclei JSONL (incl. a malformed line and an empty-fields record), SARIF 2.1.0, generic CSV (incl. a Nessus-style CSV export and a missing-title row), generic JSON (incl. a record with no title), and a minimal single-page PDF built with `pypdf`'s own writer so its extracted text is known exactly. `test_import_safety.py` additionally builds XXE/zip-bomb/path-traversal/nested-archive payloads in-line with `zipfile`/raw XML rather than fixture files, since those are adversarial-construction tests, not format fixtures.
+
 ### Results recorded at Phase 07 (2026-10-21)
 
 | Command | Result |

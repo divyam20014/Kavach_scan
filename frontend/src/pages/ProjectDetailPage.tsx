@@ -54,6 +54,9 @@ function ProjectDetail({ overview }: { overview: ProjectOverview }) {
             <Button component={Link} to={`/projects/${project.project_id}/api-specs`} variant="default">
               API specs
             </Button>
+            <Button component={Link} to={`/projects/${project.project_id}/imports`} variant="default">
+              Imports
+            </Button>
             <Button variant="default" onClick={toggleArchive} loading={update.isPending}>
               {archived ? "Restore" : "Archive"}
             </Button>

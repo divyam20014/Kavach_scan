@@ -12,6 +12,10 @@ import type {
   ApiScanPlan,
   ApiSpecDetail,
   ApiSpecSummary,
+  ImportCommitResponse,
+  ImportDetail,
+  ImportFormats,
+  ImportSummary,
   SurfaceProfilePreview,
   SurfaceView,
   WebProfilePreview,
@@ -329,5 +333,54 @@ export function useApiScanPlan(projectId: string, body: Record<string, unknown>,
     queryKey: ["api-plan", projectId, body],
     queryFn: () => request<ApiScanPlan>("POST", `/api/projects/${enc(projectId)}/api-security-plan`, { body }),
     enabled,
+  });
+}
+
+// ---------------------------------------------------------------- Import Center (Phase 08)
+
+export function useImportFormats() {
+  return useQuery({ queryKey: ["import-formats"], queryFn: () => api.get<ImportFormats>("/api/imports/formats") });
+}
+
+export function useImports(projectId: string) {
+  return useQuery({ queryKey: ["imports", projectId], queryFn: () => api.get<ImportSummary[]>(`/api/projects/${enc(projectId)}/imports`) });
+}
+
+export function useImportDetail(projectId: string, importId: string | null) {
+  return useQuery({
+    queryKey: ["import", projectId, importId],
+    queryFn: () => api.get<ImportDetail>(`/api/projects/${enc(projectId)}/imports/${enc(importId ?? "")}`),
+    enabled: Boolean(importId),
+  });
+}
+
+export function useUploadImport(projectId: string) {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: async (args: { file: File; sourceType?: string; optionsJson?: string }) => {
+      const form = new FormData();
+      form.append("file", args.file);
+      if (args.sourceType) form.append("source_type", args.sourceType);
+      if (args.optionsJson) form.append("options_json", args.optionsJson);
+      const res = await fetch(`/api/projects/${enc(projectId)}/imports`, { method: "POST", body: form });
+      const body = await res.json().catch(() => null);
+      if (!res.ok) {
+        const err = (body as { error?: { code?: string; message?: string } } | null)?.error;
+        throw new ApiError(res.status, err?.code ?? "http_error", err?.message ?? `Upload failed (${res.status})`);
+      }
+      return body as ImportDetail;
+    },
+    onSuccess: invalidate,
+  });
+}
+
+export function useCommitImport(projectId: string) {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: ({ importId, expectedRevision }: { importId: string; expectedRevision: number }) =>
+      api.post<ImportCommitResponse>(`/api/projects/${enc(projectId)}/imports/${enc(importId)}/commit`, {
+        confirmed: true, expected_revision: expectedRevision,
+      }),
+    onSuccess: invalidate,
   });
 }
