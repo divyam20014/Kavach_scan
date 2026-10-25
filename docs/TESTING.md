@@ -23,6 +23,33 @@ Run from `backend/` (see [DEVELOPMENT.md](DEVELOPMENT.md) for setup):
 
 Frontend (Phase 02+, planned): `npm test` (Vitest), `npm run lint` (ESLint), `npm run typecheck` (`tsc --noEmit`), `npm run build`.
 
+### Results recorded at Phase 12 verification (2026-10-25)
+
+| Command | Result |
+|---|---|
+| `poetry run pytest` | **1947 passed, 1 skipped** (adds 1 regression test to `test_api_system.py`) |
+| `ruff check` / `mypy` (whole project) | clean / no issues in 128 source files |
+| `npm test` / `typecheck` / `lint` / `build` / `audit` | unchanged from the Phase 12 implementation run (77 passed; nothing frontend changed in this verification pass) |
+
+Verification found and fixed **1 significant defect** (TBD-075): the global request-size-limit middleware (`RequestSizeLimitMiddleware`) applied one small, JSON-sized byte limit to every route uniformly, including every file-upload route that already declares and enforces its own, much larger, documented cap — CVE catalog import, generic/Nmap/Nessus/Nuclei/SARIF imports, OpenAPI spec upload, and project backup restore/preview. Project backup's 200 MiB limit was unreachable under **any** configuration, since the global setting's own operator-configurable ceiling caps at 100 MiB. Reproduced directly (a 2.5 MiB CVE-catalog upload, comfortably inside its own 15 MiB limit, was rejected with a blanket 413) before fixing it with per-route overrides that reuse each route's own existing cap constant. This had gone undetected through every prior phase because no existing test ever uploaded a file anywhere near 1 MiB.
+
+A targeted grep sweep across the entire backend for `shell=True`, a raw `subprocess` import outside the one sanctioned adapter, a raw `httpx`/`requests` import outside the shared pinned transport, `yaml.load` without `safe_load`, and an `ET.fromstring`/`etree.parse` call without the established DTD-rejection-and-size-cap wrapper all came back clean — no further issues found. `RequestLogMiddleware` was re-confirmed to never log request bodies (a file upload's content can never reach the application log).
+
+### Results recorded at Phase 12 (2026-10-25)
+
+| Command | Result |
+|---|---|
+| `poetry run pytest` | **1946 passed, 1 skipped** (adds `test_e2e_full_flow.py` 1, `test_performance_limits.py` 4) |
+| `ruff check` / `mypy` | clean / no issues in 128 source files |
+| `poetry run pip-audit` (ephemeral, not a project dependency) | 3 packages with disclosed vulnerabilities found and upgraded (`pypdf`, `pytest`, `python-multipart` — see DEPENDENCIES.md §4a); **0 vulnerabilities** after upgrade |
+| `npm test` / `typecheck` / `lint` / `build` / `audit` | **77 passed** (adds a keyboard-accessibility test to `frontend/src/test/integrations.test.tsx`) / pass / pass / built / 0 vulnerabilities |
+
+**Full offline end-to-end flow** (`tests/test_e2e_full_flow.py`, the phase's explicit acceptance checklist): create project -> internal-target-override scope configuration -> safe web scan against a local fixture -> attack-surface scan (asset mapping) -> OpenAPI spec inventory -> inventory-only API baseline scan (proven to send zero of its own requests via a request-count snapshot) -> import+commit Nmap XML / Nuclei JSONL / SARIF fixtures -> triage a finding's analyst status and business priority, merge a duplicate -> generate and download an HTML and a PDF report -> export a backup archive, restore it into a separate clean data directory and confirm matching finding counts -> close and reopen a fresh `StorageRepository` against the same data directory (simulating a restart) and confirm the project/scans/findings/report all persisted. Entirely offline, driven through the real HTTP API (no scanning shortcuts), run 3 consecutive times to confirm it is not flaky (stable at ~14s each run).
+
+**Performance pass** (`tests/test_performance_limits.py`, a synthetic 150-finding project): confirmed pagination returns exactly the requested page size (not the whole project), an oversized `limit` is rejected with 422 (never silently capped or silently served in full), and report generation respects `MAX_FINDINGS_PER_REPORT`. A genuine, documented (not silently accepted) characteristic was found: `GET /api/findings` scales **linearly** (verified by a direct 50-vs-150-finding timing-ratio comparison, not a brittle absolute-wall-clock assertion) because it reads every matching finding's full record for cross-field filtering and risk scoring — acceptable at realistic VAPT-assessment scale; see TBD-074.
+
+**Dependency audit**: `pip-audit` installed ephemerally into the Poetry venv (never added to `pyproject.toml`), run once, then removed via `poetry install --sync`. Found and fixed CVEs/PYSECs in `pypdf` 5.9.0 (-> 6.21.2), `pytest` 8.4.2 (-> 9.1.1, dev-only), and `python-multipart` 0.0.9 (-> 0.0.32); the venv's own `pip` was also upgraded. Full suite re-run clean after each upgrade, confirming no breaking changes despite two major-version jumps (`pypdf` 5->6, `pytest` 8->9).
+
 ### Results recorded at Phase 11 verification (2026-10-25)
 
 | Command | Result |
@@ -318,7 +345,8 @@ Not live-tested: a real remote client against `uvicorn app.main:app --host 0.0.0
 | 05–07 | Fixture scans per check, injection disabled by default, escaped-vs-unescaped XSS, response caps, backoff, Nmap argv, missing tools → skipped, OpenAPI malicious specs, IDOR prerequisites |
 | 08–10 | Parser fixtures + malformed + XXE/zip-slip/bombs, dry-run immutability, dedupe correctness, report escaping and no-secret assertions, archive round trip |
 | 11 | **done:** missing/invalid tools (never a false pass), timeout, oversized output, malformed/stale CVE catalog |
-| 12–13 | offline E2E, clean-install check |
+| 12 | **done:** full offline end-to-end flow through the real HTTP API, dependency audit, pagination/performance regression, keyboard-accessibility spot check |
+| 13 | clean-install check |
 
 ## 7. Coverage and CI (TBD-027)
 

@@ -1,6 +1,6 @@
 # Dependency and Feature Inventory — VAPT Workbench
 
-> Last updated: Phase 11 (2026-10-25). The sources of truth are `backend/pyproject.toml` and `backend/poetry.lock`. Licenses were read from installed package metadata (`importlib.metadata`) in the project venv. Phase 11 added **zero** new dependencies: `git diff --stat backend/pyproject.toml` across this phase is empty.
+> Last updated: Phase 12 (2026-10-25). The sources of truth are `backend/pyproject.toml` and `backend/poetry.lock`. Licenses were read from installed package metadata (`importlib.metadata`) in the project venv. Phase 12 added no new dependency; it upgraded three existing ones to patch disclosed vulnerabilities found by `pip-audit` (TBD-073) — see §2/§3.
 
 ## 1. Policy
 
@@ -17,7 +17,8 @@
 | fastapi | 0.150.0 | MIT | HTTP API, OpenAPI generation | 00 |
 | filelock | 4.2.4 | MIT | Cross-process exclusive locks, wrapped in `storage/locking.py` (`fallback_to_soft=False`; ReadWriteLock/SoftFileLock banned) | 01 |
 | uvicorn | 0.54.0 | BSD-3-Clause | ASGI server for `python -m app` | 00 |
-| pypdf | 5.9.0 | BSD-3-Clause | Best-effort text extraction for the PDF import adapter (`app/imports/adapters/pdf_text.py`); never used to run or execute PDF content, only `PdfReader.extract_text()` | 08 |
+| python-multipart | 0.0.32 (was 0.0.9; upgraded Phase 12, TBD-073) | Apache-2.0 | FastAPI `UploadFile` multipart form parsing, used by every file-upload route (API specs, imports, CVE catalog, backup restore) | 07 |
+| pypdf | 6.21.2 (was 5.9.0; upgraded Phase 12, TBD-073) | BSD-3-Clause | Best-effort text extraction for the PDF import adapter (`app/imports/adapters/pdf_text.py`); never used to run or execute PDF content, only `PdfReader.extract_text()` | 08 |
 | cvss | 3.6 | LGPL-3.0-or-later | CVSS v3.1/v4.0 vector parsing and base-score computation (`app/models/cvss_calc.py`); a supplied score is always cross-checked against what this library computes from the vector, never trusted verbatim | 09 |
 | fpdf2 | 2.8.9 | LGPL-3.0-only | Pure-Python, searchable/text PDF report rendering (`app/reports/pdf_render.py`); no system/native dependencies (TBD-031) | 10 |
 
@@ -29,7 +30,7 @@ Transitive runtime packages: `starlette` 1.9.0 (BSD-3), `pydantic` 2.14.1 / `pyd
 
 | Package | Locked | License | Purpose |
 |---|---|---|---|
-| pytest | 8.4.2 | MIT | Test runner |
+| pytest | 9.1.1 (was 8.4.2; upgraded Phase 12, TBD-073) | MIT | Test runner |
 | httpx | 0.28.1 | BSD-3-Clause | Required by `fastapi.testclient`. **Test-only.** The scanner's outbound client is the stdlib-based pinned transport (TBD-051). |
 | ruff | 0.17.1 | MIT | Lint and format |
 | mypy | 2.4.0 | MIT | Strict type checking |
@@ -45,6 +46,18 @@ Transitive dev packages: `httpcore`, `certifi` (MPL-2.0), `iniconfig`, `pluggy`,
 > **Note on `cvss` (LGPL-3.0-or-later):** this is weaker copyleft than GPL/AGPL — it only obligates sharing modifications to the *library itself* if redistributed, not to code that merely imports it. This project does not modify or redistribute `cvss`, so no obligation is triggered. It is still flagged in TBD-019 for an explicit owner sanity check, consistent with this project's general caution around any copyleft dependency.
 
 > **Note on `fpdf2` (LGPL-3.0-only):** same reasoning as `cvss` above — this project links against `fpdf2` as an unmodified, unredistributed dependency, which triggers no LGPL obligation. Flagged in TBD-031 for the same owner sanity check.
+
+## 4a. Dependency vulnerability audit (Phase 12, TBD-073)
+
+`pip-audit` (run ephemerally via `poetry run pip install pip-audit`, then `poetry install --sync` to remove it afterward — it is never added to `pyproject.toml`/`poetry.lock`) was run against the full backend dependency set. It found disclosed vulnerabilities in three packages, all patched in this phase:
+
+| Package | Before | After | Notes |
+|---|---|---|---|
+| `pypdf` | 5.9.0 | 6.21.2 | Runtime (PDF import adapter). `PdfReader.extract_text()` usage unchanged; full test suite re-run clean. |
+| `python-multipart` | 0.0.9 | 0.0.32 | Runtime (every file-upload route, via FastAPI `UploadFile`). No direct API surface used; re-run clean. |
+| `pytest` | 8.4.2 | 9.1.1 | Dev-only test runner. Full suite re-run clean across the major-version bump. |
+
+A re-run of `pip-audit` after the upgrade reports **zero vulnerabilities** in any project dependency. `npm audit` (frontend) was re-confirmed clean (0 vulnerabilities) in the same pass — no frontend dependency changed.
 
 ## 5. Planned dependencies (not installed; added only by the owning phase)
 

@@ -166,4 +166,37 @@ describe("Integrations page", () => {
     await u.click(screen.getByRole("button", { name: "Save" }));
     expect(await screen.findByText(/settings failed validation/)).toBeInTheDocument();
   });
+
+  it("operates the self-test button with keyboard only, and gives every tool card a distinct accessible name", async () => {
+    mockApi({
+      ...base,
+      "GET /api/integrations": {
+        body: [
+          status({ id: "nmap", label: "nmap", status: "detected", detected_path: "/usr/bin/nmap" }),
+          status({ id: "sslyze", label: "sslyze", status: "detected", detected_path: "/usr/bin/sslyze" }),
+        ],
+      },
+      "GET /api/cve-catalog": { body: null },
+      "GET /api/settings": { body: settings() },
+      "POST /api/integrations/nmap/selftest": {
+        body: status({ id: "nmap", status: "verified", detected_path: "/usr/bin/nmap", version: "Nmap 7.93" }),
+      },
+    });
+    renderAt("/integrations");
+    await screen.findAllByText("Detected (unverified)");
+
+    // Each tool's heading is a distinct accessible name a screen-reader user can navigate by,
+    // even though the self-test buttons below them share the same visible label text.
+    expect(screen.getByRole("heading", { name: "nmap" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "sslyze" })).toBeInTheDocument();
+
+    const buttons = screen.getAllByRole("button", { name: /Run self-test/ });
+    expect(buttons).toHaveLength(2);
+
+    const u = userEvent.setup();
+    buttons[0]!.focus();
+    expect(buttons[0]).toHaveFocus();
+    await u.keyboard("{Enter}");
+    expect(await screen.findByText("Verified working")).toBeInTheDocument();
+  });
 });

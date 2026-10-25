@@ -82,6 +82,64 @@ def test_request_size_limit(settings: RuntimeSettings, repo: StorageRepository) 
         assert chunked.status_code == 413
 
 
+def test_upload_routes_use_their_own_larger_size_limit_not_the_json_default(
+    settings: RuntimeSettings, repo: StorageRepository,
+) -> None:
+    """Phase 12 verification defect: the global request-size guard used one small, JSON-sized
+    default for every route, including file-upload routes that each declare and enforce their
+    own much larger documented cap (CVE catalog 15 MiB, imports 25 MiB, API specs 8 MiB,
+    backup archives 200 MiB) deeper in their own code — making every one of those larger,
+    tested, documented limits unreachable in practice. A body bigger than the tight JSON
+    default, but still well inside the route's own documented cap, must reach the route."""
+    import json as json_mod
+
+    from tests.surfacefixtures import surface_project
+
+    with TestClient(
+        create_app(settings, repository=repo), base_url=LOCAL_BASE_URL, client=LOCAL_CLIENT
+    ) as c:
+        pid = repo.create_project(surface_project([80], hosts=["x.test"])).project_id
+
+        # ~2 MiB CVE catalog: over the 1 MiB JSON-sized default, well under its own 15 MiB cap.
+        catalog = json_mod.dumps({
+            "source": "big", "catalog_version": "1.0",
+            "entries": [
+                {"product": f"p{i}", "version_spec": "<1.0", "cve_id": "CVE-2020-0001",
+                 "summary": "A" * 400}
+                for i in range(4000)
+            ],
+        }).encode()
+        assert len(catalog) > settings.max_request_bytes
+        resp = c.post(
+            "/api/cve-catalog/import", files={"file": ("big.json", catalog, "application/json")}
+        )
+        assert resp.status_code == 201, resp.text
+
+        # ~2 MiB generic-JSON import: over the JSON-sized default, well under the 25 MiB cap.
+        findings_doc = json_mod.dumps({
+            "findings": [
+                {"title": f"Finding {i}", "severity": "low", "host": "10.0.0.1"}
+                for i in range(20_000)
+            ]
+        }).encode()
+        assert len(findings_doc) > settings.max_request_bytes
+        up = c.post(
+            f"/api/projects/{pid}/imports",
+            files={"file": ("big.json", findings_doc, "application/json")},
+        )
+        assert up.status_code == 201, up.text
+
+    # An ordinary (non-upload) JSON route is unaffected: still capped at the tight default.
+    with TestClient(
+        create_app(settings, repository=repo), base_url=LOCAL_BASE_URL, client=LOCAL_CLIENT
+    ) as c:
+        resp = c.post(
+            "/api/projects",
+            json={"name": "x", "client_name": "y", "notes": "A" * (settings.max_request_bytes + 1)},
+        )
+        assert resp.status_code == 413
+
+
 def test_unhandled_errors_are_generic_and_logged_without_secrets(
     settings: RuntimeSettings, repo: StorageRepository, caplog: pytest.LogCaptureFixture
 ) -> None:

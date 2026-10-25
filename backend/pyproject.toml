@@ -8,8 +8,8 @@ dependencies = [
     "uvicorn>=0.30,<1",
     "filelock (>=4.2,<5)",
     "pyyaml (>=6.0,<7.0)",
-    "python-multipart (>=0.0.9,<0.0.10)",
-    "pypdf (>=5.0,<6.0)",
+    "python-multipart (>=0.0.18,<0.1)",
+    "pypdf (>=5.0,<7.0)",
     "cvss (>=3,<4)",
     "fpdf2 (>=2,<3)",
 ]
@@ -19,7 +19,7 @@ package-mode = true
 packages = [{ include = "app" }]
 
 [tool.poetry.group.dev.dependencies]
-pytest = ">=8,<9"
+pytest = ">=9,<10"
 httpx = ">=0.27,<1"   # required by fastapi.testclient
 ruff = ">=0.6"
 mypy = ">=1.11"
