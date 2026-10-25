@@ -995,6 +995,17 @@ class StorageRepository:
         ensure_dir(directory)
         return directory
 
+    def scan_work_subdir(self, project_id: str, scan_id: str, name: str) -> Path:
+        """A named subdirectory inside the scan's work dir (created on demand), for a tool
+        that needs its own directory rather than a single output file -- e.g. ZAP's `-dir`
+        home directory and its report output directory. `name` is always a fixed literal
+        chosen by the calling runner, never operator input."""
+        directory = self.paths.path(
+            "projects", project_id, "scans", validate_id("scan", scan_id), "work", name
+        )
+        ensure_dir(directory, parents=True)
+        return directory
+
     def diagnostics_temp_dir(self) -> Path:
         """Scratch directory for the integrations self-test (Phase 11): running a tool's
         `--version` is not tied to any scan or project, but `run_process` still requires a
@@ -1008,6 +1019,28 @@ class StorageRepository:
     ) -> bytes:
         """Read a scan output written by `write_scan_output` (bounded; validated name)."""
         path = self.paths.path("projects", project_id, "scans", scan_id, "work", name)
+        try:
+            with open(path, "rb") as fh:
+                data = fh.read(max_bytes + 1)
+        except FileNotFoundError as exc:
+            raise RecordNotFoundError("Scan output not found") from exc
+        if len(data) > max_bytes:
+            raise RecordTooLargeError(f"Scan output exceeds {max_bytes} bytes")
+        return data
+
+    def read_scan_work_file(
+        self,
+        project_id: str,
+        scan_id: str,
+        *relative_parts: str,
+        max_bytes: int = 8 * 1024 * 1024,
+    ) -> bytes:
+        """Like `read_scan_output`, but for a file inside a named work subdirectory (see
+        `scan_work_subdir`) rather than directly in the flat work dir -- e.g. a report a
+        tool wrote into its own output directory."""
+        path = self.paths.path(
+            "projects", project_id, "scans", validate_id("scan", scan_id), "work", *relative_parts
+        )
         try:
             with open(path, "rb") as fh:
                 data = fh.read(max_bytes + 1)

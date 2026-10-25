@@ -22,6 +22,7 @@ from urllib.parse import urlsplit
 from app.core.redaction import redact, redact_text
 from app.integrations.http_client import HttpClientConfig, default_transport_factory
 from app.integrations.http_service import HttpExchange, HttpService
+from app.integrations.process import find_executable
 from app.integrations.tls_tools import (
     MAX_TOOL_OUTPUT,
     TOOL_TIMEOUT_SECONDS,
@@ -29,6 +30,7 @@ from app.integrations.tls_tools import (
     ToolOutputError,
     detect_tls_tools,
 )
+from app.integrations.zap import ZapAvailability, check_availability
 from app.jobs.context import JobContext, JobStop, RunResult
 from app.models.project import ScanPolicy
 from app.scanners.webapp.checks import PassiveChecks, origin_of
@@ -54,11 +56,24 @@ from app.scanners.webapp.rules import (
     EvidenceDraft,
     Outcome,
 )
+from app.scanners.zap_dast.alerts import ZapReportError, parse_traditional_json_report
+from app.scanners.zap_dast.findings import ZapFindingWriter
+from app.scanners.zap_dast.plan import (
+    REPORT_FILE_NAME,
+    ZapPlanError,
+    baseline_argv,
+    build_baseline_plan,
+)
 from app.scope.guard import ScopeBlocked, Transport
 
 TransportFactory = Callable[[HttpClientConfig], Transport]
 MAX_COVERAGE_ROWS = 5000
 MAX_RESOURCES_LISTED = 1000
+#: generous: a real ZAP run on this project's development machine took JVM startup
+#: (~1s) + spider (near-instant for a small site) + the configured passive-scan-wait
+#: budget (confirmed directly, TBD-080); this is a ceiling, not an expected duration.
+ZAP_PROCESS_TIMEOUT_SECONDS = 900.0
+ZAP_MAX_OUTPUT_BYTES = 16 * 1024 * 1024
 
 
 OUTPUT_MAX_ITEMS = 20_000
@@ -79,13 +94,23 @@ class WebAppRunner:
         transport_factory: TransportFactory = default_transport_factory,
         tls_tools: Callable[[], list[TlsToolSpec]] = detect_tls_tools,
         cve_catalog: CveCatalog | None = None,
+        zap_availability: Callable[[], ZapAvailability] = lambda: check_availability(""),
     ) -> None:
         self.transport_factory = transport_factory
         self.tls_tools = tls_tools
         self.cve_catalog: CveCatalog = cve_catalog or NoCveCatalog()
+        # A repo-bound closure built by `default_runners` checks the operator's actual
+        # configured `zap_path`; the bare default above checks only common install
+        # locations, same as every other caller of `detect_zap("")`.
+        self.zap_availability = zap_availability
 
     def validate_parameters(self, params: dict[str, Any], policy: ScanPolicy) -> list[str]:
-        return validate_parameters(params, policy)
+        errors = validate_parameters(params, policy)
+        if not errors and params.get("engine") == "zap":
+            avail = self.zap_availability()
+            if not avail.available:
+                errors.append(f"engine=zap is not available: {avail.reason}")
+        return errors
 
     # ------------------------------------------------------------------ run
 
@@ -98,6 +123,8 @@ class WebAppRunner:
             enabled=[c.group for c in profile.checks if c.enabled],
             disabled=[c.group for c in profile.checks if not c.enabled],
         )
+        if profile.engine == "zap":
+            return self._run_zap(ctx, profile)
         state = _RunState(profile)
         stop: JobStop | None = None
         try:
@@ -110,6 +137,104 @@ class WebAppRunner:
         self._finish(ctx, profile, state, stopped=str(stop) if stop else "")
         if stop is not None:
             raise stop
+        return RunResult()
+
+    # ------------------------------------------------------------------ ZAP engine
+
+    def _run_zap(self, ctx: JobContext, profile: WebScanProfile) -> RunResult:
+        """`engine=zap`: Automation-Framework-driven Baseline/Passive scan. Availability was
+        already checked at submission (`validate_parameters`); re-checked here as defense
+        in depth against a race (uninstalled between submission and execution) -- a scan
+        job must fail cleanly, never silently fall back to the native engine or fabricate
+        a result."""
+        ctx.stage("zap availability", 2)
+        avail = self.zap_availability()
+        if not avail.available or avail.installation is None:
+            raise RuntimeError(f"ZAP engine is not available: {avail.reason}")
+        installation = avail.installation
+
+        targets = list(ctx.scan.authorized_targets)
+        ctx.stage("zap plan", 5)
+        report_dir = ctx.repo.scan_work_subdir(ctx.project_id, ctx.scan_id, "zap_report")
+        home_dir = ctx.repo.scan_work_subdir(ctx.project_id, ctx.scan_id, "zap_home")
+        try:
+            plan_text = build_baseline_plan(
+                targets,
+                report_dir,
+                spider_max_minutes=profile.zap_spider_max_minutes,
+                passive_max_minutes=profile.zap_wait_max_minutes,
+            )
+        except ZapPlanError as exc:
+            raise RuntimeError(f"could not build the ZAP plan: {exc}") from exc
+        ctx.repo.write_scan_output(ctx.project_id, ctx.scan_id, "zap-plan.yaml", plan_text.encode())
+        plan_path = ctx.repo.scan_work_dir(ctx.project_id, ctx.scan_id) / "zap-plan.yaml"
+        java = find_executable(["java"])
+        if not java:
+            raise RuntimeError("no Java runtime found on PATH; ZAP requires one")
+        try:
+            argv = baseline_argv(java, installation.jar_path, plan_path, home_dir)
+        except ZapPlanError as exc:
+            raise RuntimeError(f"could not build the ZAP argv: {exc}") from exc
+
+        ctx.stage("zap scan", 15)
+        ctx.emit(
+            "zap_profile",
+            f"OWASP ZAP {installation.version} Baseline/Passive scan",
+            targets=targets,
+            spider_max_minutes=profile.zap_spider_max_minutes,
+            passive_max_minutes=profile.zap_wait_max_minutes,
+        )
+        result = ctx.run_process(
+            argv,
+            allowed_executables=[java],
+            timeout=ZAP_PROCESS_TIMEOUT_SECONDS,
+            max_output_bytes=ZAP_MAX_OUTPUT_BYTES,
+        )
+        ctx.checkpoint()  # raises the right JobStop subclass if cancelled/budget-exhausted
+        if result.timed_out:
+            raise RuntimeError(f"ZAP did not finish within {ZAP_PROCESS_TIMEOUT_SECONDS:.0f}s")
+        if result.exit_code != 0:
+            raise RuntimeError(f"ZAP exited with status {result.exit_code}")
+
+        ctx.stage("zap report", 85)
+        report_bytes = ctx.repo.read_scan_work_file(
+            ctx.project_id,
+            ctx.scan_id,
+            "zap_report",
+            REPORT_FILE_NAME,
+            max_bytes=ZAP_MAX_OUTPUT_BYTES,
+        )
+        try:
+            alerts = parse_traditional_json_report(report_bytes)
+        except ZapReportError as exc:
+            raise RuntimeError(f"could not interpret the ZAP report: {exc}") from exc
+
+        ctx.stage("findings", 95)
+        writer = ZapFindingWriter(
+            ctx.repo, ctx.project_id, ctx.scan_id, tool_version=f"OWASP ZAP {installation.version}"
+        )
+        for alert in alerts:
+            writer.write(alert)
+        ctx.write_output(
+            "zap_summary.json",
+            _json(
+                {
+                    "engine": "zap",
+                    "zap_version": installation.version,
+                    "targets": targets,
+                    "alerts_found": len(alerts),
+                    "findings_created": len(writer.created),
+                    "findings_reobserved": len(writer.reobserved),
+                    "limitations": [
+                        "Baseline/Passive profile only: bounded spider plus passive "
+                        "analysis. No active-scan input was sent to the target.",
+                        "Severity/confidence come directly from ZAP's own rating; a "
+                        "passive scan never confirms exploitation, so confidence is "
+                        "never reported higher than 'probable'.",
+                    ],
+                }
+            ),
+        )
         return RunResult()
 
     # ------------------------------------------------------------------ stages

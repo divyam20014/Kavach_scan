@@ -741,14 +741,25 @@ def default_runners(
     settings: RuntimeSettings, repo: StorageRepository | None = None
 ) -> dict[ScanModule, Runner]:
     from app.cve.matcher import StoredCveCatalog
+    from app.integrations.zap import ZapAvailability, check_availability
     from app.jobs.selftest import SelfTestRunner
     from app.scanners.apisec.runner import ApiSecRunner
     from app.scanners.surface.runner import SurfaceRunner
     from app.scanners.webapp.runner import WebAppRunner
 
     cve_catalog = StoredCveCatalog(repo) if repo is not None else None
+
+    def zap_availability() -> ZapAvailability:
+        # Re-read the operator's configured path on every call, never cached: Settings can
+        # change between one scan submission and the next.
+        if repo is None:
+            return check_availability("")
+        return check_availability(repo.get_settings().integrations.zap_path)
+
     runners: dict[ScanModule, Runner] = {
-        ScanModule.WEB_APP: WebAppRunner(cve_catalog=cve_catalog),
+        ScanModule.WEB_APP: WebAppRunner(
+            cve_catalog=cve_catalog, zap_availability=zap_availability
+        ),
         ScanModule.ATTACK_SURFACE: SurfaceRunner(),
         ScanModule.API_SECURITY: ApiSecRunner(),
     }

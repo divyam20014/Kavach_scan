@@ -19,8 +19,20 @@ from app.scanners.webapp.rules import CATALOG_VERSION, RULES, Kind
 PROFILE_VERSION = 1
 MAX_SEED_PATHS = 20
 
+#: the native, built-in scanner stays the backward-compatible default: an older persisted
+#: `ScanJob.parameters` with no `engine` key, or an older client that never sends one, gets
+#: exactly the behavior it always had. "zap" selects the OWASP ZAP Baseline/Passive engine
+#: (`app/scanners/zap_dast/`) instead -- see TBD-081.
+ENGINES: tuple[str, ...] = ("native", "zap")
+DEFAULT_ENGINE = "native"
+
 # parameter name -> (type, default, description). Unknown names are rejected at submit.
 PARAMETERS: dict[str, tuple[type, Any, str]] = {
+    "engine": (
+        str,
+        DEFAULT_ENGINE,
+        "Scan engine: 'native' (built-in checks) or 'zap' (OWASP ZAP Baseline/Passive)",
+    ),
     "seed_paths": (str, "", "Extra in-scope start paths, comma separated"),
     "max_pages": (int, None, "Lower the page limit for this scan"),
     "max_depth": (int, None, "Lower the crawl depth for this scan"),
@@ -29,6 +41,8 @@ PARAMETERS: dict[str, tuple[type, Any, str]] = {
     "check_cors": (bool, True, "Send one request per origin with a test Origin header"),
     "run_tls_tool": (bool, True, "Run sslyze/testssl.sh when installed"),
     "check_http_methods": (bool, True, "Send one OPTIONS request per origin to read Allow"),
+    "zap_spider_max_minutes": (int, 2, "engine=zap only: bounded spider duration, minutes"),
+    "zap_wait_max_minutes": (int, 2, "engine=zap only: bounded passive-scan wait, minutes"),
 }
 
 LIMITATIONS = [
@@ -71,6 +85,10 @@ class WebScanProfile(StrictModel):
     profile_version: int = PROFILE_VERSION
     catalog_version: str = CATALOG_VERSION
     safe_mode: bool = True
+    # Backward compatible by construction: an older persisted profile with no `engine` key
+    # (or an older client that never sends one) loads with the same native behavior it
+    # always had (TBD-081).
+    engine: Literal["native", "zap"] = "native"
     auth_profile: str | None = None  # authenticated crawling is not configured in this build
     respect_robots: bool
     tls_verify: bool
@@ -78,6 +96,8 @@ class WebScanProfile(StrictModel):
     budgets: Budgets
     checks: list[ProfileCheck]
     limitations: list[str] = Field(default_factory=lambda: list(LIMITATIONS))
+    zap_spider_max_minutes: int = 2
+    zap_wait_max_minutes: int = 2
 
     def enabled(self, group: str) -> bool:
         return any(c.group == group and c.enabled for c in self.checks)
@@ -187,16 +207,27 @@ def validate_parameters(params: dict[str, Any], policy: ScanPolicy) -> list[str]
             errors.append(f"at most {MAX_SEED_PATHS} seed paths")
         if any(not p.startswith("/") or "://" in p or "\\" in p for p in paths):
             errors.append("seed paths must be relative paths starting with '/'")
+    engine = params.get("engine")
+    if engine is not None and isinstance(engine, str) and engine not in ENGINES:
+        errors.append(f"engine must be one of {ENGINES}, got {engine!r}")
+    for minutes_param in ("zap_spider_max_minutes", "zap_wait_max_minutes"):
+        minutes = params.get(minutes_param)
+        if isinstance(minutes, int) and not isinstance(minutes, bool) and not 1 <= minutes <= 60:
+            errors.append(f"{minutes_param} must be between 1 and 60")
     return errors
 
 
 def build_profile(params: dict[str, Any], policy: ScanPolicy) -> WebScanProfile:
+    engine_raw = params.get("engine")
+    engine: Literal["native", "zap"] = engine_raw if engine_raw in ENGINES else DEFAULT_ENGINE  # type: ignore[assignment]
     checks: list[ProfileCheck] = []
     for group, label, rule_ids, toggle in GROUPS:
         kinds = {RULES[r].kind for r in rule_ids}
         kind = next(k for k in (Kind.ACTIVE, Kind.TOOL, Kind.PROBE, Kind.PASSIVE) if k in kinds)
         enabled, reason = True, ""
-        if group in ALWAYS_SKIPPED:
+        if engine != "native":
+            enabled, reason = False, f"engine={engine}: native checks are not run"
+        elif group in ALWAYS_SKIPPED:
             enabled, reason = False, ALWAYS_SKIPPED[group]
         elif toggle is not None and not _bool(params, toggle):
             enabled, reason = False, "Disabled for this scan"
@@ -213,7 +244,10 @@ def build_profile(params: dict[str, Any], policy: ScanPolicy) -> WebScanProfile:
     pages = params.get("max_pages")
     depth = params.get("max_depth")
     seeds = params.get("seed_paths")
+    spider_minutes = params.get("zap_spider_max_minutes")
+    wait_minutes = params.get("zap_wait_max_minutes")
     return WebScanProfile(
+        engine=engine,
         respect_robots=_bool(params, "respect_robots"),
         tls_verify=_bool(params, "tls_verify"),
         seed_paths=_split(seeds) if isinstance(seeds, str) else [],
@@ -228,4 +262,6 @@ def build_profile(params: dict[str, Any], policy: ScanPolicy) -> WebScanProfile:
             max_redirects=policy.max_redirects,
         ),
         checks=checks,
+        zap_spider_max_minutes=(int(spider_minutes) if isinstance(spider_minutes, int) else 2),
+        zap_wait_max_minutes=int(wait_minutes) if isinstance(wait_minutes, int) else 2,
     )

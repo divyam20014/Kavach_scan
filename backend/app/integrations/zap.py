@@ -124,6 +124,25 @@ def selftest_argv(java_executable: str, installation: ZapInstallation, home_dir:
     ]
 
 
+@dataclass(frozen=True)
+class ZapAvailability:
+    available: bool
+    reason: str  # "" when available
+    installation: ZapInstallation | None = None
+
+
+def check_availability(configured: str = "") -> ZapAvailability:
+    """Detection-only (no JVM launch) + a PATH lookup for `java` -- used before a scan job
+    is allowed to start with `engine=zap` (TBD-081). Never claims availability without both
+    an installed ZAP and a Java runtime actually being found."""
+    installation = detect_zap(configured)
+    if installation is None:
+        return ZapAvailability(False, "ZAP is not installed or configured")
+    if find_java() is None:
+        return ZapAvailability(False, "no Java runtime found on PATH; ZAP requires one")
+    return ZapAvailability(True, "", installation)
+
+
 def parse_selftest_output(stdout: bytes, stderr: bytes) -> str:
     """ZAP's `-cmd -version` prints a bare version line (e.g. `2.17.0`) on success, possibly
     preceded by JVM/addon warning lines on stderr (observed directly: deprecated-API and
