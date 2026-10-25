@@ -25,6 +25,15 @@ export const theme = createTheme({
   defaultRadius: "md",
   fontFamily: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
   focusRing: "always",
+  // Consistent card elevation app-wide instead of each page choosing its own look.
+  components: {
+    Card: {
+      defaultProps: { shadow: "xs" },
+    },
+    Table: {
+      defaultProps: { verticalSpacing: "xs" },
+    },
+  },
 });
 
 export function makeQueryClient() {

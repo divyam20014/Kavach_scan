@@ -4,7 +4,7 @@ import { humanize } from "../lib/format";
 
 // Status is always conveyed by text (plus a shape symbol), never by colour alone.
 
-const SEVERITY: Record<Severity, { color: string; symbol: string }> = {
+export const SEVERITY: Record<Severity, { color: string; symbol: string }> = {
   critical: { color: "red", symbol: "◆" },
   high: { color: "orange", symbol: "▲" },
   medium: { color: "yellow", symbol: "■" },

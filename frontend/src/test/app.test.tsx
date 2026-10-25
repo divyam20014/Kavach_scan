@@ -42,16 +42,22 @@ describe("API client", () => {
 });
 
 describe("navigation and layout", () => {
-  it("renders semantic navigation, honest unavailable modules and no scan controls", async () => {
+  it("renders semantic, sectioned navigation covering every implemented module", async () => {
     mockApi({ ...base, "GET /api/dashboard/summary": { body: emptySummary() } });
     renderAt("/");
     const nav = await screen.findByRole("navigation", { name: /main navigation/i });
-    for (const label of ["Dashboard", "Projects", "Assets", "Scans", "Findings", "Audit log", "Settings & storage"]) {
+    for (const label of [
+      "Dashboard", "Projects", "Findings", "Assets", "Scans",
+      "Integrations & CVE data", "Audit log", "Settings & storage", "Help & limitations",
+    ]) {
       expect(within(nav).getByRole("link", { name: label })).toBeInTheDocument();
     }
-    expect(screen.getByRole("group", { name: /modules not available yet/i })).toHaveTextContent(/Reports/);
+    // Imports/Reports/Integrations were once listed as "not available yet"; they are real,
+    // implemented routes now (Imports/Reports reached from a project, Integrations linked
+    // directly above), so no such disclaimer should remain anywhere in the shell.
+    expect(screen.queryByRole("group", { name: /modules not available yet/i })).not.toBeInTheDocument();
+    expect(screen.queryByText(/not available yet/i)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /start scan|run scan|scan now/i })).not.toBeInTheDocument();
-    expect(screen.getByText(/Web, attack-surface and API scanners are ready/i)).toBeInTheDocument();
   });
 
   it("navigates between pages with a heading per page", async () => {

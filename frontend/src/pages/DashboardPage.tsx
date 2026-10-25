@@ -1,11 +1,11 @@
-import { Alert, Anchor, Button, Card, Group, SimpleGrid, Stack, Table, Text, Title } from "@mantine/core";
+import { Alert, Anchor, Button, Card, Group, Progress, SimpleGrid, Stack, Table, Text, Title } from "@mantine/core";
 import { Link } from "react-router-dom";
 import { useDashboard } from "../api/hooks";
 import { CONFIDENCES, SEVERITIES, type DashboardSummary } from "../api/types";
 import { KpiCard } from "../components/KpiCard";
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState, QueryState } from "../components/QueryState";
-import { SeverityLabel } from "../components/StatusLabel";
+import { SEVERITY, SeverityLabel } from "../components/StatusLabel";
 import { formatDateTime, humanize } from "../lib/format";
 
 export function DashboardPage() {
@@ -69,8 +69,8 @@ function DashboardBody({ data }: { data: DashboardSummary }) {
               </Button>
             }
           >
-            Start by creating a project with its authorization record and target scope. Scanning modules are not
-            available in this build.
+            Start by creating a project with its authorization record and target scope, then run a web application,
+            attack-surface or API security scan — or import results from an existing tool.
           </EmptyState>
         </Card>
       ) : (
@@ -84,10 +84,22 @@ function DashboardBody({ data }: { data: DashboardSummary }) {
           </Title>
           {findings.total === 0 ? (
             <Text size="sm" c="dimmed">
-              No findings recorded. Findings appear once scans (Phases 05–07) or imports (Phase 08) produce them.
+              No findings recorded yet. Findings appear once a scan or an import produces them.
             </Text>
           ) : (
-            <Table>
+            <>
+              {/* Purely visual proportion at a glance; the table below carries the real,
+                  accessible counts, so this bar is hidden from assistive tech. */}
+              <Progress.Root size={14} mb="md" aria-hidden="true">
+                {SEVERITIES.filter((s) => findings.by_severity[s] > 0).map((s) => (
+                  <Progress.Section
+                    key={s}
+                    value={(findings.by_severity[s] / findings.total) * 100}
+                    color={SEVERITY[s].color}
+                  />
+                ))}
+              </Progress.Root>
+              <Table>
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th scope="col">Severity</Table.Th>
@@ -106,7 +118,8 @@ function DashboardBody({ data }: { data: DashboardSummary }) {
                   </Table.Tr>
                 ))}
               </Table.Tbody>
-            </Table>
+              </Table>
+            </>
           )}
           {findings.total > 0 && (
             <Group gap="xs" mt="sm">

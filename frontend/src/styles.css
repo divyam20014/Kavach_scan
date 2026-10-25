@@ -1,3 +1,10 @@
+/* Enterprise security platform identity: a deep, restrained header instead of
+   default-white Mantine chrome. Scoped to the app shell header only. */
+.app-header {
+  background: #0f172a;
+  border-bottom: 1px solid #1e293b;
+}
+
 /* Keyboard users: first Tab stop on every page; visible only when focused. */
 .skip-link {
   position: absolute;

@@ -1,4 +1,4 @@
-import { Alert, Anchor, Badge, Button, Card, Code, Group, List, Modal, SimpleGrid, Stack, Table, Text, TextInput, Title } from "@mantine/core";
+import { Alert, Anchor, Badge, Button, Card, Code, Divider, Group, List, Modal, SimpleGrid, Stack, Table, Text, TextInput, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
@@ -44,10 +44,16 @@ function ProjectDetail({ overview }: { overview: ProjectOverview }) {
         description={`Client: ${project.client_name}`}
         crumbs={[{ label: "Dashboard", to: "/" }, { label: "Projects", to: "/projects" }, { label: project.name }]}
         actions={
-          <>
-            <Button component={Link} to={`/projects/${project.project_id}/edit`} variant="default">
-              Edit
+          <Group gap="sm" wrap="wrap" justify="flex-end">
+            {/* Primary: where an operator goes next most often. */}
+            <Button component={Link} to={`/findings?project_id=${project.project_id}`}>
+              Findings
             </Button>
+            <Button component={Link} to={`/projects/${project.project_id}/reports`} variant="filled" color="teal">
+              Reports
+            </Button>
+            <Divider orientation="vertical" />
+            {/* Secondary: the project's own scan/import sub-pages. */}
             <Button component={Link} to={`/projects/${project.project_id}/surface`} variant="default">
               Attack surface
             </Button>
@@ -57,19 +63,18 @@ function ProjectDetail({ overview }: { overview: ProjectOverview }) {
             <Button component={Link} to={`/projects/${project.project_id}/imports`} variant="default">
               Imports
             </Button>
-            <Button component={Link} to={`/findings?project_id=${project.project_id}`} variant="default">
-              Findings
+            <Button component={Link} to={`/projects/${project.project_id}/edit`} variant="default">
+              Edit
             </Button>
-            <Button component={Link} to={`/projects/${project.project_id}/reports`} variant="default">
-              Reports
-            </Button>
-            <Button variant="default" onClick={toggleArchive} loading={update.isPending}>
+            <Divider orientation="vertical" />
+            {/* Consequential: archive is reversible, delete is not (see the confirmation modal). */}
+            <Button variant="subtle" color="gray" onClick={toggleArchive} loading={update.isPending}>
               {archived ? "Restore" : "Archive"}
             </Button>
             <Button color="red" variant="light" onClick={() => setDeleting(true)}>
               Delete…
             </Button>
-          </>
+          </Group>
         }
       />
       <Stack gap="md">

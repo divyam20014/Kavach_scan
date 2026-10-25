@@ -120,7 +120,7 @@ export function AssetsPage() {
       title="Assets"
       base="/assets"
       kind="assets"
-      emptyText="Assets are discovered by the attack surface mapper or imported (Phase 08). None exist yet."
+      emptyText="No assets yet. Assets are discovered by the attack-surface mapper or produced by an import."
       columns={["Locator", "Type", "Scope status", "Confidence", "Project", "Last seen"]}
       row={(a) => (
         <Table.Tr key={a.asset_id}>
