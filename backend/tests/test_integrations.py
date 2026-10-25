@@ -19,7 +19,12 @@ from app.storage.repository import StorageRepository
 
 
 def _set_tool_path(repo: StorageRepository, tool_id: str, path: str) -> None:
-    field = {"nmap": "nmap_path", "sslyze": "sslyze_path", "testssl.sh": "testssl_path"}[tool_id]
+    field = {
+        "nmap": "nmap_path",
+        "sslyze": "sslyze_path",
+        "testssl.sh": "testssl_path",
+        "zap": "zap_path",
+    }[tool_id]
     settings = repo.get_settings()
     settings.integrations = IntegrationsSettings(**{field: path})
     repo.save_settings(settings)
@@ -40,6 +45,10 @@ def test_list_integration_statuses_reports_not_configured_when_nothing_is_set(
 ) -> None:
     monkeypatch.setattr(integrations_mod, "detect_nmap", lambda: None)
     monkeypatch.setattr(integrations_mod, "detect_tls_tools", lambda: [])
+    # Real machines this test runs on may genuinely have ZAP installed in one of the
+    # candidate directories (as this one does) — stub it so the test is deterministic
+    # regardless of what else is installed on the box running it.
+    monkeypatch.setattr(integrations_mod, "detect_zap", lambda configured="": None)
     statuses = {s.id: s for s in list_integration_statuses(repo)}
     assert set(statuses) == set(TOOL_IDS)
     for s in statuses.values():
@@ -210,6 +219,128 @@ def test_selftest_result_is_reflected_immediately_without_restart(
     assert run_selftest(repo, "nmap").status == "not_configured"
     _set_tool_path(repo, "nmap", sys.executable)
     assert run_selftest(repo, "nmap").status == "verified"
+
+
+# ---------------------------------------------------------------- ZAP self-test wiring
+# (detection itself is covered by tests/test_integrations_zap.py; these cover run_selftest's
+# ZAP-specific branch — two resolved executables (java + jar) instead of one, through a
+# mocked process so no real JVM is ever launched here.)
+
+
+def _mock_zap(monkeypatch: pytest.MonkeyPatch, *, jar_path: str = "C:/zap/zap-2.17.0.jar") -> None:
+    from app.integrations.zap import ZapInstallation
+
+    monkeypatch.setattr(
+        integrations_mod,
+        "detect_zap",
+        lambda configured="": ZapInstallation(
+            jar_path=jar_path, version="2.17.0", install_dir=str(Path(jar_path).parent)
+        ),
+    )
+
+
+def test_zap_selftest_reports_not_configured_when_no_install_is_found(
+    repo: StorageRepository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(integrations_mod, "detect_zap", lambda configured="": None)
+    result = run_selftest(repo, "zap")
+    assert result.status == "not_configured"
+    assert result.last_error == ""
+
+
+def test_zap_selftest_reports_a_clean_error_when_java_is_missing(
+    repo: StorageRepository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _mock_zap(monkeypatch)
+    monkeypatch.setattr(integrations_mod, "find_java", lambda: None)
+    result = run_selftest(repo, "zap")
+    assert result.status == "error"
+    assert "Java" in result.last_error
+    assert result.version == ""
+
+
+def test_zap_selftest_succeeds_with_a_mocked_process(
+    repo: StorageRepository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _mock_zap(monkeypatch)
+    monkeypatch.setattr(integrations_mod, "find_java", lambda: sys.executable)
+    script = _write_script(tmp_path, "print('2.17.0')\n")
+    monkeypatch.setattr(
+        integrations_mod, "selftest_argv", lambda java, installation, home_dir: [java, str(script)]
+    )
+    result = run_selftest(repo, "zap")
+    assert result.status == "verified"
+    assert result.version == "2.17.0"
+    assert result.last_error == ""
+
+
+def test_zap_selftest_never_mistakes_jvm_log_noise_for_a_verified_version(
+    repo: StorageRepository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Reproduces exactly what a real ZAP 2.17.0 install prints: INFO log lines appear on
+    stdout before the version; the self-test must still either find the real version or
+    report a clean error — never treat a log line as the verified version."""
+    _mock_zap(monkeypatch)
+    monkeypatch.setattr(integrations_mod, "find_java", lambda: sys.executable)
+    script = _write_script(
+        tmp_path,
+        "print('887 [main] INFO  org.parosproxy.paros.Constant - Copying default configuration')\n"
+        "print('2.17.0')\n",
+    )
+    monkeypatch.setattr(
+        integrations_mod, "selftest_argv", lambda java, installation, home_dir: [java, str(script)]
+    )
+    result = run_selftest(repo, "zap")
+    assert result.status == "verified"
+    assert result.version == "2.17.0"  # never the INFO log line
+
+
+def test_zap_selftest_times_out_on_a_hanging_process(
+    repo: StorageRepository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _mock_zap(monkeypatch)
+    monkeypatch.setattr(integrations_mod, "find_java", lambda: sys.executable)
+    script = _write_script(tmp_path, "import time\ntime.sleep(30)\n")
+    monkeypatch.setattr(
+        integrations_mod, "selftest_argv", lambda java, installation, home_dir: [java, str(script)]
+    )
+    monkeypatch.setattr(integrations_mod, "_ZAP_SELFTEST_TIMEOUT_SECONDS", 0.5)
+    result = run_selftest(repo, "zap")
+    assert result.status == "error"
+    assert "did not respond within" in result.last_error
+
+
+def test_zap_selftest_never_verified_on_nonzero_exit(
+    repo: StorageRepository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _mock_zap(monkeypatch)
+    monkeypatch.setattr(integrations_mod, "find_java", lambda: sys.executable)
+    script = _write_script(tmp_path, "import sys\nprint('2.17.0')\nsys.exit(1)\n")
+    monkeypatch.setattr(
+        integrations_mod, "selftest_argv", lambda java, installation, home_dir: [java, str(script)]
+    )
+    result = run_selftest(repo, "zap")
+    assert result.status == "error"
+    assert result.version == ""
+    assert "exited with status 1" in result.last_error
+
+
+def test_zap_selftest_uses_an_app_managed_home_dir_not_the_operators_profile(
+    repo: StorageRepository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _mock_zap(monkeypatch)
+    monkeypatch.setattr(integrations_mod, "find_java", lambda: sys.executable)
+    seen_home_dirs: list[Path] = []
+    script = _write_script(tmp_path, "print('2.17.0')\n")
+
+    def fake_argv(java: str, installation: object, home_dir: Path) -> list[str]:
+        seen_home_dirs.append(home_dir)
+        return [java, str(script)]
+
+    monkeypatch.setattr(integrations_mod, "selftest_argv", fake_argv)
+    run_selftest(repo, "zap")
+    assert len(seen_home_dirs) == 1
+    assert seen_home_dirs[0].is_relative_to(repo.diagnostics_temp_dir())
 
 
 # ---------------------------------------------------------------- last-use lookup

@@ -159,6 +159,7 @@ function ToolPathSettingsCard() {
   const [nmapPath, setNmapPath] = useState("");
   const [sslyzePath, setSslyzePath] = useState("");
   const [testsslPath, setTestsslPath] = useState("");
+  const [zapPath, setZapPath] = useState("");
   const [credentialAlias, setCredentialAlias] = useState("");
   const [loadedRevision, setLoadedRevision] = useState<number | null>(null);
 
@@ -169,6 +170,7 @@ function ToolPathSettingsCard() {
       setNmapPath(settings.data.integrations.nmap_path);
       setSslyzePath(settings.data.integrations.sslyze_path);
       setTestsslPath(settings.data.integrations.testssl_path);
+      setZapPath(settings.data.integrations.zap_path);
       setLoadedRevision(settings.data.revision);
     }
   }, [settings.data, loadedRevision]);
@@ -181,6 +183,7 @@ function ToolPathSettingsCard() {
           nmap_path: nmapPath,
           sslyze_path: sslyzePath,
           testssl_path: testsslPath,
+          zap_path: zapPath,
           ...(credentialAlias ? { online_lookup_credential_alias: credentialAlias } : {}),
         },
       },
@@ -214,6 +217,12 @@ function ToolPathSettingsCard() {
             <TextInput
               label="testssl.sh path" placeholder="auto-detect"
               value={testsslPath} onChange={(e) => setTestsslPath(e.currentTarget.value)}
+            />
+            <TextInput
+              label="ZAP path"
+              description="The ZAP install directory, or a specific zap-*.jar file. Leave blank to check common install locations (ZAP is not registered on PATH)."
+              placeholder="auto-detect"
+              value={zapPath} onChange={(e) => setZapPath(e.currentTarget.value)}
             />
             <TextInput
               type="password"

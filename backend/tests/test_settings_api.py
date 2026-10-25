@@ -17,6 +17,7 @@ def test_get_settings_returns_defaults(client: TestClient) -> None:
         "nmap_path": "",
         "sslyze_path": "",
         "testssl_path": "",
+        "zap_path": "",
         "online_lookup_credential_alias": "",
     }
 

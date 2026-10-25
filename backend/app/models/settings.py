@@ -60,6 +60,7 @@ class IntegrationsSettings(StrictModel):
     nmap_path: ToolPath = ""
     sslyze_path: ToolPath = ""
     testssl_path: ToolPath = ""
+    zap_path: ToolPath = ""  # the ZAP install directory, or a specific zap-*.jar file
     online_lookup_credential_alias: CredentialAlias = ""
 
 

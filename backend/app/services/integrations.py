@@ -19,11 +19,21 @@ from typing import Literal
 from app.integrations.nmap import NmapSpec, detect_nmap
 from app.integrations.process import ProcessPolicyError, run_process
 from app.integrations.tls_tools import TlsToolSpec, detect_tls_tools
+from app.integrations.zap import (
+    SELFTEST_TIMEOUT_SECONDS as _ZAP_SELFTEST_TIMEOUT_SECONDS,
+)
+from app.integrations.zap import (
+    detect_zap,
+    find_java,
+    parse_selftest_output,
+    selftest_argv,
+)
 from app.models.settings import IntegrationsSettings
+from app.storage.atomic import ensure_dir
 from app.storage.repository import StorageRepository
 
 IntegrationStatusValue = Literal["not_configured", "not_found", "detected", "verified", "error"]
-TOOL_IDS: tuple[str, ...] = ("nmap", "sslyze", "testssl.sh")
+TOOL_IDS: tuple[str, ...] = ("nmap", "sslyze", "testssl.sh", "zap")
 
 _CAPABILITIES: dict[str, str] = {
     "nmap": "Bounded TCP connect port/service mapping for the attack surface mapper "
@@ -32,6 +42,8 @@ _CAPABILITIES: dict[str, str] = {
     "(Module 5.3). Preferred over testssl.sh when both are available.",
     "testssl.sh": "TLS protocol/cipher detail for the web scanner's certificate checks "
     "(Module 5.3). Used when sslyze is unavailable.",
+    "zap": "OWASP ZAP for deep web application DAST (detection/self-test only in this "
+    "release — Automation-Framework-driven scanning is a separate, later increment).",
 }
 _TROUBLESHOOTING: dict[str, str] = {
     "nmap": "Install Nmap and ensure it is on PATH, or set an explicit path in Settings. "
@@ -40,6 +52,9 @@ _TROUBLESHOOTING: dict[str, str] = {
     "If neither TLS tool is available, protocol/cipher checks are reported skipped.",
     "testssl.sh": "Install testssl.sh (a bash script; not native on Windows — use WSL) or set "
     "an explicit path in Settings.",
+    "zap": "Install OWASP ZAP (https://www.zaproxy.org/download/) and a Java runtime, then "
+    "set the ZAP install directory (or a specific zap-*.jar) in Settings if it is not one of "
+    "the common install locations already checked.",
 }
 
 _SELFTEST_TIMEOUT_SECONDS = 20.0
@@ -73,12 +88,18 @@ def _configured_path(settings: IntegrationsSettings, tool_id: str) -> str:
         "nmap": settings.nmap_path,
         "sslyze": settings.sslyze_path,
         "testssl.sh": settings.testssl_path,
+        "zap": settings.zap_path,
     }[tool_id]
 
 
 def _detect_path(tool_id: str, configured: str) -> str:
     """An explicit configured path must exist and be a file; otherwise fall back to the same
-    PATH-based auto-detection the scanners themselves already use (Phase 05/06)."""
+    PATH-based auto-detection the scanners themselves already use (Phase 05/06). ZAP has no
+    single executable and no PATH registration (see `app/integrations/zap.py`): "detected"
+    is the located jar file, found via `detect_zap` (filename parsing only, no JVM launch)."""
+    if tool_id == "zap":
+        installation = detect_zap(configured)
+        return installation.jar_path if installation else ""
     if configured:
         return configured if Path(configured).is_file() else ""
     if tool_id == "nmap":
@@ -153,6 +174,54 @@ def _version_args(tool_id: str, executable: str) -> list[str]:
     return TlsToolSpec(tool_id, executable).version_args()
 
 
+def _zap_selftest(
+    repo: StorageRepository, base: IntegrationStatus, configured: str
+) -> IntegrationStatus:
+    """`java -jar <jar> -cmd -version -dir <isolated home>`. Unlike nmap/sslyze/testssl.sh,
+    ZAP needs a second executable (`java`) resolved separately, and a home directory that is
+    never the operator's own ZAP profile (see `app/integrations/zap.py`)."""
+    installation = detect_zap(configured)
+    if installation is None:
+        return replace(base, status="error", last_error="the detected ZAP jar disappeared")
+    java = find_java()
+    if not java:
+        return replace(
+            base,
+            status="error",
+            last_error="no Java runtime found on PATH; ZAP requires one (installed separately)",
+        )
+    home_dir = repo.diagnostics_temp_dir() / "zap_home"
+    ensure_dir(home_dir, parents=True)
+    try:
+        result = run_process(
+            selftest_argv(java, installation, home_dir),
+            allowed_executables=[java],
+            cwd=repo.diagnostics_temp_dir(),
+            timeout=_ZAP_SELFTEST_TIMEOUT_SECONDS,
+            max_output_bytes=_SELFTEST_MAX_OUTPUT,
+        )
+    except ProcessPolicyError as exc:
+        return replace(base, status="error", last_error=str(exc))
+    except OSError as exc:
+        return replace(base, status="error", last_error=f"could not run java: {exc}")
+    if result.timed_out:
+        return replace(
+            base,
+            status="error",
+            last_error=f"ZAP did not respond within {_ZAP_SELFTEST_TIMEOUT_SECONDS:.0f}s",
+        )
+    if result.exit_code != 0:
+        detail = _first_printable_line(result.stderr) or _first_printable_line(result.stdout)
+        message = f"exited with status {result.exit_code}"
+        if detail:
+            message += f": {detail}"
+        return replace(base, status="error", last_error=message)
+    version = parse_selftest_output(result.stdout, result.stderr)
+    if not version:
+        return replace(base, status="error", last_error="ZAP produced no readable version output")
+    return replace(base, status="verified", version=version)
+
+
 def run_selftest(repo: StorageRepository, tool_id: str) -> IntegrationStatus:
     """Runs `<tool> --version` only. No host, port, or scan target is ever involved."""
     if tool_id not in TOOL_IDS:
@@ -174,6 +243,8 @@ def run_selftest(repo: StorageRepository, tool_id: str) -> IntegrationStatus:
     )
     if not detected:
         return base
+    if tool_id == "zap":
+        return _zap_selftest(repo, base, configured)
     try:
         result = run_process(
             [detected, *_version_args(tool_id, detected)],

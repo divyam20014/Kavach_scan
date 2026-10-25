@@ -945,6 +945,7 @@ export interface IntegrationsSettings {
   nmap_path: string;
   sslyze_path: string;
   testssl_path: string;
+  zap_path: string;
   online_lookup_credential_alias: string;
 }
 
@@ -963,6 +964,7 @@ export interface IntegrationsSettingsUpdate {
   nmap_path?: string;
   sslyze_path?: string;
   testssl_path?: string;
+  zap_path?: string;
   online_lookup_credential_alias?: string;
 }
 
