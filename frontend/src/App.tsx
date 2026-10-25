@@ -11,9 +11,11 @@ import { ProjectsPage } from "./pages/ProjectsPage";
 import { ScanDetailPage } from "./pages/ScanDetailPage";
 import { SurfacePage } from "./pages/SurfacePage";
 import { ApiSpecPage } from "./pages/ApiSpecPage";
+import { FindingDetailPage } from "./pages/FindingDetailPage";
+import { FindingsWorkbenchPage } from "./pages/FindingsWorkbenchPage";
 import { ImportsPage } from "./pages/ImportsPage";
 import { ProjectWizardPage } from "./pages/ProjectWizardPage";
-import { AssetsPage, FindingsPage, ScansPage } from "./pages/RecordPages";
+import { AssetsPage, ScansPage } from "./pages/RecordPages";
 import { AuditPage, HelpPage, NotFoundPage, SettingsPage } from "./pages/SystemPages";
 
 export const theme = createTheme({
@@ -59,7 +61,8 @@ export function AppRoutes() {
         <Route path="projects/:projectId/surface" element={<SurfacePage />} />
         <Route path="projects/:projectId/api-specs" element={<ApiSpecPage />} />
         <Route path="projects/:projectId/imports" element={<ImportsPage />} />
-        <Route path="findings" element={<FindingsPage />} />
+        <Route path="projects/:projectId/findings/:findingId" element={<FindingDetailPage />} />
+        <Route path="findings" element={<FindingsWorkbenchPage />} />
         <Route path="assets" element={<AssetsPage />} />
         <Route path="scans" element={<ScansPage />} />
         <Route path="audit" element={<AuditPage />} />

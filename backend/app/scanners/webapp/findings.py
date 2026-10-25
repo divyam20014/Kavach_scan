@@ -31,6 +31,7 @@ from app.scanners.webapp.rules import (
     CheckResult,
     Outcome,
 )
+from app.standards.cwe import CWE_CATALOG_VERSION, cwe_title
 from app.storage.repository import StorageRepository
 
 log = logging.getLogger("app.scanners.webapp")
@@ -199,6 +200,21 @@ class FindingWriter:
                     title=OWASP_TITLES.get(rule.owasp, ""),
                     rationale="Related category assigned by the rule catalog (not a 1:1 mapping)",
                     confidence=Confidence.PROBABLE,
+                )
+            )
+        for cwe_id in rule.cwe:
+            title = cwe_title(cwe_id)
+            if not title:
+                continue  # outside the curated subset: the bare CWE id is still kept on
+                # the finding (cwe_ids below), just with no catalog mapping entry for it
+            mappings.append(
+                StandardMapping(
+                    catalog="cwe",
+                    catalog_version=CWE_CATALOG_VERSION,
+                    entry_id=f"CWE-{cwe_id}",
+                    title=title,
+                    rationale="Weakness category assigned by the rule catalog",
+                    confidence=Confidence.CONFIRMED,
                 )
             )
         technical = redact_text(

@@ -337,6 +337,18 @@ cffi = {version = ">=2.0.0", markers = "platform_python_implementation != \"PyPy
 ssh = ["bcrypt (>=3.1.5)"]
 
 [[package]]
+name = "cvss"
+version = "3.6"
+description = "CVSS2/3/4 library with interactive calculator for Python 2 and Python 3"
+optional = false
+python-versions = "*"
+groups = ["main"]
+files = [
+    {file = "cvss-3.6-py2.py3-none-any.whl", hash = "sha256:e342c6ad9c7eb69d2aebbbc2768a03cabd57eb947c806e145de5b936219833ea"},
+    {file = "cvss-3.6.tar.gz", hash = "sha256:f21d18224efcd3c01b44ff1b37dec2e3208d29a6d0ce6c87a599c73c21ee1a99"},
+]
+
+[[package]]
 name = "fastapi"
 version = "0.150.0"
 description = "FastAPI framework, high performance, easy to learn, fast to code, ready for production"
@@ -1324,4 +1336,4 @@ standard = ["httptools (>=0.8.0)", "python-dotenv (>=0.13)", "pyyaml (>=5.1)", "
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.12"
-content-hash = "4764cdd74928d5ed73f23cdd92664a7018aaf57ff2f0f0a9525d2b364556a45e"
+content-hash = "4ea5d1a59bd109976338f4363e9113bbd28ed0abf5aa79d4da29a1b2e24966fc"

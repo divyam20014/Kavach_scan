@@ -374,7 +374,7 @@ def test_results_endpoint_and_findings_scan_filter(
     repo.create_finding(make_finding(pid, scan_id=scan.scan_id))
     repo.create_finding(make_finding(pid))
     page = client.get("/api/findings", params={"scan_id": scan.scan_id}).json()
-    assert page["total"] == 1 and page["items"][0]["scan_id"] == scan.scan_id
+    assert page["total"] == 1 and page["items"][0]["finding"]["scan_id"] == scan.scan_id
     assert client.get("/api/findings", params={"scan_id": "../etc"}).status_code == 422
 
 

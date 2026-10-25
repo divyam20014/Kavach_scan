@@ -14,7 +14,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 
 from app import __version__
-from app.api import apisec, health, imports, jobs, projects, scope, surface
+from app.api import apisec, findings, health, imports, jobs, projects, scope, surface
 from app.core.config import PRODUCT_NAME
 from app.core.correlation import CorrelationIdMiddleware
 from app.core.errors import ErrorResponse, install_error_handlers
@@ -81,6 +81,7 @@ def create_app(
     app.include_router(surface.router)
     app.include_router(apisec.router)
     app.include_router(imports.router)
+    app.include_router(findings.router)
     if serve_ui and not mount_ui(app):
         log.info("frontend build not found; serving the API only")
     # add_middleware prepends: the last added runs first (outermost).

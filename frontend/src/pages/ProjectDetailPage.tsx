@@ -3,7 +3,7 @@ import { notifications } from "@mantine/notifications";
 import { useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import { ApiError } from "../api/client";
-import { useAudit, useDeleteProject, useDeletionImpact, useProject, useUpdateProject } from "../api/hooks";
+import { useAudit, useDashboard, useDeleteProject, useDeletionImpact, useProject, useUpdateProject } from "../api/hooks";
 import type { ProjectOverview, ScopeDefinition } from "../api/types";
 import { PageHeader } from "../components/PageHeader";
 import { ScopePolicyCard } from "../components/ScopePolicyCard";
@@ -57,6 +57,9 @@ function ProjectDetail({ overview }: { overview: ProjectOverview }) {
             <Button component={Link} to={`/projects/${project.project_id}/imports`} variant="default">
               Imports
             </Button>
+            <Button component={Link} to={`/findings?project_id=${project.project_id}`} variant="default">
+              Findings
+            </Button>
             <Button variant="default" onClick={toggleArchive} loading={update.isPending}>
               {archived ? "Restore" : "Archive"}
             </Button>
@@ -91,6 +94,8 @@ function ProjectDetail({ overview }: { overview: ProjectOverview }) {
             </Card>
           ))}
         </SimpleGrid>
+
+        <ScanTrendCard projectId={project.project_id} />
 
         <SimpleGrid cols={{ base: 1, md: 2 }}>
           <Card withBorder component="section" aria-labelledby="auth-h">
@@ -292,5 +297,30 @@ export function DeleteProjectModal({ projectId, onClose }: { projectId: string; 
         </Stack>
       )}
     </Modal>
+  );
+}
+
+function ScanTrendCard({ projectId }: { projectId: string }) {
+  const query = useDashboard(projectId);
+  if (!query.data || query.data.trend.length === 0) return null;
+  return (
+    <Card withBorder component="section" aria-labelledby="trend-h">
+      <Title order={2} size="h4" id="trend-h" mb="sm">
+        Scan trend
+      </Title>
+      <Text size="sm" c="dimmed" mb="sm">
+        Comparing each module&apos;s two most recent completed scans. Shown only when a comparable pair exists.
+      </Text>
+      <Stack gap="xs">
+        {query.data.trend.map((t) => (
+          <Group key={t.module} justify="space-between">
+            <Text size="sm">{humanize(t.module)}</Text>
+            <Text size="sm" c={t.findings_delta > 0 ? "red" : t.findings_delta < 0 ? "teal" : "dimmed"}>
+              {t.older_total} → {t.newer_total} finding(s) ({t.findings_delta >= 0 ? "+" : ""}{t.findings_delta})
+            </Text>
+          </Group>
+        ))}
+      </Stack>
+    </Card>
   );
 }

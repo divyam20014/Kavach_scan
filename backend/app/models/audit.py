@@ -39,6 +39,10 @@ class AuditAction(StrEnum):
     INTERNAL_OVERRIDE_REMOVED = "internal_override_removed"
     ASSET_APPROVED = "asset_approved"  # discovered host added to scope by the operator
     ASSET_CRITICALITY_CHANGED = "asset_criticality_changed"
+    FINDING_UPDATED = "finding_updated"  # business_impact/business_priority/remediation edits
+    FINDING_COMMENT_ADDED = "finding_comment_added"
+    FINDING_MERGED = "finding_merged"
+    FINDING_UNMERGED = "finding_unmerged"
 
 
 class AuditEvent(StrictModel):

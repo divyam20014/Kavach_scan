@@ -85,6 +85,7 @@ export function emptySummary(): DashboardSummary {
     assets: { total: 0, by_type: zero(["domain", "hostname", "ip", "port", "service", "url", "api_operation"]) },
     recent_activity: [],
     unreadable_records: 0,
+    trend: [],
   };
 }
 

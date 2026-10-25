@@ -1,8 +1,8 @@
 import { Anchor, Badge, Card, Code, Group, List, SegmentedControl, SimpleGrid, Stack, Table, Text, Title } from "@mantine/core";
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { useRecords, useScanResult } from "../api/hooks";
-import type { CheckOutcome, CoverageRow, Finding, PagesInventory, ScanJob, WebScanSummary } from "../api/types";
+import { useFindings, useScanResult } from "../api/hooks";
+import type { CheckOutcome, CoverageRow, PagesInventory, ScanJob, WebScanSummary } from "../api/types";
 import { EmptyState, QueryState } from "../components/QueryState";
 import { SeverityLabel } from "../components/StatusLabel";
 import { humanize } from "../lib/format";
@@ -216,7 +216,7 @@ export function WebPagesTab({ scan, ready }: { scan: ScanJob; ready: boolean }) 
 }
 
 export function WebFindingsTab({ scan }: { scan: ScanJob }) {
-  const findings = useRecords<Finding>("findings", { project_id: scan.project_id, scan_id: scan.scan_id, limit: 100, sort: "severity" });
+  const findings = useFindings({ project_id: scan.project_id, scan_id: scan.scan_id, limit: 100, sort: "severity" });
   return (
     <Stack gap="sm">
       <Anchor component={Link} to={`/findings?project_id=${scan.project_id}&scan_id=${scan.scan_id}`} size="sm">
@@ -235,10 +235,12 @@ export function WebFindingsTab({ scan }: { scan: ScanJob }) {
                     <Table.Tr><Table.Th scope="col">Title</Table.Th><Table.Th scope="col">Severity</Table.Th><Table.Th scope="col">Confidence</Table.Th><Table.Th scope="col">Rule</Table.Th></Table.Tr>
                   </Table.Thead>
                   <Table.Tbody>
-                    {page.items.map((f) => (
+                    {page.items.map(({ finding: f }) => (
                       <Table.Tr key={f.finding_id}>
                         <Table.Td>
-                          {f.title}
+                          <Anchor component={Link} to={`/projects/${f.project_id}/findings/${f.finding_id}`} size="sm">
+                            {f.title}
+                          </Anchor>
                           {f.url && <Text size="xs" c="dimmed" style={{ wordBreak: "break-all" }}>{f.url}{f.parameter ? ` · ${f.parameter}` : ""}</Text>}
                         </Table.Td>
                         <Table.Td><SeverityLabel severity={f.severity} /></Table.Td>

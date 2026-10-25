@@ -13,16 +13,7 @@ from fastapi import APIRouter, Query, status
 from app.api.deps import Repository
 from app.models.asset import Asset
 from app.models.audit import AuditAction
-from app.models.common import (
-    AnalystStatus,
-    AssetType,
-    Confidence,
-    Page,
-    ProjectStatus,
-    ScanState,
-    Severity,
-)
-from app.models.finding import Finding
+from app.models.common import AssetType, Page, ProjectStatus, ScanState
 from app.models.project import Project
 from app.models.scan import ScanJob
 from app.services.dashboard import DashboardSummary, build_summary
@@ -122,35 +113,6 @@ def dashboard_summary(
 # ------------------------------------------------ read-only record views (KPI drill-down)
 
 
-@router.get("/findings", response_model=Page[Finding])
-def list_findings(
-    repo: Repository,
-    project_id: Annotated[str | None, Query(max_length=64)] = None,
-    severity: Annotated[list[Severity] | None, Query()] = None,
-    analyst_status: Annotated[list[AnalystStatus] | None, Query()] = None,
-    confidence: Annotated[list[Confidence] | None, Query()] = None,
-    scan_id: Annotated[str | None, Query(max_length=64, pattern=r"^scn_[0-9a-f]{32}$")] = None,
-    sort: Literal["updated_at", "created_at", "severity", "title"] = "updated_at",
-    order: Order = "desc",
-    offset: Offset = 0,
-    limit: Limit = 25,
-) -> Page[Any]:
-    return repo.list_across_projects(
-        "finding",
-        project_id=project_id,
-        filters={
-            "severity": _set(severity),
-            "analyst_status": _set(analyst_status),
-            "confidence": _set(confidence),
-            "scan_id": {scan_id} if scan_id else None,
-        },
-        sort=sort,
-        descending=order == "desc",
-        offset=offset,
-        limit=limit,
-    )
-
-
 @router.get("/assets", response_model=Page[Asset])
 def list_assets(
     repo: Repository,
@@ -201,7 +163,10 @@ def list_audit(
     repo: Repository,
     project_id: Annotated[str | None, Query(max_length=64)] = None,
     action: AuditAction | None = None,
+    target_id: Annotated[str | None, Query(max_length=64)] = None,
     offset: Offset = 0,
     limit: Limit = 50,
 ) -> AuditPage:
-    return repo.audit.list(offset=offset, limit=limit, project_id=project_id, action=action)
+    return repo.audit.list(
+        offset=offset, limit=limit, project_id=project_id, action=action, target_id=target_id
+    )

@@ -91,7 +91,15 @@ function detailApi(scan: ScanJob, extra: Record<string, unknown> = {}) {
     [`GET /api/projects/${PID}/scans/${SID}/results/summary`]: { body: summary },
     [`GET /api/projects/${PID}/scans/${SID}/results/coverage`]: { body: coverage },
     [`GET /api/projects/${PID}/scans/${SID}/results/pages`]: { body: pages },
-    "GET /api/findings": { body: { items: [{ finding_id: "fnd_1", project_id: PID, scan_id: SID, title: "X-Content-Type-Options header missing", severity: "low", confidence: "confirmed", analyst_status: "new", url: "https://app.example.com", rule_id: "WEB-HDR-003", updated_at: "2026-11-01T10:02:00Z" }], total: 1, offset: 0, limit: 100, errors: [] } },
+    "GET /api/findings": {
+      body: {
+        items: [{
+          finding: { finding_id: "fnd_1", project_id: PID, scan_id: SID, title: "X-Content-Type-Options header missing", severity: "low", confidence: "confirmed", analyst_status: "new", url: "https://app.example.com", rule_id: "WEB-HDR-003", updated_at: "2026-11-01T10:02:00Z" },
+          module: "web_app", risk_score: 20, risk_tier: "low", asset_criticality: null, reviewed: false,
+        }],
+        total: 1, offset: 0, limit: 100, errors: [],
+      },
+    },
     ...(extra as Record<string, { body: unknown }>),
   });
 }

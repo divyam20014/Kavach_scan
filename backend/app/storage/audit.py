@@ -78,6 +78,7 @@ class AuditLog:
         limit: int = 100,
         project_id: str | None = None,
         action: AuditAction | None = None,
+        target_id: str | None = None,
     ) -> AuditPage:
         def parse(obj: dict[str, Any]) -> AuditEvent:
             try:
@@ -86,8 +87,10 @@ class AuditLog:
                 raise ValueError("invalid audit line") from exc
 
         def keep(event: AuditEvent) -> bool:
-            return (project_id is None or event.project_id == project_id) and (
-                action is None or event.action == action
+            return (
+                (project_id is None or event.project_id == project_id)
+                and (action is None or event.action == action)
+                and (target_id is None or target_id in event.target_ids)
             )
 
         items, corrupt, more = self._log.read_newest(

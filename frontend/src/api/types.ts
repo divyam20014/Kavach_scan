@@ -312,22 +312,152 @@ export interface DashboardSummary {
   assets: { total: number; by_type: Record<AssetType, number> };
   recent_activity: AuditEvent[];
   unreadable_records: number;
+  trend: ModuleTrend[];
 }
 
+export interface ModuleTrend {
+  module: string;
+  older_scan_id: string;
+  newer_scan_id: string;
+  older_at: string;
+  newer_at: string;
+  older_total: number;
+  newer_total: number;
+  findings_delta: number;
+  by_severity_delta: Record<Severity, number>;
+}
+
+export interface FindingSource {
+  tool: string;
+  tool_version: string;
+  rule_id: string;
+  source_finding_id: string;
+  original_severity: string;
+  original_confidence: string;
+  import_id: string | null;
+  scan_id: string | null;
+  observed_at: string;
+}
+
+export interface DedupEvent {
+  action: "merged" | "unmerged" | "reobserved";
+  other_finding_id: string | null;
+  at: string;
+  note: string;
+}
+
+export interface FindingComment {
+  comment_id: string;
+  author: string;
+  text: string;
+  created_at: string;
+}
+
+export interface StandardMapping {
+  catalog: "owasp_top10" | "owasp_api_top10" | "cwe";
+  catalog_version: string;
+  entry_id: string;
+  title: string;
+  rationale: string;
+  confidence: Confidence;
+}
+
+export interface CvssRecord {
+  version: "3.1" | "4.0";
+  vector: string;
+  base_score: number;
+  source: "supplied" | "calculated";
+  calculator: string;
+}
+
+export type BusinessPriority = "p1" | "p2" | "p3" | "p4";
+
 export interface Finding {
+  schema_version: number;
   finding_id: string;
   project_id: string;
+  revision: number;
+  created_at: string;
+  updated_at: string;
   scan_id?: string | null;
+  fingerprint?: string | null;
   rule_id?: string;
   category?: string;
   parameter?: string;
   component?: string;
   title: string;
+  summary: string;
+  technical_detail: string;
+  affected_asset_ids: string[];
+  method?: string | null;
   severity: Severity;
   confidence: Confidence;
+  verification_state: "unverified" | "automated_evidence" | "manually_verified";
   analyst_status: AnalystStatus;
+  business_impact: string;
+  business_priority: BusinessPriority | null;
+  evidence_ids: string[];
+  cwe_ids: number[];
+  mappings: StandardMapping[];
+  cvss: CvssRecord | null;
+  remediation: string;
+  references: string[];
+  sources: FindingSource[];
+  dedup_history: DedupEvent[];
+  comments: FindingComment[];
+  merged_into: string | null;
   url: string | null;
-  updated_at: string;
+}
+
+export interface FindingListItem {
+  finding: Finding;
+  module: string;
+  risk_score: number;
+  risk_tier: string;
+  asset_criticality: string | null;
+  reviewed: boolean;
+}
+
+export interface FindingDetailView {
+  finding: Finding;
+  module: string;
+  risk: {
+    severity_points: number;
+    confidence_multiplier: number;
+    severity_after_confidence: number;
+    asset_criticality_bonus: number;
+    exposure_bonus: number;
+    verification_bonus: number;
+    raw_score: number;
+    score: number;
+    tier: string;
+    capped_for_needs_review: boolean;
+  };
+  assets: Asset[];
+  duplicate_of: Finding | null;
+  merged_duplicates: Finding[];
+}
+
+export interface CatalogView {
+  catalog: string;
+  version: string;
+  label: string;
+  source: string;
+  imported_at: string;
+  entry_count: number;
+  coverage_note: string;
+}
+
+export interface RiskFormula {
+  formula: string;
+  severity_points: Record<Severity, number>;
+  confidence_multiplier: Record<Confidence, number>;
+  asset_criticality_bonus: Record<string, number>;
+  exposure_bonus: { has_url: number; no_url: number };
+  verification_bonus: Record<string, number>;
+  tier_bands: Record<string, number>;
+  needs_review_tier_ceiling: string;
+  notes: string;
 }
 
 export interface Asset {

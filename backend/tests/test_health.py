@@ -59,6 +59,13 @@ SYSTEM_ROUTES = {
     "/api/projects/{project_id}/imports/{import_id}",
     "/api/projects/{project_id}/imports/{import_id}/commit",
     "/api/imports/formats",
+    # Phase 09
+    "/api/projects/{project_id}/findings/{finding_id}",
+    "/api/projects/{project_id}/findings/{finding_id}/comments",
+    "/api/projects/{project_id}/findings/{finding_id}/merge",
+    "/api/projects/{project_id}/findings/{finding_id}/unmerge",
+    "/api/standards/catalogs",
+    "/api/risk-formula",
 }
 
 # No lifespan: these endpoints must work without storage.

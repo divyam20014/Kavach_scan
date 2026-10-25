@@ -18,6 +18,7 @@
 | filelock | 4.2.4 | MIT | Cross-process exclusive locks, wrapped in `storage/locking.py` (`fallback_to_soft=False`; ReadWriteLock/SoftFileLock banned) | 01 |
 | uvicorn | 0.54.0 | BSD-3-Clause | ASGI server for `python -m app` | 00 |
 | pypdf | 5.9.0 | BSD-3-Clause | Best-effort text extraction for the PDF import adapter (`app/imports/adapters/pdf_text.py`); never used to run or execute PDF content, only `PdfReader.extract_text()` | 08 |
+| cvss | 3.6 | LGPL-3.0-or-later | CVSS v3.1/v4.0 vector parsing and base-score computation (`app/models/cvss_calc.py`); a supplied score is always cross-checked against what this library computes from the vector, never trusted verbatim | 09 |
 
 Transitive runtime packages: `starlette` 1.9.0 (BSD-3), `pydantic` 2.14.1 / `pydantic-core` 2.50.1 (MIT), `anyio` 4.15.1 (MIT), `idna` 3.20 (BSD-3), `typing-extensions` 4.16.0 (PSF-2.0), `typing-inspection` 0.4.4 (MIT), `annotated-types` 0.8.0 (MIT), `annotated-doc` 0.0.5 (MIT), `click` 8.5.0 (BSD-3), `h11` 0.16.0 (MIT), `colorama` 0.4.6 (BSD, Windows only), and **`opentelemetry-api` 1.45.1 (Apache-2.0)**.
 
@@ -38,7 +39,9 @@ Transitive dev packages: `httpcore`, `certifi` (MPL-2.0), `iniconfig`, `pluggy`,
 
 ## 4. Database/broker check (Phase 01)
 
-`poetry.lock` contains 39 packages (Phase 08 added `pypdf`, runtime). None is a database, ORM, broker or queue library. This is now enforced automatically: `tests/test_static_guards.py::test_manifest_has_no_database_or_broker_dependencies` (lockfile + manifest), `::test_no_database_imports` (source), and `tests/test_startup.py::test_importing_app_loads_no_database_or_broker_modules` (runtime: no `sqlite3`, `redis`, `celery`, … in `sys.modules`).
+`poetry.lock` contains 40 packages (Phase 09 added `cvss`, runtime). None is a database, ORM, broker or queue library. This is now enforced automatically: `tests/test_static_guards.py::test_manifest_has_no_database_or_broker_dependencies` (lockfile + manifest), `::test_no_database_imports` (source), and `tests/test_startup.py::test_importing_app_loads_no_database_or_broker_modules` (runtime: no `sqlite3`, `redis`, `celery`, … in `sys.modules`).
+
+> **Note on `cvss` (LGPL-3.0-or-later):** this is weaker copyleft than GPL/AGPL — it only obligates sharing modifications to the *library itself* if redistributed, not to code that merely imports it. This project does not modify or redistribute `cvss`, so no obligation is triggered. It is still flagged in TBD-019 for an explicit owner sanity check, consistent with this project's general caution around any copyleft dependency.
 
 ## 5. Planned dependencies (not installed; added only by the owning phase)
 
@@ -56,7 +59,7 @@ Transitive dev packages: `httpcore`, `certifi` (MPL-2.0), `iniconfig`, `pluggy`,
 | 07 | `python-multipart` | **Installed** (runtime): spec file upload (FastAPI `UploadFile`). | done |
 | 08 | ~~`defusedxml`~~ | Not added: `app/imports/safety.py::parse_xml_safely` rejects any `<!DOCTYPE`/`<!ENTITY` before handing bytes to stdlib `ElementTree`, with explicit depth/node-count bounds — the same pattern already used by the Nmap adapter (Phase 06) and the OpenAPI importer (Phase 07) | decided |
 | 08 | ~~`pypdf`~~ | **Installed** (runtime): best-effort PDF text import, `extract_text()` only | TBD-024 decided |
-| 09 | `cvss` | CVSS vector validation and scoring | TBD-019 |
+| 09 | ~~`cvss`~~ | **Installed** (runtime): CVSS v3.1/v4.0 vector validation and the sole source of a `Finding.cvss.base_score` | TBD-019 decided |
 | 10 | WeasyPrint / ReportLab / Playwright | PDF rendering | TBD-031 |
 | 02 | React, Vite, TypeScript, Mantine, TanStack Query, Vitest, Testing Library | Frontend | TBD-030 |
 

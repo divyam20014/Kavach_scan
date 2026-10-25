@@ -2,10 +2,10 @@ import { Anchor, Badge, Card, Group, Pagination, Stack, Table, Text } from "@man
 import type { ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useRecords } from "../api/hooks";
-import type { Asset, Finding, Page, ScanJob } from "../api/types";
+import type { Asset, Page, ScanJob } from "../api/types";
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState, QueryState } from "../components/QueryState";
-import { ScanStateLabel, SeverityLabel } from "../components/StatusLabel";
+import { ScanStateLabel } from "../components/StatusLabel";
 import { formatDateTime, humanize } from "../lib/format";
 
 const PAGE_SIZE = 25;
@@ -58,13 +58,13 @@ function RecordList<T>({
 }: {
   title: string;
   base: string;
-  kind: "findings" | "assets" | "scans";
+  kind: "assets" | "scans";
   emptyText: ReactNode;
   columns: string[];
   row: (item: T) => ReactNode;
 }) {
   const { query, active, page, setPage } = useFilters();
-  const result = useRecords<Finding | Asset | ScanJob>(kind, query);
+  const result = useRecords<Asset | ScanJob>(kind, query);
   return (
     <>
       <PageHeader title={title} crumbs={[{ label: "Dashboard", to: "/" }, { label: title }]} />
@@ -113,31 +113,6 @@ const projectLink = (id: string) => (
     {id.slice(0, 12)}…
   </Anchor>
 );
-
-export function FindingsPage() {
-  return (
-    <RecordList<Finding>
-      title="Findings"
-      base="/findings"
-      kind="findings"
-      emptyText="Findings are produced by scans (web scanner available; surface/API in Phases 06–07) and imports (Phase 08)."
-      columns={["Title", "Severity", "Confidence", "Analyst status", "Project", "Updated"]}
-      row={(f) => (
-        <Table.Tr key={f.finding_id}>
-          <Table.Td>
-            {f.title}
-            {f.url && <Text size="xs" c="dimmed" style={{ wordBreak: "break-all" }}>{f.url}{f.parameter ? ` · ${f.parameter}` : ""}</Text>}
-          </Table.Td>
-          <Table.Td><SeverityLabel severity={f.severity} /></Table.Td>
-          <Table.Td>{humanize(f.confidence)}</Table.Td>
-          <Table.Td>{humanize(f.analyst_status)}</Table.Td>
-          <Table.Td>{projectLink(f.project_id)}</Table.Td>
-          <Table.Td>{formatDateTime(f.updated_at)}</Table.Td>
-        </Table.Tr>
-      )}
-    />
-  );
-}
 
 export function AssetsPage() {
   return (

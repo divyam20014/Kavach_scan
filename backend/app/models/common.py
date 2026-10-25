@@ -52,6 +52,7 @@ ID_PREFIXES = {
     "import": "imp",
     "report": "rpt",
     "event": "evt",
+    "comment": "cmt",
 }
 _ID_RE = {kind: re.compile(rf"^{p}_[0-9a-f]{{32}}$") for kind, p in ID_PREFIXES.items()}
 ANY_ID_RE = re.compile(r"^(" + "|".join(ID_PREFIXES.values()) + r")_[0-9a-f]{32}$")
@@ -73,6 +74,7 @@ EvidenceId = Annotated[str, StringConstraints(pattern=r"^evd_[0-9a-f]{32}$")]
 ImportId = Annotated[str, StringConstraints(pattern=r"^imp_[0-9a-f]{32}$")]
 ReportId = Annotated[str, StringConstraints(pattern=r"^rpt_[0-9a-f]{32}$")]
 EventId = Annotated[str, StringConstraints(pattern=r"^evt_[0-9a-f]{32}$")]
+CommentId = Annotated[str, StringConstraints(pattern=r"^cmt_[0-9a-f]{32}$")]
 
 # --------------------------------------------------------------------------- bounded text
 

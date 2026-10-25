@@ -16,6 +16,7 @@ from pydantic import AfterValidator, Field, StringConstraints, model_validator
 from app.models.common import (
     AnalystStatus,
     AssetId,
+    CommentId,
     Confidence,
     EvidenceId,
     FindingId,
@@ -32,6 +33,7 @@ from app.models.common import (
     UtcDatetime,
     utc_now,
 )
+from app.models.cvss_calc import CALCULATOR_LABEL, compute_base_score
 from app.models.project import HttpUrlStr
 
 FINDING_SCHEMA_VERSION: Literal[1] = 1
@@ -80,6 +82,16 @@ class CvssRecord(StrictModel):
             raise ValueError(f"vector is not a valid CVSS {self.version} base vector")
         if self.source == "calculated" and not self.calculator:
             raise ValueError("calculated CVSS scores must name the calculator used")
+        # TBD-019: a CVSS score is never trusted verbatim from an untrusted source (a
+        # scanner, an import, or operator input) — it must match what the maintained
+        # `cvss` library itself computes from the vector, or it is rejected outright.
+        computed = compute_base_score(self.version, self.vector)
+        if abs(computed - self.base_score) > 0.05:
+            raise ValueError(
+                f"base_score {self.base_score} does not match the score computed from "
+                f"the vector ({computed}) by {CALCULATOR_LABEL}; a CVSS score is always "
+                "verified against its vector, never accepted verbatim"
+            )
         return self
 
 
@@ -119,6 +131,22 @@ def _cwe(value: int) -> int:
     return value
 
 
+# Phase 09: analyst-visible business priority, distinct from scanner-reported Severity and
+# never derived from it automatically — an analyst sets this deliberately (MASTER_SPEC §9:
+# "keep severity, confidence... separate").
+BusinessPriority = Literal["p1", "p2", "p3", "p4"]
+
+
+class FindingComment(StrictModel):
+    """A free-text analyst note. There is no multi-user identity system in this release
+    (TBD-003); `author` is always the fixed local-operator actor, never a fabricated name."""
+
+    comment_id: CommentId
+    author: Name = "local-operator"
+    text: LongText
+    created_at: UtcDatetime = Field(default_factory=utc_now)
+
+
 class Finding(Record):
     schema_version: Literal[1] = FINDING_SCHEMA_VERSION
     finding_id: FindingId
@@ -150,3 +178,11 @@ class Finding(Record):
     rule_id: ShortText = ""
     sources: list[FindingSource] = Field(default_factory=list, max_length=200)
     dedup_history: list[DedupEvent] = Field(default_factory=list, max_length=500)
+    # Phase 09 (optional, backward compatible additions):
+    business_priority: BusinessPriority | None = None
+    comments: list[FindingComment] = Field(default_factory=list, max_length=500)
+    # Set when this Finding was manually merged into another as a confirmed duplicate. The
+    # record is never deleted (preserves source data/provenance/rollback per MASTER_SPEC
+    # §8.3); it is just excluded from the default workbench view and flagged on its detail
+    # page. Cleared by an explicit unmerge, which also restores it to normal visibility.
+    merged_into: FindingId | None = None

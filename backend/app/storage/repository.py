@@ -136,7 +136,7 @@ FINDINGS = CollectionSpec(
     "finding_id",
     "findings",
     None,
-    ("severity", "confidence", "analyst_status", "scan_id", "title"),
+    ("severity", "confidence", "analyst_status", "scan_id", "title", "merged_into"),
     ("updated_at", "created_at", "severity", "title"),
 )
 ASSETS = CollectionSpec(

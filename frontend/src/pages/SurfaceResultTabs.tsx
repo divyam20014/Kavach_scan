@@ -1,7 +1,7 @@
 import { Anchor, Card, Code, List, SimpleGrid, Stack, Table, Text, Title } from "@mantine/core";
 import { Link } from "react-router-dom";
-import { useRecords, useScanResult } from "../api/hooks";
-import type { CoverageRow, Finding, ScanJob, SurfaceChanges, SurfaceSummary } from "../api/types";
+import { useFindings, useScanResult } from "../api/hooks";
+import type { CoverageRow, ScanJob, SurfaceChanges, SurfaceSummary } from "../api/types";
 import { EmptyState, QueryState } from "../components/QueryState";
 import { SeverityLabel } from "../components/StatusLabel";
 import { humanize } from "../lib/format";
@@ -218,7 +218,7 @@ export function SurfaceCoverageTab({ scan, ready }: { scan: ScanJob; ready: bool
 }
 
 export function SurfaceFindingsTab({ scan }: { scan: ScanJob }) {
-  const findings = useRecords<Finding>("findings", { project_id: scan.project_id, scan_id: scan.scan_id, limit: 100, sort: "severity" });
+  const findings = useFindings({ project_id: scan.project_id, scan_id: scan.scan_id, limit: 100, sort: "severity" });
   return (
     <Stack gap="sm">
       <Anchor component={Link} to={`/findings?project_id=${scan.project_id}&scan_id=${scan.scan_id}`} size="sm">Open these findings in the global findings view</Anchor>
@@ -232,8 +232,8 @@ export function SurfaceFindingsTab({ scan }: { scan: ScanJob }) {
                 <Table.Caption>{page.total} finding(s)</Table.Caption>
                 <Table.Thead><Table.Tr><Table.Th scope="col">Title</Table.Th><Table.Th scope="col">Severity</Table.Th><Table.Th scope="col">Rule</Table.Th></Table.Tr></Table.Thead>
                 <Table.Tbody>
-                  {page.items.map((f) => (
-                    <Table.Tr key={f.finding_id}><Table.Td>{f.title}{f.component && <Text size="xs" c="dimmed">{f.component}</Text>}</Table.Td><Table.Td><SeverityLabel severity={f.severity} /></Table.Td><Table.Td><Code>{f.rule_id}</Code></Table.Td></Table.Tr>
+                  {page.items.map(({ finding: f }) => (
+                    <Table.Tr key={f.finding_id}><Table.Td><Anchor component={Link} to={`/projects/${f.project_id}/findings/${f.finding_id}`} size="sm">{f.title}</Anchor>{f.component && <Text size="xs" c="dimmed">{f.component}</Text>}</Table.Td><Table.Td><SeverityLabel severity={f.severity} /></Table.Td><Table.Td><Code>{f.rule_id}</Code></Table.Td></Table.Tr>
                   ))}
                 </Table.Tbody>
               </Table>

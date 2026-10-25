@@ -23,6 +23,27 @@ Run from `backend/` (see [DEVELOPMENT.md](DEVELOPMENT.md) for setup):
 
 Frontend (Phase 02+, planned): `npm test` (Vitest), `npm run lint` (ESLint), `npm run typecheck` (`tsc --noEmit`), `npm run build`.
 
+### Results recorded at Phase 09 verification (2026-10-25)
+
+| Command | Result |
+|---|---|
+| `poetry run pytest` | **1753 passed, 1 skipped** (adds 8 tests across `test_findings_api.py`, `test_findings_service.py`, `test_standards_and_risk.py`) |
+| `poetry run pytest tests/test_static_guards.py tests/test_startup.py` | 595/595 (no-database/broker guards re-run directly) |
+| `ruff check` / `mypy` | clean / no issues in 112 source files |
+| `npm test` / `typecheck` / `lint` / `build` / `audit` | 64 passed / pass / pass / built / 0 vulnerabilities |
+
+Verification fixed 1 defect (see IMPLEMENTATION_STATUS Phase 09 row for full detail): the dashboard counted manually-merged duplicate findings toward every total/breakdown, while the findings workbench's default list excludes them — the two never reconciled whenever a merge existed. Fixed by adding `merged_into` to the findings index and skipping merged entries in `build_summary`. Also added: an end-to-end test proving the real scanner `FindingWriter` path (not a hand-built `Finding`) tags every `StandardMapping` with a catalog version matching the live registry; a model-level test that `StandardMapping` cannot be built with an empty catalog version; a merge test asserting `sources`/`cwe_ids` on both sides of a merge are untouched; 404/409 coverage for comment/unmerge/detail on an unknown or stale-revision finding; a CVSS-fabrication audit (no production code path constructs a `CvssRecord` in this release — `Finding.cvss` is honestly `null` until a scanner/import supplies a real v3.1/v4.0 vector); and a frontend test that a comment or business-impact field containing `<script>`/`onerror` markup renders as literal text.
+
+### Results recorded at Phase 09 (2026-10-25)
+
+| Command | Result |
+|---|---|
+| `poetry run pytest` | **1747 passed, 1 skipped** (adds `test_standards_and_risk.py`, `test_findings_service.py`, `test_findings_api.py`, plus CWE-mapping/trend coverage inside the existing scanner and dashboard suites) |
+| `ruff check` / `mypy` | clean / no issues in 112 source files |
+| `npm test` / `typecheck` / `lint` / `build` / `audit` | 63 passed / pass / pass / built / 0 vulnerabilities |
+
+New fixtures: none needed beyond `tests/conftest.py::make_finding`/`make_asset` (already general enough) and in-line `Finding`/`Asset` construction in the new test files — no new fixture file was required for Phase 09. Two real defects were found and fixed by writing the required tests before they were committed: a double-inverted `sort=risk_score` (always sorted ascending regardless of the requested order) and a frontend filter hook that computed but never returned `scan_id`, silently dropping the "Scan id: …" scope badge on the findings workbench (the underlying API filtering was unaffected — a display-only bug, still caught because a test asserted the badge's text).
+
 ### Results recorded at Phase 08 verification (2026-10-25)
 
 | Command | Result |

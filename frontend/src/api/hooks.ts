@@ -23,14 +23,17 @@ import type {
   ScopeCheckResponse,
   ScopePolicyView,
   AuditPage,
+  CatalogView,
   DashboardSummary,
   DeletionImpact,
-  Finding,
+  FindingDetailView,
+  FindingListItem,
   Page,
   Project,
   ProjectCreate,
   ProjectOverview,
   ProjectUpdate,
+  RiskFormula,
   ScanJob,
   ScopePreviewRequest,
   ScopePreviewResponse,
@@ -72,14 +75,72 @@ export function useDashboard(projectId?: string) {
   });
 }
 
-export function useRecords<T extends Finding | Asset | ScanJob>(
-  kind: "findings" | "assets" | "scans",
+export function useRecords<T extends Asset | ScanJob>(
+  kind: "assets" | "scans",
   query: Record<string, string | string[] | number | undefined>,
 ) {
   return useQuery({ queryKey: [kind, query], queryFn: () => api.get<Page<T>>(`/api/${kind}`, query) });
 }
 
-export function useAudit(query: { project_id?: string; offset?: number; limit?: number }) {
+// ---------------------------------------------------------------- Findings workbench (Phase 09)
+
+export function useFindings(query: Record<string, string | string[] | number | boolean | undefined>) {
+  return useQuery({ queryKey: ["findings", query], queryFn: () => api.get<Page<FindingListItem>>("/api/findings", query) });
+}
+
+export function useFindingDetail(projectId: string | undefined, findingId: string | undefined) {
+  return useQuery({
+    queryKey: ["finding", projectId, findingId],
+    queryFn: () => api.get<FindingDetailView>(`/api/projects/${enc(projectId ?? "")}/findings/${enc(findingId ?? "")}`),
+    enabled: Boolean(projectId && findingId),
+  });
+}
+
+export function useUpdateFinding(projectId: string, findingId: string) {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: (body: { expected_revision: number } & Record<string, unknown>) =>
+      api.patch<FindingDetailView>(`/api/projects/${enc(projectId)}/findings/${enc(findingId)}`, body),
+    onSuccess: invalidate,
+  });
+}
+
+export function useAddFindingComment(projectId: string, findingId: string) {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: (body: { text: string; expected_revision: number }) =>
+      api.post<FindingDetailView>(`/api/projects/${enc(projectId)}/findings/${enc(findingId)}/comments`, body),
+    onSuccess: invalidate,
+  });
+}
+
+export function useMergeFinding(projectId: string, findingId: string) {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: (body: { into_finding_id: string; expected_revision: number; note?: string }) =>
+      api.post<FindingDetailView>(`/api/projects/${enc(projectId)}/findings/${enc(findingId)}/merge`, body),
+    onSuccess: invalidate,
+  });
+}
+
+export function useUnmergeFinding(projectId: string, findingId: string) {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: (body: { expected_revision: number }) =>
+      api.post<FindingDetailView>(`/api/projects/${enc(projectId)}/findings/${enc(findingId)}/unmerge`, body),
+    onSuccess: invalidate,
+  });
+}
+
+export function useCatalogs() {
+  return useQuery({ queryKey: ["standards-catalogs"], queryFn: () => api.get<CatalogView[]>("/api/standards/catalogs") });
+}
+
+export function useRiskFormula() {
+  return useQuery({ queryKey: ["risk-formula"], queryFn: () => api.get<RiskFormula>("/api/risk-formula") });
+}
+
+export function useAudit(query: { project_id?: string; target_id?: string; offset?: number; limit?: number }) {
   return useQuery({ queryKey: ["audit", query], queryFn: () => api.get<AuditPage>("/api/audit", query) });
 }
 
