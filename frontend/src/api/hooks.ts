@@ -23,6 +23,7 @@ import type {
   ScopeCheckResponse,
   ScopePolicyView,
   AuditPage,
+  BackupPreviewResponse,
   CatalogView,
   DashboardSummary,
   DeletionImpact,
@@ -33,6 +34,11 @@ import type {
   ProjectCreate,
   ProjectOverview,
   ProjectUpdate,
+  ReportFilterRequest,
+  ReportFormat,
+  ReportPreviewResponse,
+  ReportSummary,
+  RestoreResponse,
   RiskFormula,
   ScanJob,
   ScopePreviewRequest,
@@ -442,6 +448,73 @@ export function useCommitImport(projectId: string) {
       api.post<ImportCommitResponse>(`/api/projects/${enc(projectId)}/imports/${enc(importId)}/commit`, {
         confirmed: true, expected_revision: expectedRevision,
       }),
+    onSuccess: invalidate,
+  });
+}
+
+// ---------------------------------------------------------------- Reports & backup (Phase 10)
+
+export function usePreviewReport(projectId: string) {
+  return useMutation({
+    mutationFn: (body: ReportFilterRequest) =>
+      api.post<ReportPreviewResponse>(`/api/projects/${enc(projectId)}/reports/preview`, body),
+  });
+}
+
+export function useGenerateReport(projectId: string) {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: (body: ReportFilterRequest & { formats: ReportFormat[] }) =>
+      api.post<ReportSummary>(`/api/projects/${enc(projectId)}/reports`, body),
+    onSuccess: invalidate,
+  });
+}
+
+export function useReports(projectId: string) {
+  return useQuery({
+    queryKey: ["reports", projectId],
+    queryFn: () => api.get<ReportSummary[]>(`/api/projects/${enc(projectId)}/reports`),
+    enabled: Boolean(projectId),
+  });
+}
+
+export function reportDownloadUrl(projectId: string, reportId: string, fmt: ReportFormat): string {
+  return `/api/projects/${enc(projectId)}/reports/${enc(reportId)}/download/${fmt}`;
+}
+
+export function exportUrl(projectId: string, kind: "findings" | "assets", fmt: "json" | "csv"): string {
+  return `/api/projects/${enc(projectId)}/export/${kind}.${fmt}`;
+}
+
+export function backupExportUrl(projectId: string, includeEvidenceBlobs: boolean): string {
+  return `/api/projects/${enc(projectId)}/backup/export?include_evidence_blobs=${includeEvidenceBlobs}`;
+}
+
+async function _uploadMultipart<T>(url: string, file: File): Promise<T> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch(url, { method: "POST", body: form });
+  const body = await res.json().catch(() => null);
+  if (!res.ok) {
+    const err = (body as { error?: { code?: string; message?: string } } | null)?.error;
+    throw new ApiError(res.status, err?.code ?? "http_error", err?.message ?? `Upload failed (${res.status})`);
+  }
+  return body as T;
+}
+
+export function useBackupPreview() {
+  return useMutation({
+    mutationFn: (file: File) => _uploadMultipart<BackupPreviewResponse>("/api/backup/preview", file),
+  });
+}
+
+export function useBackupRestore() {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: ({ file, confirmed, overwrite }: { file: File; confirmed: boolean; overwrite: boolean }) =>
+      _uploadMultipart<RestoreResponse>(
+        `/api/backup/restore?confirmed=${confirmed}&overwrite=${overwrite}`, file,
+      ),
     onSuccess: invalidate,
   });
 }

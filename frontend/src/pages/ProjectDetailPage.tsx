@@ -60,6 +60,9 @@ function ProjectDetail({ overview }: { overview: ProjectOverview }) {
             <Button component={Link} to={`/findings?project_id=${project.project_id}`} variant="default">
               Findings
             </Button>
+            <Button component={Link} to={`/projects/${project.project_id}/reports`} variant="default">
+              Reports
+            </Button>
             <Button variant="default" onClick={toggleArchive} loading={update.isPending}>
               {archived ? "Restore" : "Archive"}
             </Button>

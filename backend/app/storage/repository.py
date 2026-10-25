@@ -908,6 +908,12 @@ class StorageRepository:
     def save_report_metadata(self, report: ReportMetadata) -> ReportMetadata:
         return self._create_child(REPORTS, report)
 
+    def update_report_metadata(
+        self, project_id: str, report_id: str, changes: Changes,
+        *, expected_revision: int | None = None,
+    ) -> ReportMetadata:
+        return self._update_child(REPORTS, project_id, report_id, changes, expected_revision)
+
     def get_report_metadata(self, project_id: str, report_id: str) -> ReportMetadata:
         return self._get_child(REPORTS, project_id, report_id)
 
@@ -929,6 +935,32 @@ class StorageRepository:
             offset=offset,
             limit=limit,
         )
+
+    _REPORT_FILE_NAMES = {
+        "report.html", "report.pdf", "findings.json", "findings.csv",
+        "assets.json", "assets.csv",
+    }
+
+    def write_report_file(self, project_id: str, report_id: str, name: str, data: bytes) -> str:
+        """Atomically store one rendered report/export file next to its `report.json`
+        metadata. `name` is restricted to the fixed set this module produces — never an
+        operator-controlled path."""
+        if name not in self._REPORT_FILE_NAMES:
+            raise InvalidRecordError(f"unsupported report file name: {name!r}")
+        if len(data) > MAX_BLOB_BYTES:
+            raise RecordTooLargeError(f"Report file exceeds {MAX_BLOB_BYTES} bytes")
+        path = self._blob_path(REPORTS, project_id, report_id, name)
+        self._atomic_write(path, data)
+        return hashlib.sha256(data).hexdigest()
+
+    def read_report_file(self, project_id: str, report_id: str, name: str) -> bytes:
+        if name not in self._REPORT_FILE_NAMES:
+            raise InvalidRecordError(f"unsupported report file name: {name!r}")
+        path = self._blob_path(REPORTS, project_id, report_id, name)
+        try:
+            return read_bytes_bounded(path, MAX_BLOB_BYTES)
+        except FileNotFoundError as exc:
+            raise RecordNotFoundError("Report file not found") from exc
 
     # ------------------------------------------------------------------ job storage (Phase 04)
 

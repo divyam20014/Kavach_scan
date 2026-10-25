@@ -11,6 +11,7 @@ dependencies = [
     "python-multipart (>=0.0.9,<0.0.10)",
     "pypdf (>=5.0,<6.0)",
     "cvss (>=3,<4)",
+    "fpdf2 (>=2,<3)",
 ]
 
 [tool.poetry]

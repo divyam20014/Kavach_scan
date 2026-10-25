@@ -66,6 +66,18 @@ SYSTEM_ROUTES = {
     "/api/projects/{project_id}/findings/{finding_id}/unmerge",
     "/api/standards/catalogs",
     "/api/risk-formula",
+    # Phase 10
+    "/api/projects/{project_id}/reports",
+    "/api/projects/{project_id}/reports/preview",
+    "/api/projects/{project_id}/reports/{report_id}",
+    "/api/projects/{project_id}/reports/{report_id}/download/{fmt}",
+    "/api/projects/{project_id}/export/findings.json",
+    "/api/projects/{project_id}/export/findings.csv",
+    "/api/projects/{project_id}/export/assets.json",
+    "/api/projects/{project_id}/export/assets.csv",
+    "/api/projects/{project_id}/backup/export",
+    "/api/backup/preview",
+    "/api/backup/restore",
 }
 
 # No lifespan: these endpoints must work without storage.
@@ -133,7 +145,7 @@ def test_scans_can_only_be_started_through_the_gated_job_routes() -> None:
 
 def test_unknown_routes_are_404_not_fake_200() -> None:
     for method, path in [
-        ("POST", "/api/projects/x/reports"),
+        ("POST", "/api/projects/x/notifications"),
         ("POST", "/api/reports"),
         ("GET", "/api/integrations"),
     ]:

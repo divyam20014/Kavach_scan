@@ -23,7 +23,7 @@ export function mockApi(handlers: Record<string, Handler | { status?: number; bo
       method,
       path: url.pathname,
       query: url.searchParams,
-      body: init?.body ? JSON.parse(String(init.body)) : undefined,
+      body: typeof init?.body === "string" ? JSON.parse(init.body) : undefined,
     };
     calls.push(call);
     const handler = handlers[`${method} ${url.pathname}`];

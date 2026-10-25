@@ -23,6 +23,27 @@ Run from `backend/` (see [DEVELOPMENT.md](DEVELOPMENT.md) for setup):
 
 Frontend (Phase 02+, planned): `npm test` (Vitest), `npm run lint` (ESLint), `npm run typecheck` (`tsc --noEmit`), `npm run build`.
 
+### Results recorded at Phase 10 verification (2026-10-25)
+
+| Command | Result |
+|---|---|
+| `poetry run pytest` | **1845 passed, 1 skipped** (adds 10 tests across `test_backup_archive.py` (+6) and `test_reports_builder.py` (+4), covering the 3 defects found during verification) |
+| `poetry run pytest tests/test_static_guards.py tests/test_startup.py` | 640/640 (no-database/broker guards re-run directly) |
+| `ruff check` / `mypy` | clean / no issues in 121 source files |
+| `npm test` / `typecheck` / `lint` / `build` / `audit` | 70 passed / pass / pass / built / 0 vulnerabilities |
+
+Verification found and fixed 3 defects via adversarial code review (acceptance-criteria-to-code mapping), none caught by the pre-verification test suite: (1) restore did not check that an archive record's own `project_id` matched the project being restored, so a crafted/corrupted archive could write a finding/asset/evidence/scan record into a *different, already-existing* project in the destination data directory; (2) findings/assets CSV exports were vulnerable to spreadsheet-formula injection (a title/remediation/locator starting with `=`/`+`/`-`/`@` would execute as a formula when opened in Excel/Sheets); (3) `model_validate` calls on fully attacker-controlled archive bytes, and a corrupt/tampered ZIP entry's CRC failure, were unhandled, surfacing as a generic 500 instead of a clean 422. A hand-crafted zip-bomb forgery (patching a ZIP entry's declared uncompressed-size header) was tested directly against CPython's `zipfile` and found to already be bounded correctly by the library's own output truncation — not a real exploit, so the fix for (3) targeted the actual gap (missing exception handling) rather than a non-issue. New tests directly exercise each: a forged `project_id` in a finding record is rejected before any write and the victim project is confirmed untouched; a `manifest.json`/`project.json` id mismatch is rejected (and the same check is exercised at `preview_archive`, confirming it still writes nothing); a schema-invalid `project.json` produces `ValidationFailedError`, not a raw pydantic exception; a corrupt ZIP entry (bit-flipped DEFLATE stream) is rejected as `ArchiveSafetyError`; CSV formula injection is neutralized in both finding and asset exports; no local absolute filesystem path appears in any of the four report output formats; the zero-findings report states the MASTER_SPEC §10.2-required exact phrasing ("No findings were detected by the checks executed") in both HTML and PDF.
+
+### Results recorded at Phase 10 (2026-10-25)
+
+| Command | Result |
+|---|---|
+| `poetry run pytest` | **1836 passed, 1 skipped** (adds `test_reports_builder.py` 13, `test_backup_archive.py` 16, `test_reports_api.py` 9 — 38 new tests over the Phase 09 baseline) |
+| `ruff check` / `mypy` | clean / no issues in 121 source files |
+| `npm test` / `typecheck` / `lint` / `build` / `audit` | **70 passed** (adds `frontend/src/test/reports.test.tsx`, 6 tests) / pass / pass / built / 0 vulnerabilities |
+
+Phase 10 fixtures: no new network fixture was needed (report generation and backup/restore operate entirely on already-stored canonical records). `test_reports_builder.py::test_no_secret_assertions_across_html_pdf_json_csv` plants a realistic secret token across every finding/evidence text field and asserts it is absent from the generated HTML, extracted PDF text (via `pypdf.PdfReader`), JSON export, and CSV export. `test_backup_archive.py` exercises every archive-safety rejection class (path traversal, absolute/drive-letter paths, symlink entries, nested archives, oversized declared expansion, too many entries, tampered checksums, unsupported schema version) and a full export → preview → restore round trip into a genuinely separate `StorageRepository` pointed at a fresh temp directory, confirming finding/asset counts and evidence-to-finding links match exactly. No E2E checks were added for the report builder or backup/restore flows (not attempted this phase — self-verified, no separate Universal Verification Prompt pass was requested).
+
 ### Results recorded at Phase 09 verification (2026-10-25)
 
 | Command | Result |

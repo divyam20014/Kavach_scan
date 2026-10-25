@@ -880,3 +880,61 @@ export interface ApiSummary {
   rate_probe_enabled: boolean; check_outcomes: { outcome: CheckOutcome; count: number }[];
   findings_created: number; findings_reobserved: number; warnings: string[]; remote_refs: string[]; limitations: string[];
 }
+
+// ---------------------------------------------------------------- Reports & backup (Phase 10)
+
+export type ReportFormat = "html" | "pdf" | "json" | "csv";
+
+export interface ReportFilterRequest {
+  title?: string;
+  classification_label?: string;
+  scan_date_from?: string | null;
+  scan_date_to?: string | null;
+  modules?: string[] | null;
+  severity_threshold?: Severity;
+  analyst_statuses?: AnalystStatus[] | null;
+  finding_ids?: string[] | null;
+  include_asset_inventory?: boolean;
+  include_evidence?: boolean;
+}
+
+export interface ReportPreviewResponse {
+  finding_ids: string[];
+  asset_ids: string[];
+  scan_ids: string[];
+  severity_counts: Record<string, number>;
+  status_counts: Record<string, number>;
+  module_counts: Record<string, number>;
+  limitations: string[];
+  tool_versions: Record<string, string>;
+}
+
+export interface ReportSummary {
+  report_id: string;
+  project_id: string;
+  title: string;
+  classification_label: string;
+  formats: ReportFormat[];
+  finding_count: number;
+  asset_count: number;
+  evidence_included: boolean;
+  created_at: string;
+}
+
+export interface BackupPreviewResponse {
+  project_id: string;
+  project_name: string;
+  exported_at: string;
+  app_version: string;
+  storage_version: number;
+  include_evidence_blobs: boolean;
+  counts: Record<string, number>;
+  checksum_mismatches: string[];
+  project_already_exists: boolean;
+  warnings: string[];
+}
+
+export interface RestoreResponse {
+  project_id: string;
+  counts: Record<string, number>;
+}
