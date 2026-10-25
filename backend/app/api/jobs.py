@@ -185,6 +185,9 @@ RESULT_FILES = {
     "coverage": "coverage.json",
     "pages": "pages.json",
     "profile": "profile.json",
+    # web_app, engine=zap (Phase 1 roadmap increment 3, TBD-081): a distinct output name
+    # since the shape is unrelated to the native engine's summary.json.
+    "zap_summary": "zap_summary.json",
     # attack surface (Phase 06)
     "inventory": "inventory.json",
     "changes": "changes.json",

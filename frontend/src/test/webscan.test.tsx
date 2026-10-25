@@ -2,7 +2,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
-import type { CoverageRow, PagesInventory, ScanDetail, ScanJob, ScopePolicyView, WebProfilePreview, WebScanSummary } from "../api/types";
+import type { CoverageRow, PagesInventory, ScanDetail, ScanJob, ScopePolicyView, WebProfilePreview, WebScanSummary, ZapScanSummary } from "../api/types";
 import { mockApi, overview, PID, renderAt, VERSION } from "./utils";
 
 const SID = "scn_" + "e".repeat(32);
@@ -26,7 +26,7 @@ function preview(problems: string[] = []): WebProfilePreview {
     tls_tools: [],
     parameters: {},
     profile: {
-      profile_version: 1, catalog_version: "1.0.0", safe_mode: true, auth_profile: null, respect_robots: true, tls_verify: true, seed_paths: [],
+      profile_version: 1, catalog_version: "1.0.0", safe_mode: true, engine: "native", auth_profile: null, respect_robots: true, tls_verify: true, seed_paths: [],
       budgets: { max_pages: 200, max_depth: 3, requests_per_second: 2, max_concurrency: 2, max_requests_per_target: 2000, max_duration_seconds: 1800, max_response_bytes: 1048576, max_redirects: 5 },
       checks: [
         { group: "headers", label: "Security headers", kind: "passive", rule_ids: ["WEB-HDR-001"], enabled: true, reason: "" },
@@ -34,6 +34,7 @@ function preview(problems: string[] = []): WebProfilePreview {
         { group: "active_injection", label: "Active SQL injection / XSS testing", kind: "tool", rule_ids: ["WEB-INJ-000"], enabled: false, reason: "Not built in: use imported results from a dedicated tool" },
       ],
       limitations: ["Active injection testing is not built in."],
+      zap_spider_max_minutes: 2, zap_wait_max_minutes: 2,
     },
   };
 }
@@ -141,6 +142,38 @@ describe("web scan start dialog", () => {
     expect(body.parameters).toEqual({ check_cors: false });
   });
 
+  it("selecting the ZAP engine hides native options and sends engine=zap", async () => {
+    const { calls } = mockApi({
+      ...base,
+      [`GET /api/projects/${PID}`]: { body: overview() },
+      [`GET /api/projects/${PID}/scope/policy`]: { body: policy() },
+      "GET /api/audit": { body: { items: [], offset: 0, limit: 10, has_more: false, corrupt_lines: 0 } },
+      "GET /api/jobs/modules": { body: [{ module: "web_app", label: "Web application scanner (Option A)", available: true, reason: "" }] },
+      [`GET /api/projects/${PID}/web-scan-profile`]: { body: preview() },
+      [`POST /api/projects/${PID}/scans`]: { status: 202, body: job({ state: "queued" }) },
+      [`GET /api/projects/${PID}/scans/${SID}`]: { body: { scan: job({ state: "queued" }), active: false, terminal: false, elapsed_seconds: null } },
+    });
+    renderAt(`/projects/${PID}`);
+    const u = userEvent.setup();
+    const card = await screen.findByRole("region", { name: "Start a job" });
+    await u.click(await within(card).findByRole("radio", { name: /Web application scanner/ }));
+    await within(card).findByLabelText("Web scan profile details");
+    await u.click(within(card).getByLabelText("Scan engine"));
+    await u.click(await screen.findByRole("option", { name: /OWASP ZAP/ }));
+    // native-only controls disappear once ZAP is selected
+    expect(within(card).queryByRole("switch", { name: /CORS check/ })).not.toBeInTheDocument();
+    expect(within(card).getByLabelText(/Spider duration/)).toBeInTheDocument();
+    await waitFor(() => expect(calls.some((c) => c.path.endsWith("/web-scan-profile") && c.query.get("engine") === "zap")).toBe(true));
+    await u.type(within(card).getByRole("textbox", { name: /targets/i }), "https://app.example.com/");
+    await u.click(within(card).getByRole("button", { name: /Review & confirm/ }));
+    const dialog = await screen.findByRole("dialog");
+    await u.click(within(dialog).getByRole("checkbox", { name: /I confirm/ }));
+    await u.click(within(dialog).getByRole("button", { name: "Start job" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "POST")).toBe(true));
+    const body = calls.find((c) => c.method === "POST")!.body as { parameters: Record<string, unknown> };
+    expect(body.parameters).toEqual({ engine: "zap" });
+  });
+
   it("blocks review when the options are invalid", async () => {
     mockApi({
       ...base,
@@ -192,6 +225,30 @@ describe("web scan detail tabs", () => {
     expect(tlsRow).not.toHaveTextContent("✓ pass");
     await u.click(screen.getByRole("radio", { name: "Skipped" }));
     expect(screen.getByRole("table", { name: "Check coverage" })).not.toHaveTextContent("WEB-HDR-001");
+  });
+
+  it("shows the ZAP summary panel and hides native-only tabs for engine=zap", async () => {
+    const zapSummary: ZapScanSummary = {
+      engine: "zap", zap_version: "2.17.0", targets: ["https://app.example.com/"],
+      alerts_found: 2, findings_created: 2, findings_reobserved: 0,
+      limitations: ["Baseline/Passive profile only: bounded spider plus passive analysis."],
+    };
+    detailApi(
+      job({
+        parameters: { engine: "zap" },
+        output_refs: ["work/profile.json", "work/zap-plan.yaml", "work/zap_summary.json"],
+      }),
+      { [`GET /api/projects/${PID}/scans/${SID}/results/zap_summary`]: { body: zapSummary } },
+    );
+    renderAt(`/projects/${PID}/scans/${SID}`);
+    expect(await screen.findByText(/OWASP ZAP 2.17.0 — Baseline\/Passive/)).toBeInTheDocument();
+    expect(screen.getByText(/Alerts found/)).toBeInTheDocument();
+    expect(screen.getByText(/bounded spider plus passive analysis/)).toBeInTheDocument();
+    // the native-only tabs never appear for a ZAP-engine scan
+    expect(screen.queryByRole("tab", { name: "Pages / endpoints" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Coverage" })).not.toBeInTheDocument();
+    // findings still work: they are queried by scan_id, independent of the engine
+    expect(screen.getByRole("tab", { name: "Findings" })).toBeInTheDocument();
   });
 
   it("filters the global findings view by scan", async () => {

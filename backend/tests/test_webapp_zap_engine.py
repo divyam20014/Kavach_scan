@@ -16,6 +16,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
+from fastapi.testclient import TestClient
 
 from app.core.errors import ValidationFailedError
 from app.core.settings import RuntimeSettings
@@ -189,7 +190,11 @@ _SAMPLE_REPORT = {
 
 
 def test_engine_zap_dispatches_through_the_existing_job_system_and_creates_findings(
-    repo: StorageRepository, settings: RuntimeSettings, ports: tuple[int, int], tmp_path: Path
+    repo: StorageRepository,
+    settings: RuntimeSettings,
+    ports: tuple[int, int],
+    tmp_path: Path,
+    client: TestClient,
 ) -> None:
     """End to end through the real `JobManager`/`WebAppRunner`, with the ZAP *process*
     mocked (no real JVM/ZAP is launched by the automated test suite -- see TBD-080/081):
@@ -259,6 +264,16 @@ def test_engine_zap_dispatches_through_the_existing_job_system_and_creates_findi
     assert summary["engine"] == "zap"
     assert summary["alerts_found"] == 1
     assert summary["findings_created"] == 1
+
+    # The frontend reads this through the generic results route, not a direct file read --
+    # confirm the route's RESULT_FILES allowlist actually serves it (a scan detail page gap
+    # found while auditing the UI: the native "summary" kind never exists for a ZAP scan).
+    api_response = client.get(f"/api/projects/{pid}/scans/{scan.scan_id}/results/zap_summary")
+    assert api_response.status_code == 200
+    assert api_response.json()["engine"] == "zap"
+    assert (
+        client.get(f"/api/projects/{pid}/scans/{scan.scan_id}/results/summary").status_code == 404
+    )
 
 
 def test_native_web_scan_is_completely_unaffected_by_the_zap_engine_addition(

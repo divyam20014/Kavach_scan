@@ -323,7 +323,7 @@ export function useWebScanProfile(projectId: string, params: ScanParams, enabled
 }
 
 /** Web scanner outputs (summary / coverage / pages); available once the job wrote them. */
-export function useScanResult<T>(projectId: string, scanId: string, kind: "summary" | "coverage" | "pages" | "changes", enabled: boolean) {
+export function useScanResult<T>(projectId: string, scanId: string, kind: "summary" | "zap_summary" | "coverage" | "pages" | "changes", enabled: boolean) {
   return useQuery({
     queryKey: ["scan-result", projectId, scanId, kind],
     queryFn: () => api.get<T>(`/api/projects/${enc(projectId)}/scans/${enc(scanId)}/results/${kind}`),

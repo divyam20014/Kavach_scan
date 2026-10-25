@@ -262,3 +262,22 @@ Per the operator's explicit design decision: ZAP is an optional **engine** on th
 - **Not yet built**: a frontend `engine` selector (reachable only via direct API call today); Standard/Authenticated/API/Deep DAST profiles (only Baseline/Passive exists); the remaining roadmap phases.
 - Full rationale in TBD-081.
 
+## Roadmap Phase 1 increment 4: frontend `engine` selector (2026-10-26, TBD-082)
+
+Closes the gap TBD-081 left open: `engine=zap` was fully built and tested on the backend but reachable only via a direct API call, not through the application's own UI.
+
+- **Implemented**: `frontend/src/components/WebScanProfile.tsx` — `WebOptions` gained `engine` (default `"native"`) and the two ZAP duration fields; `webParams()` only sends them when they differ from the backend's own defaults, matching the existing convention. `WebScanOptions` renders a `Select` for the engine and swaps its whole options panel (native switches/limits vs. ZAP duration inputs) rather than showing both at once. `ProfileView` gained an "Engine: Native / OWASP ZAP" badge. No client-side ZAP-availability pre-check was added (same posture as the existing TLS-tool switch) — an unavailable ZAP install is still caught by the existing, already-tested backend rejection and surfaced through the same validation-alert UI every other option error already uses.
+- Tests: `frontend/src/test/webscan.test.tsx` (+1, full click-through: select ZAP → native controls hidden → preview request carries `engine=zap` → start request carries exactly `{"engine":"zap"}`). Full frontend suite re-run clean: **78 passed**; `tsc -b --noEmit`/`eslint .`/`npm run build` all clean. No backend file touched; no new dependency.
+- The full ZAP Baseline/Passive capability is now reachable end to end: UI → API → job system → findings.
+- **Not yet built**: Standard/Authenticated/API/Deep DAST profiles; the remaining roadmap phases.
+- Full rationale in TBD-082.
+
+## Roadmap Phase 1 increment 5: scan detail page displays real ZAP results (2026-10-26, TBD-083)
+
+A real, evidence-based gap found by auditing the UI after increment 4: a completed `engine=zap` scan's Summary/Pages/Coverage tabs all fell back to "This job produced no web scanner results" because `ScanDetailPage.tsx`'s `resultsReady` check looked for the native engine's `summary.json`, which a ZAP scan never writes (it writes `zap_summary.json`) — and the backend's own results route had no allowlist entry for `zap_summary` at all, so even a fixed frontend would have hit a 404.
+
+- **Fixed**: `app/api/jobs.py::RESULT_FILES` gained a `zap_summary` entry (one line, same pattern as every other result kind). `ScanDetailPage.tsx` detects `engine=zap` and renders a new `ZapSummaryPanel` (`ScanResultTabs.tsx`) instead of the native summary panel, and hides the "Pages / endpoints" and "Coverage" tabs — genuinely inapplicable for a ZAP run, rather than shown empty or erroring. The Findings tab needed no change: it already queries by `scan_id` independent of engine.
+- Tests: `tests/test_webapp_zap_engine.py` (+3 assertions in the existing dispatch test: the `zap_summary` route returns 200, the native `summary` route correctly 404s for a ZAP scan). `frontend/src/test/webscan.test.tsx` (+1: a ZAP-engine scan detail page shows the real summary panel and hides the native-only tabs). Full backend suite re-run clean: **2063 passed, 1 skipped**; full frontend suite re-run clean: **79 passed**. No database/broker/new dependency.
+- The ZAP Baseline/Passive capability is now correctly *displayed*, not just reachable: start → run → see real results.
+- Full rationale in TBD-083.
+

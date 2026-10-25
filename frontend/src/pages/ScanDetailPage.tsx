@@ -9,7 +9,7 @@ import { PageHeader } from "../components/PageHeader";
 import { ErrorAlert, QueryState } from "../components/QueryState";
 import { ScanStateLabel } from "../components/StatusLabel";
 import { formatDateTime, humanize } from "../lib/format";
-import { WebCoverageTab, WebFindingsTab, WebPagesTab, WebSummaryPanel, WebWarningsPanel } from "./ScanResultTabs";
+import { WebCoverageTab, WebFindingsTab, WebPagesTab, WebSummaryPanel, WebWarningsPanel, ZapSummaryPanel } from "./ScanResultTabs";
 import { SurfaceChangesTab, SurfaceCoverageTab, SurfaceFindingsTab, SurfaceHostsTab, SurfaceOriginsTab, SurfaceSummaryPanel } from "./SurfaceResultTabs";
 import { ApiCoverageTab, ApiFindingsTab, ApiSummaryPanel } from "./ApiResultTabs";
 
@@ -34,11 +34,15 @@ function ScanDetailView({ detail }: { detail: ScanDetail }) {
   const [confirmCancel, setConfirmCancel] = useState(false);
   const counters = Object.entries(scan.progress.counters);
   const isWeb = scan.module === "web_app";
+  const isZapEngine = isWeb && scan.parameters.engine === "zap";
   const isSurface = scan.module === "attack_surface";
   const isApi = scan.module === "api_security";
   const hasResults = isWeb || isSurface || isApi;
-  // Web outputs are written at the end of the run (also on cancellation/limits).
-  const resultsReady = detail.terminal && scan.output_refs.includes("work/summary.json");
+  // Outputs are written at the end of the run (also on cancellation/limits). A ZAP-engine
+  // scan writes a distinct `zap_summary.json`, not the native engine's `summary.json`.
+  const resultsReady =
+    detail.terminal &&
+    scan.output_refs.includes(isZapEngine ? "work/zap_summary.json" : "work/summary.json");
 
   const doRetry = () =>
     retry.mutate(undefined, {
@@ -116,18 +120,18 @@ function ScanDetailView({ detail }: { detail: ScanDetail }) {
         <Tabs defaultValue="summary" keepMounted={false}>
           <Tabs.List aria-label="Job detail sections">
             <Tabs.Tab value="summary">Summary</Tabs.Tab>
-            {isWeb && <Tabs.Tab value="pages">Pages / endpoints</Tabs.Tab>}
+            {isWeb && !isZapEngine && <Tabs.Tab value="pages">Pages / endpoints</Tabs.Tab>}
             {isSurface && <Tabs.Tab value="hosts">Hosts / ports</Tabs.Tab>}
             {isSurface && <Tabs.Tab value="origins">Web origins</Tabs.Tab>}
             {hasResults && <Tabs.Tab value="findings">Findings</Tabs.Tab>}
             {isSurface && <Tabs.Tab value="changes">Changes</Tabs.Tab>}
             <Tabs.Tab value="logs">Logs</Tabs.Tab>
             <Tabs.Tab value="warnings">Warnings ({scan.warnings.length + scan.errors.length})</Tabs.Tab>
-            {hasResults && <Tabs.Tab value="coverage">Coverage</Tabs.Tab>}
+            {hasResults && !isZapEngine && <Tabs.Tab value="coverage">Coverage</Tabs.Tab>}
           </Tabs.List>
           <Tabs.Panel value="summary" pt="md">
             <Stack gap="md">
-              {isWeb && <WebSummaryPanel scan={scan} ready={resultsReady} />}
+              {isWeb && (isZapEngine ? <ZapSummaryPanel scan={scan} ready={resultsReady} /> : <WebSummaryPanel scan={scan} ready={resultsReady} />)}
               {isSurface && <SurfaceSummaryPanel scan={scan} ready={resultsReady} />}
               {isApi && <ApiSummaryPanel scan={scan} ready={resultsReady} />}
         <SimpleGrid cols={{ base: 1, md: 2 }}>
@@ -162,7 +166,7 @@ function ScanDetailView({ detail }: { detail: ScanDetail }) {
 
             </Stack>
           </Tabs.Panel>
-          {isWeb && (
+          {isWeb && !isZapEngine && (
             <Tabs.Panel value="pages" pt="md">
               <WebPagesTab scan={scan} ready={resultsReady} />
             </Tabs.Panel>
@@ -195,10 +199,10 @@ function ScanDetailView({ detail }: { detail: ScanDetail }) {
           <Tabs.Panel value="warnings" pt="md">
             <Stack gap="md">
         <Text size="sm" c="dimmed">{scan.warnings.length + scan.errors.length === 0 ? "No warnings or errors recorded for this job." : `${scan.warnings.length} warning(s) and ${scan.errors.length} error(s) are shown above.`}</Text>
-              {isWeb && <WebWarningsPanel scan={scan} ready={resultsReady} />}
+              {isWeb && !isZapEngine && <WebWarningsPanel scan={scan} ready={resultsReady} />}
             </Stack>
           </Tabs.Panel>
-          {hasResults && (
+          {hasResults && !isZapEngine && (
             <Tabs.Panel value="coverage" pt="md">
               {isWeb ? <WebCoverageTab scan={scan} ready={resultsReady} /> : isSurface ? <SurfaceCoverageTab scan={scan} ready={resultsReady} /> : <ApiCoverageTab scan={scan} ready={resultsReady} />}
             </Tabs.Panel>

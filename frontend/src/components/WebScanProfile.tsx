@@ -1,8 +1,9 @@
-import { Alert, Badge, Group, List, NumberInput, SimpleGrid, Stack, Switch, Table, Text, TextInput, Title } from "@mantine/core";
+import { Alert, Badge, Group, List, NumberInput, Select, SimpleGrid, Stack, Switch, Table, Text, TextInput, Title } from "@mantine/core";
 import type { ScanParams, WebProfilePreview, WebScanProfile } from "../api/types";
 import { humanize } from "../lib/format";
 
 export interface WebOptions {
+  engine: "native" | "zap";
   respect_robots: boolean;
   tls_verify: boolean;
   check_cors: boolean;
@@ -10,9 +11,12 @@ export interface WebOptions {
   max_pages: number | "";
   max_depth: number | "";
   seed_paths: string;
+  zap_spider_max_minutes: number | "";
+  zap_wait_max_minutes: number | "";
 }
 
 export const DEFAULT_WEB_OPTIONS: WebOptions = {
+  engine: "native",
   respect_robots: true,
   tls_verify: true,
   check_cors: true,
@@ -20,35 +24,63 @@ export const DEFAULT_WEB_OPTIONS: WebOptions = {
   max_pages: "",
   max_depth: "",
   seed_paths: "",
+  zap_spider_max_minutes: "",
+  zap_wait_max_minutes: "",
 };
 
 /** Start-request parameters: only values that differ from defaults are sent. */
 export function webParams(o: WebOptions): ScanParams {
   const p: ScanParams = {};
+  if (o.engine !== "native") p.engine = o.engine;
   (["respect_robots", "tls_verify", "check_cors", "run_tls_tool"] as const).forEach((k) => {
     if (!o[k]) p[k] = false;
   });
   if (o.max_pages !== "") p.max_pages = o.max_pages;
   if (o.max_depth !== "") p.max_depth = o.max_depth;
   if (o.seed_paths.trim()) p.seed_paths = o.seed_paths.trim();
+  if (o.engine === "zap") {
+    if (o.zap_spider_max_minutes !== "") p.zap_spider_max_minutes = o.zap_spider_max_minutes;
+    if (o.zap_wait_max_minutes !== "") p.zap_wait_max_minutes = o.zap_wait_max_minutes;
+  }
   return p;
 }
 
 export function WebScanOptions({ value, onChange, limits }: { value: WebOptions; onChange: (v: WebOptions) => void; limits: { pages: number; depth: number } }) {
   const set = <K extends keyof WebOptions>(k: K, v: WebOptions[K]) => onChange({ ...value, [k]: v });
+  const zap = value.engine === "zap";
   return (
     <Stack gap="xs" aria-label="Web scan options" role="group">
-      <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
-        <Switch label="Respect robots.txt while crawling" checked={value.respect_robots} onChange={(e) => set("respect_robots", e.currentTarget.checked)} />
-        <Switch label="Verify TLS certificates while crawling" checked={value.tls_verify} onChange={(e) => set("tls_verify", e.currentTarget.checked)} />
-        <Switch label="CORS check (1 request per origin)" checked={value.check_cors} onChange={(e) => set("check_cors", e.currentTarget.checked)} />
-        <Switch label="Run sslyze/testssl.sh if installed" checked={value.run_tls_tool} onChange={(e) => set("run_tls_tool", e.currentTarget.checked)} />
-        <NumberInput label={`Max pages (project limit ${limits.pages})`} min={1} max={limits.pages} value={value.max_pages} allowDecimal={false}
-          onChange={(v) => set("max_pages", typeof v === "number" ? v : "")} placeholder={String(limits.pages)} />
-        <NumberInput label={`Max depth (project limit ${limits.depth})`} min={0} max={limits.depth} value={value.max_depth} allowDecimal={false}
-          onChange={(v) => set("max_depth", typeof v === "number" ? v : "")} placeholder={String(limits.depth)} />
-      </SimpleGrid>
-      <TextInput label="Extra start paths (comma separated, e.g. /app/, /docs/)" value={value.seed_paths} onChange={(e) => set("seed_paths", e.currentTarget.value)} />
+      <Select
+        label="Scan engine"
+        description="Native: this app's own built-in checks (default). ZAP: OWASP ZAP Baseline/Passive — bounded spider plus passive analysis only, no active-scan input sent. ZAP must be installed and configured in Settings → Integrations."
+        data={[
+          { value: "native", label: "Native (built-in checks)" },
+          { value: "zap", label: "OWASP ZAP — Baseline/Passive" },
+        ]}
+        value={value.engine}
+        onChange={(v) => v && set("engine", v as "native" | "zap")}
+        allowDeselect={false}
+      />
+      {zap ? (
+        <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
+          <NumberInput label="Spider duration (minutes)" min={1} max={60} value={value.zap_spider_max_minutes} allowDecimal={false}
+            onChange={(v) => set("zap_spider_max_minutes", typeof v === "number" ? v : "")} placeholder="2" />
+          <NumberInput label="Passive-scan wait (minutes)" min={1} max={60} value={value.zap_wait_max_minutes} allowDecimal={false}
+            onChange={(v) => set("zap_wait_max_minutes", typeof v === "number" ? v : "")} placeholder="2" />
+        </SimpleGrid>
+      ) : (
+        <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
+          <Switch label="Respect robots.txt while crawling" checked={value.respect_robots} onChange={(e) => set("respect_robots", e.currentTarget.checked)} />
+          <Switch label="Verify TLS certificates while crawling" checked={value.tls_verify} onChange={(e) => set("tls_verify", e.currentTarget.checked)} />
+          <Switch label="CORS check (1 request per origin)" checked={value.check_cors} onChange={(e) => set("check_cors", e.currentTarget.checked)} />
+          <Switch label="Run sslyze/testssl.sh if installed" checked={value.run_tls_tool} onChange={(e) => set("run_tls_tool", e.currentTarget.checked)} />
+          <NumberInput label={`Max pages (project limit ${limits.pages})`} min={1} max={limits.pages} value={value.max_pages} allowDecimal={false}
+            onChange={(v) => set("max_pages", typeof v === "number" ? v : "")} placeholder={String(limits.pages)} />
+          <NumberInput label={`Max depth (project limit ${limits.depth})`} min={0} max={limits.depth} value={value.max_depth} allowDecimal={false}
+            onChange={(v) => set("max_depth", typeof v === "number" ? v : "")} placeholder={String(limits.depth)} />
+        </SimpleGrid>
+      )}
+      {!zap && <TextInput label="Extra start paths (comma separated, e.g. /app/, /docs/)" value={value.seed_paths} onChange={(e) => set("seed_paths", e.currentTarget.value)} />}
     </Stack>
   );
 }
@@ -75,6 +107,7 @@ export function ProfileView({ profile, tlsTools }: { profile: WebScanProfile; tl
     <Stack gap="xs" aria-label="Web scan profile details">
       <Group gap="xs">
         <Badge color={profile.safe_mode ? "green" : "red"} variant="light">{profile.safe_mode ? "Safe mode: on" : "Safe mode: off"}</Badge>
+        <Badge color={profile.engine === "zap" ? "violet" : "blue"} variant="light">Engine: {profile.engine === "zap" ? "OWASP ZAP" : "Native"}</Badge>
         <Badge variant="outline">Rule catalog {profile.catalog_version}</Badge>
         <Badge variant="outline">Authentication: {profile.auth_profile ?? "none (unauthenticated)"}</Badge>
         <Badge variant="outline">robots.txt {profile.respect_robots ? "respected" : "ignored"}</Badge>

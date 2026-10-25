@@ -615,6 +615,7 @@ export interface WebScanProfile {
   profile_version: number;
   catalog_version: string;
   safe_mode: boolean;
+  engine: "native" | "zap";
   auth_profile: string | null;
   respect_robots: boolean;
   tls_verify: boolean;
@@ -631,6 +632,8 @@ export interface WebScanProfile {
   };
   checks: ProfileCheck[];
   limitations: string[];
+  zap_spider_max_minutes: number;
+  zap_wait_max_minutes: number;
 }
 
 export interface WebProfilePreview {
@@ -676,6 +679,18 @@ export interface WebScanSummary {
   tool_versions: Record<string, string>;
   components: ComponentInfo[];
   warnings: string[];
+  limitations: string[];
+}
+
+/** engine=zap only (roadmap Phase 1): a distinct shape from `WebScanSummary` above, since
+ * a ZAP Baseline/Passive run has no crawl/coverage/component data of its own. */
+export interface ZapScanSummary {
+  engine: "zap";
+  zap_version: string;
+  targets: string[];
+  alerts_found: number;
+  findings_created: number;
+  findings_reobserved: number;
   limitations: string[];
 }
 

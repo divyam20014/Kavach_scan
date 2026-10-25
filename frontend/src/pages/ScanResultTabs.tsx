@@ -2,7 +2,7 @@ import { Anchor, Badge, Card, Code, Group, List, SegmentedControl, SimpleGrid, S
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useFindings, useScanResult } from "../api/hooks";
-import type { CheckOutcome, CoverageRow, PagesInventory, ScanJob, WebScanSummary } from "../api/types";
+import type { CheckOutcome, CoverageRow, PagesInventory, ScanJob, WebScanSummary, ZapScanSummary } from "../api/types";
 import { EmptyState, QueryState } from "../components/QueryState";
 import { SeverityLabel } from "../components/StatusLabel";
 import { humanize } from "../lib/format";
@@ -114,6 +114,38 @@ export function WebSummaryPanel({ scan, ready }: { scan: ScanJob; ready: boolean
             <Text size="xs" c="dimmed" mt="xs">Observations only: a detected version is not proof of a vulnerability. CVE matching runs only with a locally imported catalog.</Text>
             <Text size="sm" mt="xs">Tool versions: {Object.keys(s.tool_versions).length ? Object.entries(s.tool_versions).map(([k, v]) => <Code key={k} mr={4}>{k}: {v}</Code>) : "no external tool ran"}</Text>
           </Card>
+        </Stack>
+      )}
+    </QueryState>
+  );
+}
+
+/** engine=zap (roadmap Phase 1): a ZAP Baseline/Passive run writes a `zap_summary` output,
+ * not `summary` -- a distinct panel rather than forcing `WebSummaryPanel`'s crawl/coverage/
+ * component fields onto a scan that has none of those concepts. */
+export function ZapSummaryPanel({ scan, ready }: { scan: ScanJob; ready: boolean }) {
+  const summary = useScanResult<ZapScanSummary>(scan.project_id, scan.scan_id, "zap_summary", ready);
+  if (!ready) return <NotReady scan={scan} />;
+  return (
+    <QueryState query={summary} loadingLabel="Loading scan summary…">
+      {(s) => (
+        <Stack gap="md">
+          <SimpleGrid cols={{ base: 2, sm: 4 }}>
+            <Stat label="Alerts found" value={s.alerts_found} />
+            <Stat label="New findings" value={s.findings_created} />
+            <Stat label="Re-observed" value={s.findings_reobserved} />
+          </SimpleGrid>
+          <Card withBorder component="section" aria-labelledby="zap-targets-h">
+            <Title order={2} size="h4" id="zap-targets-h" mb="sm">OWASP ZAP {s.zap_version} — Baseline/Passive</Title>
+            <Text size="sm">Targets: {s.targets.join(", ")}</Text>
+            <Text size="xs" c="dimmed" mt="xs">Bounded spider plus passive analysis only; no active-scan input was sent to the target.</Text>
+          </Card>
+          {s.limitations.length > 0 && (
+            <Card withBorder component="section" aria-labelledby="zap-limits-h">
+              <Title order={2} size="h4" id="zap-limits-h" mb="sm">Limitations of this scan</Title>
+              <List size="sm">{s.limitations.map((l) => <List.Item key={l}>{l}</List.Item>)}</List>
+            </Card>
+          )}
         </Stack>
       )}
     </QueryState>
