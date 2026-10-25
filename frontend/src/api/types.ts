@@ -938,3 +938,71 @@ export interface RestoreResponse {
   project_id: string;
   counts: Record<string, number>;
 }
+
+// ---------------------------------------------------------------- Settings & integrations (Phase 11)
+
+export interface IntegrationsSettings {
+  nmap_path: string;
+  sslyze_path: string;
+  testssl_path: string;
+  online_lookup_credential_alias: string;
+}
+
+export interface AppSettings {
+  schema_version: number;
+  product_name: string;
+  disk_space_warning_bytes: number;
+  evidence_quota_bytes: number | null;
+  report_timezone_label: string;
+  integrations: IntegrationsSettings;
+  revision: number;
+  updated_at: string;
+}
+
+export interface IntegrationsSettingsUpdate {
+  nmap_path?: string;
+  sslyze_path?: string;
+  testssl_path?: string;
+  online_lookup_credential_alias?: string;
+}
+
+export interface SettingsUpdateRequest {
+  product_name?: string;
+  integrations?: IntegrationsSettingsUpdate;
+  expected_revision?: number;
+}
+
+export type IntegrationStatusValue = "not_configured" | "not_found" | "detected" | "verified" | "error";
+
+export interface ToolUsage {
+  project_id: string;
+  scan_id: string;
+  at: string;
+  version: string;
+}
+
+export interface IntegrationStatus {
+  id: string;
+  label: string;
+  capability: string;
+  configured_path: string;
+  detected_path: string;
+  status: IntegrationStatusValue;
+  version: string;
+  last_used: ToolUsage | null;
+  last_error: string;
+  troubleshooting: string;
+}
+
+export interface CveCatalogMetadata {
+  source: string;
+  catalog_version: string;
+  imported_at: string;
+  file_sha256: string;
+  file_name: string;
+  parser_version: string;
+  entry_count: number;
+  stale_after_days: number;
+  is_stale: boolean;
+  warnings: string[];
+}

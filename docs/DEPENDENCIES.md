@@ -1,6 +1,6 @@
 # Dependency and Feature Inventory — VAPT Workbench
 
-> Last updated: Phase 10 (2026-10-25). The sources of truth are `backend/pyproject.toml` and `backend/poetry.lock`. Licenses were read from installed package metadata (`importlib.metadata`) in the project venv.
+> Last updated: Phase 11 (2026-10-25). The sources of truth are `backend/pyproject.toml` and `backend/poetry.lock`. Licenses were read from installed package metadata (`importlib.metadata`) in the project venv. Phase 11 added **zero** new dependencies: `git diff --stat backend/pyproject.toml` across this phase is empty.
 
 ## 1. Policy
 
@@ -64,6 +64,8 @@ Transitive dev packages: `httpcore`, `certifi` (MPL-2.0), `iniconfig`, `pluggy`,
 | 08 | ~~`pypdf`~~ | **Installed** (runtime): best-effort PDF text import, `extract_text()` only | TBD-024 decided |
 | 09 | ~~`cvss`~~ | **Installed** (runtime): CVSS v3.1/v4.0 vector validation and the sole source of a `Finding.cvss.base_score` | TBD-019 decided |
 | 10 | ~~WeasyPrint / ReportLab / Playwright~~ | Not added: `fpdf2` chosen instead (pure Python, no native/system dependencies) | TBD-031 decided |
+| 11 | ~~`packaging` / `semver`~~ | Not added: `app/cve/version.py` is a small, hand-written dotted-version comparator (no pre-release/build-metadata semantics) — defensible enough for the documented catalog format and avoids a new dependency for a ~90-line module | decided |
+| 11 | ~~python-nvdlib / a real NVD feed parser~~ | Not added: a documented, VAPT-Workbench-specific JSON schema is used instead of the NVD feed format (TBD-028: no bundled third-party feeds; a partial NVD parser would be a worse safety trade-off than a small, fully-defensible format) | decided |
 | 02 | React, Vite, TypeScript, Mantine, TanStack Query, Vitest, Testing Library | Frontend | TBD-030 |
 
 ## 5a. Frontend dependencies (Phase 02; exact pins in `frontend/package.json` + `package-lock.json`)
@@ -104,4 +106,5 @@ Transitive dev packages: `httpcore`, `certifi` (MPL-2.0), `iniconfig`, `pluggy`,
 | Canonical Pydantic contracts | Implemented | `backend/app/models/` |
 | Readiness / diagnostics endpoints, `python -m app diagnose` | Implemented | `backend/app/api/health.py`, `backend/app/__main__.py` |
 | Report builder (HTML + PDF), JSON/CSV exports, project backup/restore archive | Implemented | `backend/app/reports/`, `backend/app/backup/`, `backend/app/api/reports.py`; see IMPLEMENTATION_STATUS |
+| Integrations status/self-test (nmap, sslyze, testssl.sh), local CVE catalog import/match, settings API | Implemented | `backend/app/services/integrations.py`, `backend/app/cve/`, `backend/app/api/settings.py`; see IMPLEMENTATION_STATUS |
 | Everything else in MASTER_SPEC | Not started | [IMPLEMENTATION_STATUS.md](IMPLEMENTATION_STATUS.md) |

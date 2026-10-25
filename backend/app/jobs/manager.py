@@ -737,14 +737,18 @@ class JobManager:
             log.warning("could not write event for %s", scan.scan_id)
 
 
-def default_runners(settings: RuntimeSettings) -> dict[ScanModule, Runner]:
+def default_runners(
+    settings: RuntimeSettings, repo: StorageRepository | None = None
+) -> dict[ScanModule, Runner]:
+    from app.cve.matcher import StoredCveCatalog
     from app.jobs.selftest import SelfTestRunner
     from app.scanners.apisec.runner import ApiSecRunner
     from app.scanners.surface.runner import SurfaceRunner
     from app.scanners.webapp.runner import WebAppRunner
 
+    cve_catalog = StoredCveCatalog(repo) if repo is not None else None
     runners: dict[ScanModule, Runner] = {
-        ScanModule.WEB_APP: WebAppRunner(),
+        ScanModule.WEB_APP: WebAppRunner(cve_catalog=cve_catalog),
         ScanModule.ATTACK_SURFACE: SurfaceRunner(),
         ScanModule.API_SECURITY: ApiSecRunner(),
     }

@@ -1,0 +1,4 @@
+# Shell scripts must keep LF line endings regardless of core.autocrlf, or a `#!/usr/bin/env
+# bash` shebang breaks on checkout (the interpreter name gets a trailing \r).
+.githooks/* text eol=lf
+scripts/*.sh text eol=lf

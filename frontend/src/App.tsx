@@ -14,6 +14,7 @@ import { ApiSpecPage } from "./pages/ApiSpecPage";
 import { FindingDetailPage } from "./pages/FindingDetailPage";
 import { FindingsWorkbenchPage } from "./pages/FindingsWorkbenchPage";
 import { ImportsPage } from "./pages/ImportsPage";
+import { IntegrationsPage } from "./pages/IntegrationsPage";
 import { ProjectWizardPage } from "./pages/ProjectWizardPage";
 import { ReportBuilderPage } from "./pages/ReportBuilderPage";
 import { AssetsPage, ScansPage } from "./pages/RecordPages";
@@ -69,6 +70,7 @@ export function AppRoutes() {
         <Route path="scans" element={<ScansPage />} />
         <Route path="audit" element={<AuditPage />} />
         <Route path="settings" element={<SettingsPage />} />
+        <Route path="integrations" element={<IntegrationsPage />} />
         <Route path="help" element={<HelpPage />} />
         <Route path="*" element={<NotFoundPage />} />
       </Route>

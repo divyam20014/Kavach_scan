@@ -22,9 +22,12 @@ import type {
   InternalOverrideRequest,
   ScopeCheckResponse,
   ScopePolicyView,
+  AppSettings,
   AuditPage,
   BackupPreviewResponse,
   CatalogView,
+  CveCatalogMetadata,
+  IntegrationStatus,
   DashboardSummary,
   DeletionImpact,
   FindingDetailView,
@@ -43,6 +46,7 @@ import type {
   ScanJob,
   ScopePreviewRequest,
   ScopePreviewResponse,
+  SettingsUpdateRequest,
   StorageDiagnostics,
   VersionInfo,
 } from "./types";
@@ -515,6 +519,60 @@ export function useBackupRestore() {
       _uploadMultipart<RestoreResponse>(
         `/api/backup/restore?confirmed=${confirmed}&overwrite=${overwrite}`, file,
       ),
+    onSuccess: invalidate,
+  });
+}
+
+// ---------------------------------------------------------------- Settings & integrations (Phase 11)
+
+export function useSettings() {
+  return useQuery({ queryKey: ["settings"], queryFn: () => api.get<AppSettings>("/api/settings") });
+}
+
+export function useUpdateSettings() {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: (body: SettingsUpdateRequest) => api.patch<AppSettings>("/api/settings", body),
+    onSuccess: invalidate,
+  });
+}
+
+export function useIntegrations() {
+  return useQuery({
+    queryKey: ["integrations"],
+    queryFn: () => api.get<IntegrationStatus[]>("/api/integrations"),
+  });
+}
+
+export function useIntegrationSelftest() {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: (toolId: string) =>
+      api.post<IntegrationStatus>(`/api/integrations/${enc(toolId)}/selftest`),
+    onSuccess: invalidate,
+  });
+}
+
+export function useCveCatalog() {
+  return useQuery({
+    queryKey: ["cve-catalog"],
+    queryFn: () => api.get<CveCatalogMetadata | null>("/api/cve-catalog"),
+  });
+}
+
+export function useImportCveCatalog() {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: (file: File) =>
+      _uploadMultipart<CveCatalogMetadata>("/api/cve-catalog/import", file),
+    onSuccess: invalidate,
+  });
+}
+
+export function useDeleteCveCatalog() {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: () => api.delete<void>("/api/cve-catalog"),
     onSuccess: invalidate,
   });
 }

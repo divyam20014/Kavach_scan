@@ -2,6 +2,8 @@
 
     python -m app [serve]      start the API on 127.0.0.1 (default command)
     python -m app diagnose     read-only data-directory readiness report (JSON)
+    python -m app integrations  run the external-tool self-test (version only; no target
+                                 traffic) and print integration status as JSON
     python -m app --version
 
 Exit codes: 0 ok · 1 not ready (diagnose) · 2 configuration error · 3 storage error.
@@ -28,6 +30,10 @@ def _parser() -> argparse.ArgumentParser:
     sub = parser.add_subparsers(dest="command")
     sub.add_parser("serve", help="start the local API (default)")
     sub.add_parser("diagnose", help="print data-directory diagnostics as JSON (read-only)")
+    sub.add_parser(
+        "integrations",
+        help="run the external-tool self-test (version capture only; no target traffic)",
+    )
     return parser
 
 
@@ -74,10 +80,37 @@ def _diagnose() -> int:
     return 0 if report.ready else 1
 
 
+def _integrations() -> int:
+    try:
+        settings = load_settings()
+    except (SettingsError, InsecureBindError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    from app.services.integrations import TOOL_IDS, run_selftest
+    from app.storage.repository import StorageRepository
+
+    try:
+        repo = StorageRepository.open(settings)
+    except StorageError as exc:
+        print(f"error: {exc.message}", file=sys.stderr)
+        return 3
+    try:
+        results = [run_selftest(repo, tool_id).__dict__ for tool_id in TOOL_IDS]
+        for row in results:
+            if row["last_used"] is not None:
+                row["last_used"] = row["last_used"].__dict__
+    finally:
+        repo.close()
+    print(json.dumps(results, indent=2))
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     if args.command == "diagnose":
         return _diagnose()
+    if args.command == "integrations":
+        return _integrations()
     return _serve()
 
 

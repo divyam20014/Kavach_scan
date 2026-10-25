@@ -15,6 +15,7 @@ from fastapi import FastAPI
 
 from app import __version__
 from app.api import apisec, findings, health, imports, jobs, projects, reports, scope, surface
+from app.api import settings as settings_api
 from app.core.config import PRODUCT_NAME
 from app.core.correlation import CorrelationIdMiddleware
 from app.core.errors import ErrorResponse, install_error_handlers
@@ -53,7 +54,9 @@ def create_app(
                 log.warning(
                     "integrity check reported %d issue(s)", len(app.state.last_integrity.issues)
                 )
-            runners = job_runners if job_runners is not None else default_runners(repo.settings)
+            runners = (
+                job_runners if job_runners is not None else default_runners(repo.settings, repo)
+            )
             manager = JobManager(repo, repo.settings, runners=runners)
             app.state.job_recovery = manager.start()  # deterministic recovery before dispatching
             app.state.jobs = manager
@@ -83,6 +86,7 @@ def create_app(
     app.include_router(imports.router)
     app.include_router(findings.router)
     app.include_router(reports.router)
+    app.include_router(settings_api.router)
     if serve_ui and not mount_ui(app):
         log.info("frontend build not found; serving the API only")
     # add_middleware prepends: the last added runs first (outermost).

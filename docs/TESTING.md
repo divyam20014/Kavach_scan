@@ -23,6 +23,26 @@ Run from `backend/` (see [DEVELOPMENT.md](DEVELOPMENT.md) for setup):
 
 Frontend (Phase 02+, planned): `npm test` (Vitest), `npm run lint` (ESLint), `npm run typecheck` (`tsc --noEmit`), `npm run build`.
 
+### Results recorded at Phase 11 verification (2026-10-25)
+
+| Command | Result |
+|---|---|
+| `poetry run pytest` | **1941 passed, 1 skipped** (adds 6 tests over the implementation baseline: 3 in `test_integrations.py`, 3 in `test_cve_catalog.py`) |
+| `ruff check` / `mypy` | clean / no issues in 128 source files |
+| `npm test` / `typecheck` / `lint` / `build` / `audit` | 76 passed / pass / pass / built / 0 vulnerabilities |
+
+Verification found and fixed 3 defects, none caught by the implementation-time test suite: (1) `run_selftest` reported `verified` using whatever text came back on stdout/stderr regardless of the process's exit code, so a tool that exited non-zero (wrong/unsupported version, an incompatible binary, any invalid-executable-shaped failure) had its error message reported as a successfully verified version — a genuine false pass, demonstrated with a fixture script that prints an error and exits 2; (2) a configured path pointing at a file that exists but isn't a runnable executable made `subprocess.Popen` raise an unhandled `OSError`, demonstrated with a plain text file given a `.exe` name; (3) `CveMatch` never carried the catalog's import date, so a generated finding for a real CVE match showed source and version but not when the catalog was imported (the PASS/no-match case already included it). All three are fixed and regression-tested. New coverage (not a defect fix): a full end-to-end test runs a real `JobManager`/`WebAppRunner` scan against a local fixture HTTP server with a genuine imported CVE catalog and confirms an actual CVE finding is produced through the whole pipeline — crawl, component detection, catalog match, finding write — directly proving the "confirm offline scanning works against local fixtures" requirement for this feature rather than relying only on the isolated matcher unit tests.
+
+### Results recorded at Phase 11 (2026-10-25)
+
+| Command | Result |
+|---|---|
+| `poetry run pytest` | **1935 passed, 1 skipped** (adds `test_cve_catalog.py` 23, `test_integrations.py` 17, `test_settings_api.py` 15 — 55 new tests over the Phase 10 baseline) |
+| `ruff check` / `mypy` | clean / no issues in 128 source files |
+| `npm test` / `typecheck` / `lint` / `build` / `audit` | **76 passed** (adds `frontend/src/test/integrations.test.tsx`, 6 tests) / pass / pass / built / 0 vulnerabilities |
+
+Phase 11 added zero new dependencies — `git diff --stat backend/pyproject.toml` is empty. Mocked tests cover every required scenario from the phase prompt's item 8: missing binary (`test_selftest_missing_binary_reports_not_configured_not_an_error`), incorrect/unparseable version (a fixture script producing no readable output), timeout (a fixture script that sleeps, with `_SELFTEST_TIMEOUT_SECONDS` monkeypatched small), oversized output (a fixture script that writes 64MB after a valid first line, proving the output cap doesn't hang or corrupt the captured version), malformed CVE data (non-JSON, empty, oversized file/entry-count, missing required fields, entries-not-a-list, individual malformed entries skipped-with-warning, zero-usable-entries), and a stale catalog (`is_stale` derived from `imported_at` + `stale_after_days`). No new fixture servers were needed: tool self-tests use `sys.executable` plus a small inline Python fixture script (the same `prefix=(str(script),)` pattern already established by `test_webapp_verification.py`), and CVE catalog tests are pure in-process JSON fixtures.
+
 ### Results recorded at Phase 10 verification (2026-10-25)
 
 | Command | Result |
@@ -297,7 +317,8 @@ Not live-tested: a real remote client against `uvicorn app.main:app --host 0.0.0
 | 04 | State transitions, duplicate submission, claim race, queue cap, cancel, subprocess timeout/kill, restart → interrupted, kill switch |
 | 05–07 | Fixture scans per check, injection disabled by default, escaped-vs-unescaped XSS, response caps, backoff, Nmap argv, missing tools → skipped, OpenAPI malicious specs, IDOR prerequisites |
 | 08–10 | Parser fixtures + malformed + XXE/zip-slip/bombs, dry-run immutability, dedupe correctness, report escaping and no-secret assertions, archive round trip |
-| 11–13 | Missing/invalid tools, stale catalogs, offline E2E, clean-install check |
+| 11 | **done:** missing/invalid tools (never a false pass), timeout, oversized output, malformed/stale CVE catalog |
+| 12–13 | offline E2E, clean-install check |
 
 ## 7. Coverage and CI (TBD-027)
 

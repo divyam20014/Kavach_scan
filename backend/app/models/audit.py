@@ -43,6 +43,9 @@ class AuditAction(StrEnum):
     FINDING_COMMENT_ADDED = "finding_comment_added"
     FINDING_MERGED = "finding_merged"
     FINDING_UNMERGED = "finding_unmerged"
+    CVE_CATALOG_IMPORTED = "cve_catalog_imported"
+    CVE_CATALOG_REMOVED = "cve_catalog_removed"
+    INTEGRATION_SELFTEST_RUN = "integration_selftest_run"
 
 
 class AuditEvent(StrictModel):

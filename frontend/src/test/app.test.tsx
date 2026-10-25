@@ -172,7 +172,7 @@ describe("settings", () => {
     expect(await screen.findByText("~/AppData/Local/VAPTWorkbench/data")).toBeInTheDocument();
     expect(screen.getByText("✓ Ready")).toBeInTheDocument();
     expect(await screen.findByText("Not available in this build")).toBeInTheDocument();
-    expect(screen.getByText(/none is reported as available/)).toBeInTheDocument();
+    expect(screen.getByText(/never a false pass/)).toBeInTheDocument();
   });
 });
 

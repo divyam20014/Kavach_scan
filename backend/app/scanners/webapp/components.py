@@ -210,6 +210,8 @@ class CveMatch:
     affected_range: str  # as stated by the catalog, e.g. ">=1.0,<1.2.3"
     catalog_id: str
     catalog_version: str
+    catalog_date: str = ""  # the catalog's own imported_at (ISO-8601), not a publish date we
+    # cannot verify — "data source" provenance per the acceptance criterion
     references: tuple[str, ...] = ()
 
 
@@ -275,8 +277,19 @@ def cve_results(components: list[Component], catalog: CveCatalog) -> list[CheckR
                     Outcome.FINDING,
                     label,
                     f"{m.cve_id} listed for {m.component} {m.affected_range} ({m.match} match, "
-                    f"catalog {m.catalog_id} {m.catalog_version})",
+                    f"catalog {m.catalog_id} {m.catalog_version}, imported {m.catalog_date})",
                     parameter=m.cve_id,
+                    # An exact version pin on a component the detector itself is confident
+                    # about is still only "probable" — passive version matching can never be
+                    # "confirmed" (no exploitation was verified). A range match, or a match on
+                    # a weakly-detected component, stays at the rule's needs_review default:
+                    # it is a candidate for analyst review, never presented as a confirmed
+                    # vulnerability.
+                    confidence=(
+                        Confidence.PROBABLE
+                        if m.match == "exact" and comp.confidence != Confidence.POTENTIAL
+                        else None
+                    ),
                     data={"cve": m.__dict__},
                 )
             )

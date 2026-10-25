@@ -143,11 +143,15 @@ export function SettingsPage() {
 
         <Card withBorder component="section" aria-labelledby="tools-h">
           <Title order={2} size="h4" id="tools-h" mb="sm">
-            External tools
+            External tools &amp; CVE catalog
           </Title>
-          <Text size="sm">
-            Tool detection for Nmap, sslyze and testssl.sh is implemented in Phase 11. Until then no tool is checked, so none is reported as available.
+          <Text size="sm" c="dimmed" mb="sm">
+            Nmap, sslyze/testssl.sh and the local CVE catalog are optional. Missing tools
+            degrade to built-in fallbacks or skipped checks — never a false pass.
           </Text>
+          <Anchor component={Link} to="/integrations">
+            Open Integrations &amp; CVE catalog
+          </Anchor>
         </Card>
 
         <BackupRestoreCard />

@@ -8,6 +8,14 @@
 - Poetry 2.x.
 - Git.
 
+## Git hooks (run once per clone)
+
+```bash
+git config core.hooksPath .githooks
+```
+
+This activates a local, repo-tracked pre-commit/pre-push check (`scripts/check-secrets.sh`) that blocks a secret-shaped literal (Stripe/AWS/GitHub/Slack/Google key patterns, a PEM private key block) from ever being committed or pushed — this repo has twice had a push rejected by GitHub's push protection after a test fixture happened to match a provider's key format (see `TBD_DECISIONS.md`). `core.hooksPath` is local git config, not something a plain `git clone` applies automatically, so every clone (and this one, the first time) needs the command above run once. If a legitimate test genuinely needs a secret-shaped value, build it from fragments at runtime instead of a single literal (see the examples the hook prints when it blocks something) — don't bypass the hook.
+
 ## Backend setup
 
 ```bash

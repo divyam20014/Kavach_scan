@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+# Second line of defense (the pre-commit hook is the first): re-scans every commit about to be
+# pushed for a secret-shaped literal before it reaches the remote, so a commit made without
+# the pre-commit hook installed (or with --no-verify) still gets caught locally instead of
+# bouncing off GitHub's push protection. See scripts/check-secrets.sh.
+set -euo pipefail
+repo_root="$(git rev-parse --show-toplevel)"
+zero="0000000000000000000000000000000000000000"
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ "$local_sha" = "$zero" ] && continue  # a branch/tag deletion pushes nothing
+  if [ "$remote_sha" = "$zero" ]; then
+    # New remote ref: nothing to diff against yet, so scan the ref's full content as "added".
+    git diff --no-color -U0 "$(git hash-object -t tree /dev/null)" "$local_sha" \
+      | "$repo_root/scripts/check-secrets.sh"
+  else
+    git diff --no-color -U0 "$remote_sha" "$local_sha" | "$repo_root/scripts/check-secrets.sh"
+  fi
+done

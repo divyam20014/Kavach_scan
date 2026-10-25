@@ -1,5 +1,5 @@
 import { Badge } from "@mantine/core";
-import type { AuthorizationStatus, ScanState, Severity } from "../api/types";
+import type { AuthorizationStatus, IntegrationStatusValue, ScanState, Severity } from "../api/types";
 import { humanize } from "../lib/format";
 
 // Status is always conveyed by text (plus a shape symbol), never by colour alone.
@@ -61,6 +61,25 @@ export function ProjectStatusLabel({ status }: { status: "active" | "archived" }
   return (
     <Badge color={status === "active" ? "teal" : "gray"} variant="outline">
       {status === "active" ? "Active" : "Archived"}
+    </Badge>
+  );
+}
+
+const INTEGRATION_STATUS: Record<IntegrationStatusValue, { color: string; label: string; symbol: string }> = {
+  not_configured: { color: "gray", label: "Not configured", symbol: "–" },
+  not_found: { color: "red", label: "Configured path not found", symbol: "✕" },
+  // Detected but never self-tested: deliberately not green — presence on PATH is not proof
+  // the tool actually runs (acceptance criterion: no green success for an unverified tool).
+  detected: { color: "blue", label: "Detected (unverified)", symbol: "?" },
+  verified: { color: "green", label: "Verified working", symbol: "✓" },
+  error: { color: "red", label: "Self-test failed", symbol: "✕" },
+};
+
+export function IntegrationStatusLabel({ status }: { status: IntegrationStatusValue }) {
+  const s = INTEGRATION_STATUS[status];
+  return (
+    <Badge color={s.color} variant="light" leftSection={<span aria-hidden="true">{s.symbol}</span>}>
+      {s.label}
     </Badge>
   );
 }

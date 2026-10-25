@@ -1,0 +1,236 @@
+import { Alert, Anchor, Badge, Button, Card, FileButton, Group, SimpleGrid, Stack, Table, Text, TextInput, Title } from "@mantine/core";
+import { notifications } from "@mantine/notifications";
+import { useEffect, useState } from "react";
+import { ApiError } from "../api/client";
+import {
+  useCveCatalog,
+  useDeleteCveCatalog,
+  useImportCveCatalog,
+  useIntegrationSelftest,
+  useIntegrations,
+  useSettings,
+  useUpdateSettings,
+} from "../api/hooks";
+import type { IntegrationStatus } from "../api/types";
+import { PageHeader } from "../components/PageHeader";
+import { ErrorAlert, Loading, QueryState } from "../components/QueryState";
+import { IntegrationStatusLabel } from "../components/StatusLabel";
+import { formatDateTime } from "../lib/format";
+
+export function IntegrationsPage() {
+  const integrations = useIntegrations();
+  return (
+    <>
+      <PageHeader
+        title="Integrations & CVE catalog"
+        description="Optional external tools and the local CVE catalog. Nothing here is ever contacted automatically, and a missing tool never produces a false pass."
+        crumbs={[{ label: "Dashboard", to: "/" }, { label: "Settings & storage", to: "/settings" }, { label: "Integrations" }]}
+      />
+      <Stack gap="md">
+        <QueryState query={integrations} loadingLabel="Checking installed tools…">
+          {(statuses) => (
+            <SimpleGrid cols={{ base: 1, md: 2 }}>
+              {statuses.map((s) => (
+                <ToolCard key={s.id} status={s} />
+              ))}
+            </SimpleGrid>
+          )}
+        </QueryState>
+
+        <CveCatalogCard />
+        <ToolPathSettingsCard />
+      </Stack>
+    </>
+  );
+}
+
+function ToolCard({ status: listStatus }: { status: IntegrationStatus }) {
+  const selftest = useIntegrationSelftest();
+  // `GET /api/integrations` is detection-only and never reports "verified" (running a
+  // subprocess just to answer a list request would violate "no active target traffic on
+  // page load"); a self-test's own response is the only source of a "verified" status, so
+  // its result is kept here for this tool for the rest of the page's session.
+  const [lastSelftest, setLastSelftest] = useState<IntegrationStatus | null>(null);
+  const status = lastSelftest ?? listStatus;
+  const run = () =>
+    selftest.mutate(listStatus.id, {
+      onSuccess: (result) => setLastSelftest(result),
+      onError: (e) => notifications.show({ color: "red", title: "Self-test failed to run", message: e instanceof ApiError ? e.describe() : "Unexpected error" }),
+    });
+  return (
+    <Card withBorder component="section" aria-labelledby={`tool-${status.id}-h`}>
+      <Group justify="space-between" mb="xs">
+        <Title order={2} size="h4" id={`tool-${status.id}-h`}>{status.label}</Title>
+        <IntegrationStatusLabel status={status.status} />
+      </Group>
+      <Text size="sm" c="dimmed" mb="xs">{status.capability}</Text>
+      <Table variant="vertical" mb="xs">
+        <Table.Tbody>
+          <Table.Tr><Table.Th w={140}>Configured path</Table.Th><Table.Td>{status.configured_path || "— (auto-detect)"}</Table.Td></Table.Tr>
+          <Table.Tr><Table.Th>Detected at</Table.Th><Table.Td>{status.detected_path || "not found"}</Table.Td></Table.Tr>
+          {status.version && <Table.Tr><Table.Th>Version</Table.Th><Table.Td>{status.version}</Table.Td></Table.Tr>}
+          <Table.Tr>
+            <Table.Th>Last used</Table.Th>
+            <Table.Td>
+              {status.last_used
+                ? `${status.last_used.version} — ${formatDateTime(status.last_used.at)}`
+                : "Never (no scan has recorded using this tool)"}
+            </Table.Td>
+          </Table.Tr>
+        </Table.Tbody>
+      </Table>
+      {status.last_error && (
+        <Alert color="red" role="alert" title="Last self-test error" mb="xs">
+          {status.last_error}
+        </Alert>
+      )}
+      <Text size="xs" c="dimmed" mb="sm">{status.troubleshooting}</Text>
+      <Button size="xs" variant="default" onClick={run} loading={selftest.isPending}>
+        Run self-test (version only, no target traffic)
+      </Button>
+    </Card>
+  );
+}
+
+function CveCatalogCard() {
+  const catalog = useCveCatalog();
+  const importMutation = useImportCveCatalog();
+  const deleteMutation = useDeleteCveCatalog();
+
+  const onFile = (file: File | null) => {
+    if (!file) return;
+    importMutation.mutate(file, {
+      onSuccess: () => notifications.show({ color: "green", message: "CVE catalog imported" }),
+      onError: (e) => notifications.show({ color: "red", title: "Import failed", message: e instanceof ApiError ? e.describe() : "Invalid catalog file" }),
+    });
+  };
+  const onDelete = () =>
+    deleteMutation.mutate(undefined, {
+      onSuccess: () => notifications.show({ color: "green", message: "CVE catalog removed" }),
+    });
+
+  return (
+    <Card withBorder component="section" aria-labelledby="cve-h">
+      <Title order={2} size="h4" id="cve-h" mb="sm">Local CVE catalog</Title>
+      <Text size="sm" c="dimmed" mb="sm">
+        Never fetched automatically. Import a JSON file mapping product/version ranges to CVE
+        IDs; matching against detected components stays defensible — an ambiguous match is
+        shown as a review candidate, never a confirmed vulnerability.
+      </Text>
+      {catalog.isPending ? (
+        <Loading label="Checking catalog status…" />
+      ) : catalog.isError ? (
+        <ErrorAlert error={catalog.error} />
+      ) : !catalog.data ? (
+        <Text size="sm" c="dimmed" mb="sm">No catalog imported yet.</Text>
+      ) : (
+        <Stack gap="xs" mb="sm">
+          <Group gap="xs">
+            <Badge variant="outline">{catalog.data.source}</Badge>
+            <Badge variant="outline">v{catalog.data.catalog_version}</Badge>
+            <Badge variant="outline">{catalog.data.entry_count} entries</Badge>
+            {catalog.data.is_stale && <Badge color="yellow">Stale (&gt;{catalog.data.stale_after_days}d old)</Badge>}
+          </Group>
+          <Text size="xs" c="dimmed">
+            Imported {formatDateTime(catalog.data.imported_at)} · parser {catalog.data.parser_version} · sha256 {catalog.data.file_sha256.slice(0, 16)}…
+          </Text>
+          {catalog.data.warnings.length > 0 && (
+            <Text size="xs" c="dimmed">{catalog.data.warnings.length} entries were skipped on import (malformed).</Text>
+          )}
+        </Stack>
+      )}
+      <Group>
+        <FileButton onChange={onFile} accept="application/json,.json">
+          {(props) => <Button {...props} variant="default" loading={importMutation.isPending}>Import catalog file…</Button>}
+        </FileButton>
+        {catalog.data && (
+          <Button color="red" variant="light" onClick={onDelete} loading={deleteMutation.isPending}>
+            Remove catalog
+          </Button>
+        )}
+      </Group>
+    </Card>
+  );
+}
+
+function ToolPathSettingsCard() {
+  const settings = useSettings();
+  const update = useUpdateSettings();
+  const [nmapPath, setNmapPath] = useState("");
+  const [sslyzePath, setSslyzePath] = useState("");
+  const [testsslPath, setTestsslPath] = useState("");
+  const [credentialAlias, setCredentialAlias] = useState("");
+  const [loadedRevision, setLoadedRevision] = useState<number | null>(null);
+
+  // Pre-fill the draft fields from the loaded settings exactly once per fetch, so saving
+  // without touching a field preserves its current value instead of blanking it out.
+  useEffect(() => {
+    if (settings.data && settings.data.revision !== loadedRevision) {
+      setNmapPath(settings.data.integrations.nmap_path);
+      setSslyzePath(settings.data.integrations.sslyze_path);
+      setTestsslPath(settings.data.integrations.testssl_path);
+      setLoadedRevision(settings.data.revision);
+    }
+  }, [settings.data, loadedRevision]);
+
+  const save = () => {
+    update.mutate(
+      {
+        expected_revision: settings.data?.revision,
+        integrations: {
+          nmap_path: nmapPath,
+          sslyze_path: sslyzePath,
+          testssl_path: testsslPath,
+          ...(credentialAlias ? { online_lookup_credential_alias: credentialAlias } : {}),
+        },
+      },
+      {
+        onSuccess: () => {
+          notifications.show({ color: "green", message: "Settings saved" });
+          setCredentialAlias("");
+        },
+        onError: (e) => notifications.show({ color: "red", title: "Save failed", message: e instanceof ApiError ? e.describe() : "Unexpected error" }),
+      },
+    );
+  };
+
+  return (
+    <Card withBorder component="section" aria-labelledby="tool-paths-h">
+      <Title order={2} size="h4" id="tool-paths-h" mb="sm">Tool path overrides</Title>
+      <Text size="sm" c="dimmed" mb="sm">
+        Leave blank to auto-detect from PATH. Paths must be absolute.
+      </Text>
+      <QueryState query={settings} loadingLabel="Loading settings…">
+        {(current) => (
+          <Stack gap="sm">
+            <TextInput
+              label="Nmap path" placeholder="auto-detect"
+              value={nmapPath} onChange={(e) => setNmapPath(e.currentTarget.value)}
+            />
+            <TextInput
+              label="sslyze path" placeholder="auto-detect"
+              value={sslyzePath} onChange={(e) => setSslyzePath(e.currentTarget.value)}
+            />
+            <TextInput
+              label="testssl.sh path" placeholder="auto-detect"
+              value={testsslPath} onChange={(e) => setTestsslPath(e.currentTarget.value)}
+            />
+            <TextInput
+              type="password"
+              label="Online lookup credential (write-only)"
+              description='Reserved for a future opt-in online data source. Must be a reference like "env:NAME" or "keychain:NAME" — never a raw secret. Left blank, nothing is changed; this value is never shown once saved.'
+              placeholder={current.integrations.online_lookup_credential_alias ? "•••• (already set)" : "env:NAME"}
+              value={credentialAlias} onChange={(e) => setCredentialAlias(e.currentTarget.value)}
+            />
+            <Group>
+              <Button onClick={save} loading={update.isPending} w="fit-content">Save</Button>
+              <Anchor size="sm" href="https://nvd.nist.gov" target="_blank" rel="noreferrer" c="dimmed">
+                No online lookup is active in this build
+              </Anchor>
+            </Group>
+          </Stack>
+        )}
+      </QueryState>
+    </Card>
+  );
+}

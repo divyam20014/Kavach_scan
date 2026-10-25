@@ -78,6 +78,12 @@ SYSTEM_ROUTES = {
     "/api/projects/{project_id}/backup/export",
     "/api/backup/preview",
     "/api/backup/restore",
+    # Phase 11
+    "/api/settings",
+    "/api/integrations",
+    "/api/integrations/{tool_id}/selftest",
+    "/api/cve-catalog",
+    "/api/cve-catalog/import",
 }
 
 # No lifespan: these endpoints must work without storage.
@@ -147,7 +153,7 @@ def test_unknown_routes_are_404_not_fake_200() -> None:
     for method, path in [
         ("POST", "/api/projects/x/notifications"),
         ("POST", "/api/reports"),
-        ("GET", "/api/integrations"),
+        ("GET", "/api/integrations/unknown-tool/history"),
     ]:
         resp = bare.request(method, path)
         assert resp.status_code == 404, (method, path)

@@ -25,6 +25,7 @@ CURRENT_VERSIONS: dict[str, int] = {
     "report": 1,
     "settings": 1,
     "audit": 1,
+    "cve_catalog": 1,
 }
 
 Migration = Callable[[dict[str, Any]], dict[str, Any]]

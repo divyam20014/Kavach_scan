@@ -37,6 +37,7 @@ from app.models.common import (
     is_valid_id,
     utc_now,
 )
+from app.models.cve_catalog import CveCatalogRecord
 from app.models.evidence import MAX_EXCERPT_CHARS, EvidenceMetadata
 from app.models.finding import Finding
 from app.models.import_artifact import ImportArtifact
@@ -82,6 +83,8 @@ LAYOUT_DIRS = (
     "locks",
     "jobs",
     "control",
+    "cve_catalog",
+    "diagnostics",
 )
 JOB_SUBDIRS = ("spool", "claims")
 MAX_BLOB_BYTES = 10 * 1024 * 1024
@@ -984,6 +987,14 @@ class StorageRepository:
         ensure_dir(directory)
         return directory
 
+    def diagnostics_temp_dir(self) -> Path:
+        """Scratch directory for the integrations self-test (Phase 11): running a tool's
+        `--version` is not tied to any scan or project, but `run_process` still requires a
+        real working/temp directory handed to the subprocess."""
+        directory = self.paths.path("diagnostics", "tmp")
+        ensure_dir(directory)
+        return directory
+
     def read_scan_output(
         self, project_id: str, scan_id: str, name: str, *, max_bytes: int = 8 * 1024 * 1024
     ) -> bytes:
@@ -1187,6 +1198,31 @@ class StorageRepository:
                 settings = AppSettings.model_validate(data)
             self._write_model(path, settings)
         return settings
+
+    # ------------------------------------------------------------------ CVE catalog (Phase 11)
+
+    def _cve_catalog_path(self) -> Path:
+        return self.paths.path("cve_catalog", "catalog.json")
+
+    def get_cve_catalog(self) -> CveCatalogRecord | None:
+        path = self._cve_catalog_path()
+        if not path.exists():
+            return None
+        return self._read_model(path, "cve_catalog", CveCatalogRecord)  # type: ignore[no-any-return]
+
+    def save_cve_catalog(self, record: CveCatalogRecord) -> CveCatalogRecord:
+        path = self._cve_catalog_path()
+        with self._lock(path):
+            current = self.get_cve_catalog()
+            if current is not None:
+                record = record.model_copy(update={"revision": current.revision + 1})
+            self._write_model(path, record)
+        return record
+
+    def delete_cve_catalog(self) -> None:
+        path = self._cve_catalog_path()
+        with self._lock(path):
+            path.unlink(missing_ok=True)
 
     # ------------------------------------------------------------------ indexes
 
@@ -1492,6 +1528,7 @@ _MODELS: dict[str, type[BaseModel]] = {
     "import": ImportArtifact,
     "report": ReportMetadata,
     "settings": AppSettings,
+    "cve_catalog": CveCatalogRecord,
 }
 assert set(_MODELS) | {"audit"} == set(CURRENT_VERSIONS)  # noqa: S101 - import-time consistency check
 ID_PATTERN = ANY_ID_RE
