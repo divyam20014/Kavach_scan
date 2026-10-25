@@ -11,7 +11,7 @@ Allowed flags (and nothing else; `validate_argv` enforces it):
   -n               no reverse DNS
   --unprivileged   never use raw sockets even if run with privileges
   --max-retries 1, --host-timeout <=300s, --max-rate <=50
-  -p <explicit comma list, at most 100 ports, no ranges, no "-">
+  -p <explicit comma list, at most 1000 ports, no ranges, no "-">
   -oX -            XML to stdout
 Never: -sS/-sU/-sN/-sF/-sX/-sA, -A, -O, -sV, --script/-sC, -p-, -T4/-T5, decoys (-D),
 spoofing (-S, --spoof-mac), fragmentation (-f, --mtu), source port (-g), proxies.
@@ -25,7 +25,7 @@ from dataclasses import dataclass, field
 
 from app.integrations.process import find_executable
 
-MAX_PORTS = 100
+MAX_PORTS = 1000
 MAX_TARGETS = 64
 MAX_XML_BYTES = 8 * 1024 * 1024
 MAX_HOST_TIMEOUT = 300

@@ -23,8 +23,10 @@ _RANK = {Confidence.POTENTIAL: 0, Confidence.PROBABLE: 1, Confidence.CONFIRMED: 
 
 HEADER_PRODUCTS = re.compile(r"(?P<name>[A-Za-z][\w.+-]{1,40})(?:/(?P<version>\d+(?:\.\d+){0,3}))?")
 ASSET_LIBRARIES = re.compile(
-    r"(?i)(?P<name>jquery-ui|jquery|bootstrap|angular(?:js)?|react-dom|react|vue|lodash|moment|"
-    r"handlebars|backbone|underscore|dojo|ember|knockout)"
+    r"(?i)(?P<name>jquery-ui|jquery|bootstrap|angular(?:js)?|react-dom|react|vue-router|vue|"
+    r"lodash|moment|handlebars|backbone|underscore|dojo|ember|knockout|axios|popper(?:\.js)?|"
+    r"chart(?:\.js)?|d3|three(?:\.js)?|swiper|select2|fontawesome|font-awesome|redux|"
+    r"socket\.io)"
     r"(?:[-.@/]|\.min[-.])v?(?P<version>\d+\.\d+(?:\.\d+)?)"
 )
 GENERATOR = re.compile(r"(?P<name>[A-Za-z][\w !.-]{1,40}?)\s*v?(?P<version>\d+(?:\.\d+){0,3})?\s*$")

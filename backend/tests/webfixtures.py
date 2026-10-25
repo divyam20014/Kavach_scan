@@ -99,6 +99,14 @@ class LabHandler(_Logged):
     def do_HEAD(self) -> None:  # noqa: N802
         self.do_GET()
 
+    def do_OPTIONS(self) -> None:  # noqa: N802
+        self._record()
+        # Deliberately advertises TRACE so WEB-METHOD-001's finding path is exercised
+        # end to end; nothing here ever sends a TRACE request itself.
+        self.send_response(204)
+        self.send_header("Allow", "GET, HEAD, OPTIONS, TRACE")
+        self.end_headers()
+
     def do_GET(self) -> None:  # noqa: N802
         self._record()
         if type(self).delay:

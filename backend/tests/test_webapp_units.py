@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.integrations.http_service import Hop, HttpExchange
-from app.models.common import ScanModule
+from app.models.common import ScanModule, Severity
 from app.models.project import ScanPolicy
 from app.scanners.webapp.checks import PassiveChecks, csp_weaknesses
 from app.scanners.webapp.components import (
@@ -30,7 +30,7 @@ from tests.webfixtures import lab_project
 
 
 def test_catalog_is_versioned_and_complete() -> None:
-    assert CATALOG_VERSION == "1.0.0"
+    assert CATALOG_VERSION == "1.1.0"
     web_rules = [r for r in RULES.values() if r.rule_id.startswith("WEB-")]
     for rule in web_rules:
         assert rule.title and rule.summary
@@ -249,6 +249,72 @@ def test_open_redirect_indicator_is_passive() -> None:
     )
     assert out["WEB-REDIR-001"][0].outcome == Outcome.FINDING
     assert "not requested" in out["WEB-REDIR-001"][0].detail
+
+
+def test_mixed_content_detected_on_https_page_only() -> None:
+    body = b'<html><script src="http://cdn.example/a.js"></script></html>'
+    https_out = _run("https://a.example/", [], body)
+    http_out = _run("http://a.example/", [], body)
+    assert https_out["WEB-MIXED-001"][0].outcome == Outcome.FINDING
+    assert "http://cdn.example/a.js" in https_out["WEB-MIXED-001"][0].rationale
+    assert "WEB-MIXED-001" not in http_out  # the rule only applies to HTTPS pages
+
+
+def test_mixed_content_passes_when_all_resources_are_https() -> None:
+    body = b'<html><script src="https://cdn.example/a.js"></script></html>'
+    out = _run("https://a.example/", [], body)
+    assert out["WEB-MIXED-001"][0].outcome == Outcome.PASS
+
+
+def test_sri_missing_on_third_party_script_only() -> None:
+    third_party = _run(
+        "https://a.example/", [], b'<html><script src="https://cdn.other/a.js"></script></html>'
+    )
+    assert third_party["WEB-SRI-001"][0].outcome == Outcome.FINDING
+    with_integrity = _run(
+        "https://a.example/",
+        [],
+        b'<html><script src="https://cdn.other/a.js" integrity="sha384-abc"></script></html>',
+    )
+    assert with_integrity["WEB-SRI-001"][0].outcome == Outcome.PASS
+    same_origin = _run(
+        "https://a.example/", [], b'<html><script src="https://a.example/a.js"></script></html>'
+    )
+    assert same_origin["WEB-SRI-001"][0].outcome == Outcome.PASS
+
+
+def test_password_autocomplete_not_disabled_is_a_finding() -> None:
+    exposed = _run(
+        "https://a.example/login",
+        [],
+        b"<html><form method=post action=/l><input type=password name=p></form></html>",
+    )
+    assert exposed["WEB-FORM-001"][0].outcome == Outcome.FINDING
+    disabled = _run(
+        "https://a.example/login",
+        [],
+        b"<html><form method=post action=/l autocomplete=off>"
+        b"<input type=password name=p></form></html>",
+    )
+    assert disabled["WEB-FORM-001"][0].outcome == Outcome.PASS
+    no_password = _run(
+        "https://a.example/", [], b"<html><form method=post action=/l><input name=u></form></html>"
+    )
+    assert "WEB-FORM-001" not in no_password  # no password field: not evaluated
+
+
+def test_sensitive_comment_disclosure() -> None:
+    private_key = _run(
+        "http://a.example/",
+        [],
+        b"<html><!-- -----BEGIN RSA PRIVATE KEY----- --></html>",  # secret-scan-ignore: PEM header marker only, no key material, tests the signature detector itself
+    )
+    assert private_key["WEB-INFO-005"][0].outcome == Outcome.FINDING
+    assert private_key["WEB-INFO-005"][0].severity == Severity.MEDIUM
+    internal_ip = _run("http://a.example/", [], b"<html><!-- backend is 10.0.1.5 --></html>")
+    assert internal_ip["WEB-INFO-005"][0].outcome == Outcome.FINDING
+    clean = _run("http://a.example/", [], b"<html><!-- just a normal comment --></html>")
+    assert clean["WEB-INFO-005"][0].outcome == Outcome.PASS
 
 
 def test_aggregation_lists_urls_once_per_origin() -> None:

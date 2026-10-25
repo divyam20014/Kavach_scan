@@ -41,7 +41,7 @@ from app.scanners.webapp.components import (
 from app.scanners.webapp.crawler import Crawler, CrawlResult, PageRecord
 from app.scanners.webapp.findings import FindingWriter, summarize_outcomes
 from app.scanners.webapp.html import HtmlInfo
-from app.scanners.webapp.probes import cors_check, transport_checks
+from app.scanners.webapp.probes import cors_check, http_methods_check, transport_checks
 from app.scanners.webapp.profile import (
     WebScanProfile,
     build_profile,
@@ -186,6 +186,17 @@ class WebAppRunner:
                 ]
                 state.results.append(
                     cors_check(html_pages[0] if html_pages else origin + "/", crawl_service)
+                )
+
+        if profile.enabled("http_methods"):
+            for origin in origins:
+                html_pages = [
+                    p.url
+                    for p in state.crawl.pages
+                    if origin_of(p.url) == origin and p.status and p.status < 300
+                ]
+                state.results.append(
+                    http_methods_check(html_pages[0] if html_pages else origin + "/", crawl_service)
                 )
 
         ctx.stage("tls tool", 80)

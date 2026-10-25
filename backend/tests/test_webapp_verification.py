@@ -103,11 +103,14 @@ LINKED_QUERIES = {
 def test_scanner_sends_no_crafted_input(
     repo: StorageRepository, settings: RuntimeSettings, ports: tuple[int, int]
 ) -> None:
-    """Safe mode: only GET, and every query string sent is one that appeared in a crawled link."""
+    """Safe mode: only GET and the read-only, non-mutating OPTIONS method-enumeration probe
+    (WEB-METHOD-001, one per origin) are ever sent; every query string sent is one that
+    appeared in a crawled link."""
     lab, victim = ports
     pid = repo.create_project(lab_project([lab])).project_id
     _run(repo, settings, pid, f"http://lab.test:{lab}/")
-    assert {h.method for h in LabHandler.hits} == {"GET"}
+    assert {h.method for h in LabHandler.hits} == {"GET", "OPTIONS"}
+    assert sum(h.method == "OPTIONS" for h in LabHandler.hits) == 1  # one per origin, not per page
     sent_queries = {h.path for h in LabHandler.hits if "?" in h.path}
     allowed = {unquote(q) for q in LINKED_QUERIES} | {
         unquote(f"/go?next=http%3A%2F%2Fvictim.test%3A{victim}%2Fsteal")

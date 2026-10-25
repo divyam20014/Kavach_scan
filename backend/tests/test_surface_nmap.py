@@ -51,11 +51,21 @@ def test_validator_rejects_unsafe_argv(args: list[str]) -> None:
 def test_target_and_port_bounds() -> None:
     spec = NmapSpec("/x")
     with pytest.raises(NmapPolicyError):
-        spec.argv(["192.0.2.1"], list(range(1, 200)))  # too many ports
+        spec.argv(["192.0.2.1"], list(range(1, 1200)))  # too many ports (cap is 1000)
     with pytest.raises(NmapPolicyError):
         spec.argv([], [80])  # no targets
     with pytest.raises(NmapPolicyError):
         spec.argv([f"10.0.0.{i}" for i in range(70)], [80])  # too many targets
+
+
+def test_up_to_1000_explicit_ports_are_accepted() -> None:
+    """Widened from 100 ports (TBD-077) so an operator can run an Nmap-'top ports'-scale
+    scan; still a fixed, explicit, no-ranges list — never -p-."""
+    spec = NmapSpec("/x")
+    argv = spec.argv(["192.0.2.1"], list(range(1, 1001)))
+    port_list = argv[argv.index("-p") + 1]
+    assert port_list.count(",") == 999  # exactly 1000 explicit ports, comma separated
+    assert "-" not in port_list  # never a range
 
 
 def test_version_parsing() -> None:

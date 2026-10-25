@@ -23,6 +23,8 @@ from app.scope.engine import ScopePolicy
 
 CORS_TEST_ORIGIN = "https://vapt-cors-check.invalid"
 EXPIRY_WARNING_DAYS = 30
+UNSAFE_METHODS = {"TRACE", "TRACK"}
+NOTEWORTHY_METHODS = {"PUT", "DELETE", "CONNECT"}
 
 
 def _cert_time(value: str) -> datetime | None:
@@ -289,4 +291,57 @@ def cors_check(url: str, service: HttpService) -> CheckResult:
         )
     return CheckResult(
         "WEB-CORS-001", Outcome.PASS, url, f"only a fixed origin is allowed ({acao[:100]})"
+    )
+
+
+def http_methods_check(url: str, service: HttpService) -> CheckResult:
+    """One OPTIONS request per origin; parses the Allow header. Never sends TRACE/PUT/DELETE
+    itself — it only reads what the server advertises as supported."""
+    exchange = service.fetch("OPTIONS", url, follow_redirects=False)
+    response = exchange.response
+    if response is None:
+        return CheckResult(
+            "WEB-METHOD-001",
+            Outcome.ERROR,
+            url,
+            f"request failed: {exchange.error_kind} {exchange.error}"[:300],
+        )
+    allow = response.header("Allow") or response.header("Access-Control-Allow-Methods") or ""
+    methods = {m.strip().upper() for m in allow.split(",") if m.strip()}
+    if not methods:
+        return CheckResult(
+            "WEB-METHOD-001",
+            Outcome.PASS,
+            url,
+            "OPTIONS returned no Allow header (method enumeration not exposed)",
+            status=response.status,
+        )
+    unsafe = methods & UNSAFE_METHODS
+    noteworthy = methods & NOTEWORTHY_METHODS
+    if unsafe:
+        return CheckResult(
+            "WEB-METHOD-001",
+            Outcome.FINDING,
+            url,
+            f"TRACE/TRACK method enabled (advertised methods: {', '.join(sorted(methods))})",
+            status=response.status,
+            detail=f"Allow: {allow[:200]}",
+            evidence=http_evidence(exchange),
+        )
+    if noteworthy:
+        return CheckResult(
+            "WEB-METHOD-001",
+            Outcome.OBSERVATION,
+            url,
+            f"potentially state-changing methods advertised: {', '.join(sorted(noteworthy))}",
+            severity=Severity.INFORMATIONAL,
+            status=response.status,
+            detail=f"Allow: {allow[:200]}",
+        )
+    return CheckResult(
+        "WEB-METHOD-001",
+        Outcome.PASS,
+        url,
+        f"only expected methods advertised: {', '.join(sorted(methods))}",
+        status=response.status,
     )

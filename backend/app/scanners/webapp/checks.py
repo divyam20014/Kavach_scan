@@ -12,7 +12,7 @@ import re
 from collections import defaultdict
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from urllib.parse import parse_qsl, unquote, urlsplit
+from urllib.parse import parse_qsl, unquote, urljoin, urlsplit
 
 from app.integrations.http_service import HttpExchange
 from app.models.common import Severity
@@ -102,6 +102,30 @@ DB_ERRORS = [
     ("Oracle", re.compile(r"\bORA-\d{5}\b")),
     ("SQLite", re.compile(r"SQLite3::SQLException|sqlite3\.OperationalError|SQLITE_ERROR")),
     ("Generic PDO", re.compile(r"SQLSTATE\[\w+\]")),
+]
+# (label, pattern, severity override — None keeps the rule default)
+COMMENT_SIGNATURES: list[tuple[str, re.Pattern[str], Severity | None]] = [
+    (
+        "private key material",
+        re.compile(r"-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----"),
+        Severity.MEDIUM,
+    ),
+    (
+        "internal/private IP address",
+        re.compile(
+            r"\b(?:10\.\d{1,3}\.\d{1,3}\.\d{1,3}|172\.(?:1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}|"
+            r"192\.168\.\d{1,3}\.\d{1,3})\b"
+        ),
+        None,
+    ),
+    (
+        "developer note referencing a credential or secret",
+        re.compile(
+            r"(?i)\b(?:TODO|FIXME|XXX|HACK)\b.{0,80}\b"
+            r"(?:password|secret|api[_-]?key|token|credential)\b"
+        ),
+        Severity.INFORMATIONAL,
+    ),
 ]
 
 
@@ -394,6 +418,14 @@ class PassiveChecks:
         # --- unsafe redirect indicators (passive; the destination was never requested)
         self._redirect_indicator(page, exchange, fail)
 
+        # --- mixed content, missing SRI, password-field autocomplete, comment disclosure
+        if is_html and ok and info is not None:
+            self._mixed_content(url, origin, https, info, fail)
+            self._subresource_integrity(url, origin, info, fail)
+            self._password_autocomplete(origin, info, fail)
+        if info is not None and info.comments:
+            self._comment_disclosure(origin, info, fail)
+
     def _signatures(self, url: str, origin: str, body: str, fail: FailFn, *, is_html: bool) -> None:
         report = fail
         for rule, catalog in (("WEB-INFO-002", DEBUG_SIGNATURES), ("WEB-DBERR-001", DB_ERRORS)):
@@ -431,6 +463,75 @@ class PassiveChecks:
                         detail=f"Matched signature: {label}",
                     )
                     break
+
+    def _mixed_content(
+        self, url: str, origin: str, https: bool, info: HtmlInfo, fail: FailFn
+    ) -> None:
+        if not https:
+            return
+        self.agg.evaluated("WEB-MIXED-001", origin)
+        base = info.base_href or url
+        for rt in info.resource_tags:
+            absolute = urljoin(base, rt.src)
+            if absolute.lower().startswith("http://"):
+                fail(
+                    "WEB-MIXED-001",
+                    f"HTTPS page loads a {rt.tag} resource over plain HTTP: {absolute[:200]}",
+                    parameter=rt.tag,
+                    detail=f"{rt.tag} src: {absolute[:300]}",
+                )
+                return  # one finding per page is enough signal; the aggregator lists all pages
+
+    def _subresource_integrity(self, url: str, origin: str, info: HtmlInfo, fail: FailFn) -> None:
+        self.agg.evaluated("WEB-SRI-001", origin)
+        base = info.base_href or url
+        page_host = urlsplit(url).hostname
+        for rt in info.resource_tags:
+            if rt.integrity:
+                continue
+            if rt.tag != "script" and not (rt.tag == "link" and "stylesheet" in rt.rel.lower()):
+                continue
+            absolute = urljoin(base, rt.src)
+            host = urlsplit(absolute).hostname
+            if host and host != page_host:
+                fail(
+                    "WEB-SRI-001",
+                    f"third-party {rt.tag} loaded without Subresource Integrity: {absolute[:200]}",
+                    parameter=rt.tag,
+                    detail=f"{rt.tag} src: {absolute[:300]}",
+                )
+                return
+
+    def _password_autocomplete(self, origin: str, info: HtmlInfo, fail: FailFn) -> None:
+        password_forms = [f for f in info.forms if f.has_password]
+        if not password_forms:
+            return
+        self.agg.evaluated("WEB-FORM-001", origin)
+        disabled_values = ("off", "new-password", "current-password")
+        for f in password_forms:
+            if f.autocomplete == "off" or f.password_autocomplete in disabled_values:
+                continue
+            fail(
+                "WEB-FORM-001",
+                "password field does not disable autocomplete",
+                parameter=f.action[:200] or "(same page)",
+                detail=f"form action={f.action[:200] or '(same page)'} method={f.method}",
+            )
+
+    def _comment_disclosure(self, origin: str, info: HtmlInfo, fail: FailFn) -> None:
+        self.agg.evaluated("WEB-INFO-005", origin)
+        for comment in info.comments:
+            for label, pattern, severity in COMMENT_SIGNATURES:
+                m = pattern.search(comment)
+                if m:
+                    fail(
+                        "WEB-INFO-005",
+                        f"{label} found in an HTML comment",
+                        match=m.group(0),
+                        detail=f"Matched signature: {label}",
+                        severity=severity,
+                    )
+                    return
 
     def _reflection(
         self, page: PageRecord, url: str, body: str, fail: FailFn, *, is_html: bool

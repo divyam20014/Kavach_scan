@@ -28,6 +28,7 @@ PARAMETERS: dict[str, tuple[type, Any, str]] = {
     "tls_verify": (bool, True, "Verify TLS certificates (off: crawl hosts with invalid certs)"),
     "check_cors": (bool, True, "Send one request per origin with a test Origin header"),
     "run_tls_tool": (bool, True, "Run sslyze/testssl.sh when installed"),
+    "check_http_methods": (bool, True, "Send one OPTIONS request per origin to read Allow"),
 }
 
 LIMITATIONS = [
@@ -41,6 +42,8 @@ LIMITATIONS = [
     "Sensitive-file probing is not built in; directory listings, debug and default pages "
     "are detected only on pages the crawler reaches.",
     "Without sslyze or testssl.sh no protocol/cipher coverage is claimed.",
+    "HTTP method checks read what the server's own OPTIONS response advertises; they do not "
+    "attempt TRACE/PUT/DELETE/CONNECT against any route.",
 ]
 
 
@@ -98,14 +101,28 @@ GROUPS: list[tuple[str, str, list[str], str | None]] = [
     ("cookies", "Cookie attributes", ["WEB-COOKIE-001", "WEB-COOKIE-002", "WEB-COOKIE-003"], None),
     (
         "disclosure",
-        "Version leakage, debug/default pages, directory listing",
-        ["WEB-INFO-001", "WEB-INFO-002", "WEB-INFO-003", "WEB-INFO-004"],
+        "Version leakage, debug/default pages, directory listing, sensitive HTML comments",
+        ["WEB-INFO-001", "WEB-INFO-002", "WEB-INFO-003", "WEB-INFO-004", "WEB-INFO-005"],
         None,
     ),
     ("sensitive_files", "Sensitive-file exposure probing", ["WEB-FILE-001"], None),
     ("redirects", "Unsafe redirect indicators (passive)", ["WEB-REDIR-001"], None),
     ("cors", "CORS policy", ["WEB-CORS-001"], "check_cors"),
+    (
+        "http_methods",
+        "HTTP method enumeration (OPTIONS)",
+        ["WEB-METHOD-001"],
+        "check_http_methods",
+    ),
     ("caching", "Caching of sensitive-looking responses", ["WEB-CACHE-001"], None),
+    ("mixed_content", "Mixed content on HTTPS pages", ["WEB-MIXED-001"], None),
+    (
+        "subresource_integrity",
+        "Third-party script/stylesheet integrity",
+        ["WEB-SRI-001"],
+        None,
+    ),
+    ("autocomplete", "Password-field autocomplete", ["WEB-FORM-001"], None),
     ("components", "Component/version detection", ["WEB-COMP-001"], None),
     ("cve", "CVE matching (local catalog)", ["WEB-COMP-002"], None),
     (

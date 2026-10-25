@@ -247,6 +247,16 @@ def test_validate_parameters_and_port_plan() -> None:
     assert set(plan.tested) <= set(DEFAULT_PORTS)
 
 
+def test_up_to_1000_explicit_ports_are_accepted_above_1000_rejected() -> None:
+    """Widened from 100 to 1000 ports (TBD-077) for Nmap-'top ports'-scale coverage; the list
+    is still explicit ports only, never a range."""
+    policy = _policy()
+    ports_1000 = ",".join(str(p) for p in range(1, 1001))
+    ports_1001 = ",".join(str(p) for p in range(1, 1002))
+    assert validate_parameters({"ports": ports_1000}, policy.project.scan_policy) == []
+    assert validate_parameters({"ports": ports_1001}, policy.project.scan_policy)
+
+
 def test_port_plan_excludes_out_of_scope_ports() -> None:
     project = surface_project([80, 443])  # only 80,443 in scope
     plan = port_plan({"ports": "80,443,8080"}, ScopePolicy(project))

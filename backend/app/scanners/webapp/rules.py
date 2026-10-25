@@ -20,7 +20,7 @@ from typing import Any
 from app.models.common import Confidence, Severity
 
 CATALOG_ID = "vapt-web-rules"
-CATALOG_VERSION = "1.0.0"
+CATALOG_VERSION = "1.1.0"
 OWASP_VERSION = "2025"
 
 OWASP_TITLES = {
@@ -474,6 +474,87 @@ RULES: dict[str, Rule] = {
             "internals and can indicate unsafe query construction. Passive indicator only.",
             "Return generic errors, log details server-side, use parameterized queries.",
             (_CS + "Error_Handling_Cheat_Sheet.html",),
+            aggregate=False,
+        ),
+        Rule(
+            "WEB-MIXED-001",
+            "Mixed content on an HTTPS page",
+            "transport-security",
+            Kind.PASSIVE,
+            S.LOW,
+            C.CONFIRMED,
+            (319,),
+            "A04",
+            "An HTTPS page loads a script, stylesheet or image over plain HTTP, which a "
+            "network attacker can tamper with (actively-loaded resources such as scripts are "
+            "typically blocked by the browser; passive content such as images is usually "
+            "only a warning).",
+            "Serve every page resource (scripts, stylesheets, images, fonts) over HTTPS.",
+            (_MDN + "../Mixed_content",),
+        ),
+        Rule(
+            "WEB-SRI-001",
+            "Third-party script/stylesheet without Subresource Integrity",
+            "components",
+            Kind.PASSIVE,
+            S.LOW,
+            C.PROBABLE,
+            (353,),
+            "A03",
+            "A <script> or stylesheet <link> is loaded from a different host with no "
+            "integrity attribute, so a compromise of that third party can silently change "
+            "what runs in this page.",
+            'Add a Subresource Integrity (integrity="sha384-...") attribute to third-party '
+            "scripts and stylesheets, or self-host them.",
+            (_MDN + "../Subresource_Integrity",),
+        ),
+        Rule(
+            "WEB-FORM-001",
+            "Password field does not disable autocomplete",
+            "misconfiguration",
+            Kind.PASSIVE,
+            S.LOW,
+            C.PROBABLE,
+            (522,),
+            "A02",
+            'A form with a password field does not set autocomplete="off"/"new-password", '
+            "so a browser or shared/public machine may store or offer to fill the credential.",
+            'Set autocomplete="new-password" (registration/change) or "current-password" '
+            '(login) as appropriate; use "off" only where credential storage must be refused.',
+            (_CS + "Authentication_Cheat_Sheet.html",),
+        ),
+        Rule(
+            "WEB-INFO-005",
+            "Sensitive content in an HTML comment",
+            "information-disclosure",
+            Kind.PASSIVE,
+            S.LOW,
+            C.PROBABLE,
+            (615,),
+            "A02",
+            "An HTML comment in the response contains what looks like private key material, "
+            "an internal/private IP address, or a developer note referencing a credential or "
+            "secret. Passive signature match only; a flagged comment may be harmless.",
+            "Remove comments containing secrets, internal network details or TODO/FIXME notes "
+            "about credentials before shipping to production.",
+            (),
+            aggregate=False,
+        ),
+        Rule(
+            "WEB-METHOD-001",
+            "Potentially unsafe HTTP methods advertised",
+            "misconfiguration",
+            Kind.PROBE,
+            S.MEDIUM,
+            C.CONFIRMED,
+            (650,),
+            "A02",
+            "An OPTIONS request reveals TRACE/TRACK is enabled (cross-site tracing, a known "
+            "XST vector), or that state-changing methods (PUT/DELETE/CONNECT) are advertised, "
+            "which is worth reviewing even though it may be an intentional REST API.",
+            "Disable TRACE/TRACK at the web server. Confirm PUT/DELETE/CONNECT are actually "
+            "intended and properly authenticated and authorized if advertised.",
+            (_CS + "HTTP_Headers_Cheat_Sheet.html",),
             aggregate=False,
         ),
         Rule(

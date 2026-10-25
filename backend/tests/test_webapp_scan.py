@@ -125,6 +125,8 @@ def test_baseline_scan_discovers_pages_and_emits_evidence_backed_results(
         "WEB-REDIR-001",
         "WEB-CORS-001",
         "WEB-CACHE-001",
+        "WEB-FORM-001",
+        "WEB-METHOD-001",
     }
     assert expected <= rules, expected - rules
     for finding in _findings(repo, pid):
@@ -158,6 +160,8 @@ def test_baseline_scan_discovers_pages_and_emits_evidence_backed_results(
         assert (rule, "skipped") in coverage and (rule, "pass") not in coverage, rule
     assert ("WEB-HDR-002", "finding") in coverage
     assert ("WEB-CORS-001", "finding") in coverage
+    assert ("WEB-METHOD-001", "finding") in coverage  # fixture advertises TRACE via OPTIONS
+    assert ("WEB-FORM-001", "finding") in coverage  # home page's password field has no autocomplete
 
 
 def test_scan_never_requests_out_of_scope_or_disallowed_urls(

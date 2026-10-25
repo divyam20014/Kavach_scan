@@ -1,6 +1,8 @@
-# Web Scanner Rule Catalog — `vapt-web-rules` 1.0.0
+# Web Scanner Rule Catalog — `vapt-web-rules` 1.1.0
 
-> Source of truth: `backend/app/scanners/webapp/rules.py` (`CATALOG_VERSION = "1.0.0"`). This document describes it; a change to rule semantics must bump the catalog version and this file.
+> Source of truth: `backend/app/scanners/webapp/rules.py` (`CATALOG_VERSION = "1.1.0"`). This document describes it; a change to rule semantics must bump the catalog version and this file.
+>
+> **1.1.0** added 5 rules (`WEB-MIXED-001`, `WEB-SRI-001`, `WEB-FORM-001`, `WEB-INFO-005`, `WEB-METHOD-001`) to widen passive/probe detection depth toward OWASP ZAP's passive-scan rule set, at the user's request — still no active injection/exploitation input (TBD-049/050 unchanged).
 
 ## Outcomes
 
@@ -56,6 +58,11 @@ OWASP column: OWASP Top 10:2025 category the rule *relates to* (mapping confiden
 | WEB-COMP-002 | CVE matching against a locally imported catalog — skipped without one; never invents CVEs | tool | needs review | 1104 | A03 |
 | WEB-REFL-001 | Parameter value (already present in a crawled link) reflected with unencoded `< > " '` — passive indicator, not confirmed XSS | passive | low / potential | 79 | A05 |
 | WEB-DBERR-001 | Database error signature in a normally crawled response (MySQL, PostgreSQL, SQL Server, Oracle, SQLite, PDO) | passive | medium / probable | 209 | A10 |
+| WEB-MIXED-001 | HTTPS page loads a script/stylesheet/image over plain HTTP | passive | low / confirmed | 319 | A04 |
+| WEB-SRI-001 | Third-party `<script>`/stylesheet `<link>` has no `integrity` attribute | passive | low / probable | 353 | A03 |
+| WEB-FORM-001 | A password field does not disable autocomplete (form- or field-level) | passive | low / probable | 522 | A02 |
+| WEB-INFO-005 | Sensitive content in an HTML comment (private key block, internal/private IP, or a developer note referencing a credential/secret) | passive | low / probable | 615 | A02 |
+| WEB-METHOD-001 | One `OPTIONS` probe per origin: TRACE/TRACK advertised is a finding (medium); PUT/DELETE/CONNECT advertised is an observation | probe | medium / confirmed | 650 | A02 |
 | WEB-INJ-000 | Active injection testing — **not built in** (always skipped; use imported tool results) | tool | — | — | A05 |
 
 ## Aggregation and deduplication

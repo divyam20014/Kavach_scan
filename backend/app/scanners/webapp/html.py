@@ -8,6 +8,8 @@ from html.parser import HTMLParser
 MAX_LINKS = 2000
 MAX_FORMS = 100
 MAX_FIELDS = 100
+MAX_COMMENTS = 200
+MAX_COMMENT_LEN = 500
 
 
 @dataclass
@@ -16,6 +18,18 @@ class FormInfo:
     method: str
     fields: list[str] = field(default_factory=list)
     has_password: bool = False
+    autocomplete: str = ""  # the <form> tag's own autocomplete attribute, lowercased
+    password_autocomplete: str = ""  # the autocomplete attribute on a password <input>
+
+
+@dataclass
+class ResourceTag:
+    """A script/link/img tag's src, kept with enough detail to judge mixed content and SRI."""
+
+    tag: str  # "script" | "link" | "img"
+    src: str
+    rel: str = ""  # link rel="stylesheet" etc.
+    integrity: str = ""
 
 
 @dataclass
@@ -23,6 +37,8 @@ class HtmlInfo:
     title: str = ""
     links: list[str] = field(default_factory=list)  # navigable: a/area/iframe/frame
     resources: list[str] = field(default_factory=list)  # script/link/img src (not crawled)
+    resource_tags: list[ResourceTag] = field(default_factory=list)
+    comments: list[str] = field(default_factory=list)
     forms: list[FormInfo] = field(default_factory=list)
     generator: str = ""
     base_href: str = ""
@@ -47,8 +63,21 @@ class _Extractor(HTMLParser):
             info.links.append(a["src"])
         elif tag in ("script", "img") and a.get("src") and len(info.resources) < MAX_LINKS:
             info.resources.append(a["src"])
+            if len(info.resource_tags) < MAX_LINKS:
+                info.resource_tags.append(
+                    ResourceTag(tag=tag, src=a["src"], integrity=a.get("integrity", "")[:200])
+                )
         elif tag == "link" and a.get("href") and len(info.resources) < MAX_LINKS:
             info.resources.append(a["href"])
+            if len(info.resource_tags) < MAX_LINKS:
+                info.resource_tags.append(
+                    ResourceTag(
+                        tag="link",
+                        src=a["href"],
+                        rel=a.get("rel", "")[:50],
+                        integrity=a.get("integrity", "")[:200],
+                    )
+                )
         elif tag == "base" and a.get("href") and not info.base_href:
             info.base_href = a["href"]
         elif tag == "meta":
@@ -59,7 +88,9 @@ class _Extractor(HTMLParser):
                 info.meta_refresh = a.get("content", "")[:500]
         elif tag == "form" and len(info.forms) < MAX_FORMS:
             self._form = FormInfo(
-                action=a.get("action", ""), method=(a.get("method") or "GET").upper()[:10]
+                action=a.get("action", ""),
+                method=(a.get("method") or "GET").upper()[:10],
+                autocomplete=a.get("autocomplete", "").strip().lower()[:20],
             )
             info.forms.append(self._form)
         elif tag in ("input", "select", "textarea", "button") and self._form is not None:
@@ -68,6 +99,7 @@ class _Extractor(HTMLParser):
                 self._form.fields.append(name[:100])
             if a.get("type", "").lower() == "password":
                 self._form.has_password = True
+                self._form.password_autocomplete = a.get("autocomplete", "").strip().lower()[:20]
 
     def handle_endtag(self, tag: str) -> None:
         if tag == "title":
@@ -78,6 +110,10 @@ class _Extractor(HTMLParser):
     def handle_data(self, data: str) -> None:
         if self._in_title and len(self.info.title) < 300:
             self.info.title += data
+
+    def handle_comment(self, data: str) -> None:
+        if len(self.info.comments) < MAX_COMMENTS:
+            self.info.comments.append(data.strip()[:MAX_COMMENT_LEN])
 
 
 def parse_html(text: str) -> HtmlInfo:
