@@ -57,13 +57,20 @@ class ImportDetail(StrictModel):
 
 def _summary(artifact: ImportArtifact) -> ImportSummary:
     return ImportSummary(
-        import_id=artifact.import_id, revision=artifact.revision,
+        import_id=artifact.import_id,
+        revision=artifact.revision,
         display_filename=artifact.display_filename,
-        sha256=artifact.sha256, size_bytes=artifact.size_bytes, source_type=artifact.source_type,
-        source_tool_version=artifact.source_tool_version, status=artifact.status,
-        uploaded_at=artifact.uploaded_at.isoformat(), parser_version=artifact.parser_version,
-        warnings=artifact.warnings[:200], record_count=artifact.record_count,
-        mapped_count=artifact.mapped_count, rejected_count=artifact.rejected_count,
+        sha256=artifact.sha256,
+        size_bytes=artifact.size_bytes,
+        source_type=artifact.source_type,
+        source_tool_version=artifact.source_tool_version,
+        status=artifact.status,
+        uploaded_at=artifact.uploaded_at.isoformat(),
+        parser_version=artifact.parser_version,
+        warnings=artifact.warnings[:200],
+        record_count=artifact.record_count,
+        mapped_count=artifact.mapped_count,
+        rejected_count=artifact.rejected_count,
     )
 
 
@@ -103,26 +110,45 @@ async def upload_import(
         adapter, result = parse_upload(display, raw, declared=source_type, options=options)
         prev = preview(repo, project_id, adapter, result)
         artifact = ImportArtifact(
-            import_id=new_id("import"), project_id=project_id, display_filename=display,
-            sha256=sha256, size_bytes=len(raw),
+            import_id=new_id("import"),
+            project_id=project_id,
+            display_filename=display,
+            sha256=sha256,
+            size_bytes=len(raw),
             source_type=_coerce_source_type(adapter.source_type),
-            source_tool_version=result.source_tool_version, status="parsed",
-            parser_version=adapter.parser_version, warnings=result.warnings[:1000],
-            record_count=len(result.findings), mapped_count=0,
-            rejected_count=result.rejected_count, source_options=options,
+            source_tool_version=result.source_tool_version,
+            status="parsed",
+            parser_version=adapter.parser_version,
+            warnings=result.warnings[:1000],
+            record_count=len(result.findings),
+            mapped_count=0,
+            rejected_count=result.rejected_count,
+            source_options=options,
         )
     except ImportSafetyError as exc:
         error = str(exc)
         artifact = ImportArtifact(
-            import_id=new_id("import"), project_id=project_id, display_filename=display,
-            sha256=sha256, size_bytes=len(raw), source_type=_coerce_source_type(source_type),
-            status="parse_failed", warnings=[error[:500]], source_options=options,
+            import_id=new_id("import"),
+            project_id=project_id,
+            display_filename=display,
+            sha256=sha256,
+            size_bytes=len(raw),
+            source_type=_coerce_source_type(source_type),
+            status="parse_failed",
+            warnings=[error[:500]],
+            source_options=options,
         )
     created = repo.create_import(artifact, raw)
     repo.audit.record(
-        AuditAction.IMPORT_CREATED, project_id=project_id, target_ids=[created.import_id],
-        metadata={"source_type": created.source_type, "status": created.status,
-                 "sha256": created.sha256, "size_bytes": created.size_bytes},
+        AuditAction.IMPORT_CREATED,
+        project_id=project_id,
+        target_ids=[created.import_id],
+        metadata={
+            "source_type": created.source_type,
+            "status": created.status,
+            "sha256": created.sha256,
+            "size_bytes": created.size_bytes,
+        },
     )
     return ImportDetail(summary=_summary(created), preview=prev, error=error)
 
@@ -137,8 +163,12 @@ def list_imports(project_id: str, repo: Repository) -> list[ImportSummary]:
 def _reparse(repo: Repository, project_id: str, import_id: str) -> tuple[ImportArtifact, Any, Any]:
     artifact = repo.get_import(project_id, import_id)
     raw = repo.read_import_raw(project_id, import_id)
-    adapter, result = parse_upload(artifact.display_filename, raw, declared=artifact.source_type,
-                                   options=artifact.source_options or None)
+    adapter, result = parse_upload(
+        artifact.display_filename,
+        raw,
+        declared=artifact.source_type,
+        options=artifact.source_options or None,
+    )
     return artifact, adapter, result
 
 
@@ -170,8 +200,9 @@ class CommitRequest(StrictModel):
 
 
 @router.post("/projects/{project_id}/imports/{import_id}/commit", response_model=CommitResponse)
-def commit_import(project_id: str, import_id: str, body: CommitRequest,
-                  repo: Repository) -> CommitResponse:
+def commit_import(
+    project_id: str, import_id: str, body: CommitRequest, repo: Repository
+) -> CommitResponse:
     """Normalizes and merges the parsed records into the project's canonical findings/assets.
     Requires explicit confirmation; rejects a second commit of the same import (409)."""
     if not body.confirmed:
@@ -183,21 +214,34 @@ def commit_import(project_id: str, import_id: str, body: CommitRequest,
         raise ConflictError("The import record changed since it was loaded; reload and retry")
     _artifact, adapter, result = _reparse(repo, project_id, import_id)
     summary = commit(repo, project_id, import_id, adapter, result)
-    updated = repo.update_import(project_id, import_id, {
-        "status": "committed",
-        "mapped_count": summary.findings_created + summary.findings_reobserved,
-    }, expected_revision=body.expected_revision)
-    repo.audit.record(
-        AuditAction.IMPORT_COMMITTED, project_id=project_id, target_ids=[import_id],
-        metadata={"findings_created": summary.findings_created,
-                 "findings_reobserved": summary.findings_reobserved,
-                 "assets_created": summary.assets_created, "assets_updated": summary.assets_updated,
-                 "source_type": updated.source_type},
+    updated = repo.update_import(
+        project_id,
+        import_id,
+        {
+            "status": "committed",
+            "mapped_count": summary.findings_created + summary.findings_reobserved,
+        },
+        expected_revision=body.expected_revision,
     )
-    return CommitResponse(import_id=import_id, findings_created=summary.findings_created,
-                          findings_reobserved=summary.findings_reobserved,
-                          assets_created=summary.assets_created,
-                          assets_updated=summary.assets_updated)
+    repo.audit.record(
+        AuditAction.IMPORT_COMMITTED,
+        project_id=project_id,
+        target_ids=[import_id],
+        metadata={
+            "findings_created": summary.findings_created,
+            "findings_reobserved": summary.findings_reobserved,
+            "assets_created": summary.assets_created,
+            "assets_updated": summary.assets_updated,
+            "source_type": updated.source_type,
+        },
+    )
+    return CommitResponse(
+        import_id=import_id,
+        findings_created=summary.findings_created,
+        findings_reobserved=summary.findings_reobserved,
+        assets_created=summary.assets_created,
+        assets_updated=summary.assets_updated,
+    )
 
 
 class SupportedFormat(StrictModel):

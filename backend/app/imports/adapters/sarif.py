@@ -38,9 +38,13 @@ class SarifAdapter:
             obj = json.loads(raw)
         except (json.JSONDecodeError, UnicodeDecodeError):
             return False
-        return isinstance(obj, dict) and "runs" in obj and (
-            "sarif" in str(obj.get("$schema", "")).lower() or
-            str(obj.get("version", "")).startswith("2.")
+        return (
+            isinstance(obj, dict)
+            and "runs" in obj
+            and (
+                "sarif" in str(obj.get("$schema", "")).lower()
+                or str(obj.get("version", "")).startswith("2.")
+            )
         )
 
     def parse(self, raw: bytes, *, options: dict[str, Any] | None = None) -> ParseResult:
@@ -58,14 +62,18 @@ class SarifAdapter:
         for run in doc["runs"]:
             if not isinstance(run, dict):
                 continue
-            raw_driver = ((run.get("tool") or {}).get("driver")
-                         if isinstance(run.get("tool"), dict) else {})
+            raw_driver = (
+                (run.get("tool") or {}).get("driver") if isinstance(run.get("tool"), dict) else {}
+            )
             driver: dict[str, Any] = raw_driver if isinstance(raw_driver, dict) else {}
             tool_name = str(driver.get("name", "unknown-tool"))
             tool_version = str(driver.get("version", ""))
             tools.append(f"{tool_name} {tool_version}".strip())
-            rules = {str(r.get("id")): r for r in driver.get("rules", []) if isinstance(r, dict)
-                     and r.get("id")}
+            rules = {
+                str(r.get("id")): r
+                for r in driver.get("rules", [])
+                if isinstance(r, dict) and r.get("id")
+            }
             for res in run.get("results", []) or []:
                 row += 1
                 try:
@@ -74,13 +82,15 @@ class SarifAdapter:
                     result.rejected_count += 1
                     result.warn(f"result {row}: could not normalize ({type(exc).__name__})")
         result.source_tool_version = (
-            (f"SARIF {version}; " + ", ".join(tools)) if tools else f"SARIF {version}")
+            (f"SARIF {version}; " + ", ".join(tools)) if tools else f"SARIF {version}"
+        )
         if row == 0:
             result.warn("SARIF document contained no results")
         return result
 
-    def _parse_result(self, res: Any, rules: dict[str, Any], tool_name: str,
-                      result: ParseResult) -> None:
+    def _parse_result(
+        self, res: Any, rules: dict[str, Any], tool_name: str, result: ParseResult
+    ) -> None:
         if not isinstance(res, dict):
             result.rejected_count += 1
             result.warn("a result entry was not an object; skipped")
@@ -90,24 +100,33 @@ class SarifAdapter:
         default_config: dict[str, Any] = rule.get("defaultConfiguration") or {}
         level = str(res.get("level") or default_config.get("level") or "warning").lower()
         severity = _LEVEL_TO_SEVERITY.get(level, Severity.MEDIUM)
-        message = (self._text(res.get("message")) or
-                  self._text(rule.get("shortDescription")) or rule_id)
+        message = (
+            self._text(res.get("message")) or self._text(rule.get("shortDescription")) or rule_id
+        )
         description = self._text(rule.get("fullDescription")) or self._text(rule.get("help"))
         tags: list[str] = []
         props: dict[str, Any] = rule.get("properties") or {}
         if isinstance(props.get("tags"), list):
             tags = [str(t) for t in props["tags"]][:20]
         uri, line = self._location(res)
-        result.findings.append(ParsedFinding(
-            title=truncate(message, 300) or rule_id or "SARIF finding",
-            severity=severity, confidence=normalize_confidence(None),
-            original_severity=level, original_confidence="",
-            summary=truncate(description or message),
-            technical_detail=truncate(f"rule={rule_id} tool={tool_name} location={uri}:{line}"),
-            category=truncate(",".join(tags), 200), component=truncate(uri, 500),
-            parameter=str(line) if line else "", cwe_ids=extract_cwe_ids(*tags, rule_id),
-            rule_id=rule_id, source_finding_id=truncate(f"{rule_id}@{uri}:{line}", 300),
-            references=[str(h) for h in (rule.get("helpUri"),) if h][:5]))
+        result.findings.append(
+            ParsedFinding(
+                title=truncate(message, 300) or rule_id or "SARIF finding",
+                severity=severity,
+                confidence=normalize_confidence(None),
+                original_severity=level,
+                original_confidence="",
+                summary=truncate(description or message),
+                technical_detail=truncate(f"rule={rule_id} tool={tool_name} location={uri}:{line}"),
+                category=truncate(",".join(tags), 200),
+                component=truncate(uri, 500),
+                parameter=str(line) if line else "",
+                cwe_ids=extract_cwe_ids(*tags, rule_id),
+                rule_id=rule_id,
+                source_finding_id=truncate(f"{rule_id}@{uri}:{line}", 300),
+                references=[str(h) for h in (rule.get("helpUri"),) if h][:5],
+            )
+        )
         result.parsed_count += 1
 
     @staticmethod

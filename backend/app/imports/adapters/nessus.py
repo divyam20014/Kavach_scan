@@ -33,8 +33,9 @@ class NessusAdapter:
     parser_version = PARSER_VERSION
 
     def sniff(self, filename: str, raw: bytes) -> bool:
-        return (filename.lower().endswith(".nessus") or
-                (filename.lower().endswith(".xml") and b"NessusClientData" in raw[:65536]))
+        return filename.lower().endswith(".nessus") or (
+            filename.lower().endswith(".xml") and b"NessusClientData" in raw[:65536]
+        )
 
     def parse(self, raw: bytes, *, options: dict[str, Any] | None = None) -> ParseResult:
         result = ParseResult()
@@ -52,12 +53,20 @@ class NessusAdapter:
             ip = props.get("host-ip", "") or host_name
             fqdn = props.get("host-fqdn", "")
             if ip:
-                result.assets.append(ParsedAsset(asset_type="ip", locator=ip,
-                                                 parent_locator=fqdn or None,
-                                                 observation="imported from Nessus"))
+                result.assets.append(
+                    ParsedAsset(
+                        asset_type="ip",
+                        locator=ip,
+                        parent_locator=fqdn or None,
+                        observation="imported from Nessus",
+                    )
+                )
             if fqdn:
-                result.assets.append(ParsedAsset(asset_type="hostname", locator=fqdn,
-                                                 observation="imported from Nessus"))
+                result.assets.append(
+                    ParsedAsset(
+                        asset_type="hostname", locator=fqdn, observation="imported from Nessus"
+                    )
+                )
             for item in host.findall("ReportItem"):
                 row += 1
                 try:
@@ -87,17 +96,24 @@ class NessusAdapter:
         summary = synopsis or description
         if cves:
             summary = (summary + "\n\nCVE: " + ", ".join(cves[:20])).strip()
-        result.findings.append(ParsedFinding(
-            title=truncate(plugin_name, 300), severity=severity,
-            confidence=normalize_confidence(None, weak_evidence=False),
-            original_severity=original or (cvss or ""), original_confidence="",
-            summary=summary, technical_detail=description,
-            remediation=solution, host=host, parameter=f"{port}/{protocol}",
-            component=truncate(plugin_name, 300),
-            cwe_ids=extract_cwe_ids(xrefs),
-            rule_id=f"nessus-{plugin_id}",
-            source_finding_id=f"{host}:{port}/{protocol}#{plugin_id}",
-        ))
+        result.findings.append(
+            ParsedFinding(
+                title=truncate(plugin_name, 300),
+                severity=severity,
+                confidence=normalize_confidence(None, weak_evidence=False),
+                original_severity=original or (cvss or ""),
+                original_confidence="",
+                summary=summary,
+                technical_detail=description,
+                remediation=solution,
+                host=host,
+                parameter=f"{port}/{protocol}",
+                component=truncate(plugin_name, 300),
+                cwe_ids=extract_cwe_ids(xrefs),
+                rule_id=f"nessus-{plugin_id}",
+                source_finding_id=f"{host}:{port}/{protocol}#{plugin_id}",
+            )
+        )
         result.parsed_count += 1
 
 

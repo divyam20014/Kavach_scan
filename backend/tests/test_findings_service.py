@@ -23,8 +23,11 @@ def test_module_for_uses_the_documented_rule_id_prefixes() -> None:
     assert svc.module_for(make_finding(pid, rule_id="WEB-TLS-001")) == "web_app"
     assert svc.module_for(make_finding(pid, rule_id="SURF-SVC-001")) == "attack_surface"
     assert svc.module_for(make_finding(pid, rule_id="API-AUTH-001")) == "api_security"
-    imported = make_finding(pid, rule_id="nmap-open-mysql",
-                            sources=[FindingSource(tool="Nmap XML", import_id=new_id("import"))])
+    imported = make_finding(
+        pid,
+        rule_id="nmap-open-mysql",
+        sources=[FindingSource(tool="Nmap XML", import_id=new_id("import"))],
+    )
     assert svc.module_for(imported) == "import"
     assert svc.module_for(make_finding(pid, rule_id="")) == "unknown"
 
@@ -33,7 +36,9 @@ def test_list_findings_filters_by_severity_and_free_text_search(repo: StorageRep
     pid = _project(repo)
     repo.create_finding(make_finding(pid, title="Reflected XSS in search", severity="high"))
     repo.create_finding(make_finding(pid, title="Outdated jQuery", severity="low"))
-    page = svc.list_findings(repo, filters=svc.FindingListFilters(project_id=pid, severity={Severity.HIGH}))
+    page = svc.list_findings(
+        repo, filters=svc.FindingListFilters(project_id=pid, severity={Severity.HIGH})
+    )
     assert page.total == 1 and page.items[0].finding.title == "Reflected XSS in search"
     page2 = svc.list_findings(repo, filters=svc.FindingListFilters(project_id=pid, q="jquery"))
     assert page2.total == 1 and page2.items[0].finding.title == "Outdated jQuery"
@@ -52,23 +57,29 @@ def test_list_findings_filters_by_cwe_and_mapping(repo: StorageRepository) -> No
 def test_list_findings_reviewed_filter_tracks_analyst_status(repo: StorageRepository) -> None:
     pid = _project(repo)
     f = repo.create_finding(make_finding(pid, title="New one"))
-    svc.update_finding(repo, pid, f.finding_id,
-                       changes={"analyst_status": "confirmed"}, expected_revision=1)
+    svc.update_finding(
+        repo, pid, f.finding_id, changes={"analyst_status": "confirmed"}, expected_revision=1
+    )
     repo.create_finding(make_finding(pid, title="Still new"))
-    reviewed = svc.list_findings(repo, filters=svc.FindingListFilters(project_id=pid, reviewed=True))
+    reviewed = svc.list_findings(
+        repo, filters=svc.FindingListFilters(project_id=pid, reviewed=True)
+    )
     assert reviewed.total == 1 and reviewed.items[0].finding.title == "New one"
-    unreviewed = svc.list_findings(repo, filters=svc.FindingListFilters(project_id=pid, reviewed=False))
+    unreviewed = svc.list_findings(
+        repo, filters=svc.FindingListFilters(project_id=pid, reviewed=False)
+    )
     assert unreviewed.total == 1 and unreviewed.items[0].finding.title == "Still new"
 
 
 def test_list_findings_sorts_by_risk_score(repo: StorageRepository) -> None:
     pid = _project(repo)
-    repo.create_finding(make_finding(pid, title="low risk", severity="low",
-                                     confidence="potential"))
-    repo.create_finding(make_finding(pid, title="high risk", severity="critical",
-                                     confidence="confirmed"))
-    page = svc.list_findings(repo, filters=svc.FindingListFilters(project_id=pid),
-                             sort="risk_score", descending=True)
+    repo.create_finding(make_finding(pid, title="low risk", severity="low", confidence="potential"))
+    repo.create_finding(
+        make_finding(pid, title="high risk", severity="critical", confidence="confirmed")
+    )
+    page = svc.list_findings(
+        repo, filters=svc.FindingListFilters(project_id=pid), sort="risk_score", descending=True
+    )
     assert [it.finding.title for it in page.items] == ["high risk", "low risk"]
 
 
@@ -78,8 +89,9 @@ def test_merged_findings_are_excluded_by_default_but_visible_on_request(
     pid = _project(repo)
     original = repo.create_finding(make_finding(pid, title="Original"))
     dup = repo.create_finding(make_finding(pid, title="Duplicate"))
-    svc.merge_finding(repo, pid, dup.finding_id, into_finding_id=original.finding_id,
-                      expected_revision=1)
+    svc.merge_finding(
+        repo, pid, dup.finding_id, into_finding_id=original.finding_id, expected_revision=1
+    )
     default_page = svc.list_findings(repo, filters=svc.FindingListFilters(project_id=pid))
     assert default_page.total == 1
     with_merged = svc.list_findings(
@@ -92,22 +104,26 @@ def test_update_finding_rejects_edits_to_scanner_owned_fields(repo: StorageRepos
     pid = _project(repo)
     f = repo.create_finding(make_finding(pid))
     with pytest.raises(ValidationFailedError, match="cannot edit"):
-        svc.update_finding(repo, pid, f.finding_id, changes={"severity": "critical"},
-                           expected_revision=1)
+        svc.update_finding(
+            repo, pid, f.finding_id, changes={"severity": "critical"}, expected_revision=1
+        )
     with pytest.raises(ValidationFailedError, match="cannot edit"):
-        svc.update_finding(repo, pid, f.finding_id, changes={"cwe_ids": [1]},
-                           expected_revision=1)
+        svc.update_finding(repo, pid, f.finding_id, changes={"cwe_ids": [1]}, expected_revision=1)
 
 
 def test_update_finding_preserves_original_source_data(repo: StorageRepository) -> None:
     """Acceptance criterion: 'Analysts can triage and revise a finding without losing
     original source data.'"""
-    source = FindingSource(tool="vapt-web-scanner", rule_id="WEB-TLS-001",
-                           original_severity="Medium")
-    f = repo.create_finding(make_finding(pid := (_project(repo)), sources=[source],
-                                         cwe_ids=[79], rule_id="WEB-TLS-001"))
+    source = FindingSource(
+        tool="vapt-web-scanner", rule_id="WEB-TLS-001", original_severity="Medium"
+    )
+    f = repo.create_finding(
+        make_finding(pid := (_project(repo)), sources=[source], cwe_ids=[79], rule_id="WEB-TLS-001")
+    )
     updated = svc.update_finding(
-        repo, pid, f.finding_id,
+        repo,
+        pid,
+        f.finding_id,
         changes={"analyst_status": "confirmed", "business_impact": "Affects checkout"},
         expected_revision=1,
     )
@@ -135,8 +151,12 @@ def test_merge_and_unmerge_round_trip_preserves_both_records(repo: StorageReposi
     original = repo.create_finding(make_finding(pid, title="Original"))
     dup = repo.create_finding(make_finding(pid, title="Duplicate"))
     merged_dup, merged_target = svc.merge_finding(
-        repo, pid, dup.finding_id, into_finding_id=original.finding_id,
-        expected_revision=1, note="same root cause",
+        repo,
+        pid,
+        dup.finding_id,
+        into_finding_id=original.finding_id,
+        expected_revision=1,
+        note="same root cause",
     )
     assert merged_dup.merged_into == original.finding_id
     assert merged_dup.dedup_history[-1].action == "merged"
@@ -156,18 +176,34 @@ def test_merge_never_drops_source_provenance_from_either_record(repo: StorageRep
     duplicate stays fully retrievable (both directly and via the canonical record's detail
     view) for rollback."""
     original_source = FindingSource(tool="vapt-web-scanner", rule_id="WEB-TLS-001")
-    dup_source = FindingSource(tool="Nessus (.nessus XML)", rule_id="nessus-12345",
-                               import_id=new_id("import"))
+    dup_source = FindingSource(
+        tool="Nessus (.nessus XML)", rule_id="nessus-12345", import_id=new_id("import")
+    )
     pid = _project(repo)
-    original = repo.create_finding(make_finding(
-        pid, title="Original", sources=[original_source], cwe_ids=[79], evidence_ids=[],
-    ))
-    dup = repo.create_finding(make_finding(
-        pid, title="Duplicate", sources=[dup_source], cwe_ids=[89],
-    ))
+    original = repo.create_finding(
+        make_finding(
+            pid,
+            title="Original",
+            sources=[original_source],
+            cwe_ids=[79],
+            evidence_ids=[],
+        )
+    )
+    dup = repo.create_finding(
+        make_finding(
+            pid,
+            title="Duplicate",
+            sources=[dup_source],
+            cwe_ids=[89],
+        )
+    )
 
     merged_dup, merged_target = svc.merge_finding(
-        repo, pid, dup.finding_id, into_finding_id=original.finding_id, expected_revision=1,
+        repo,
+        pid,
+        dup.finding_id,
+        into_finding_id=original.finding_id,
+        expected_revision=1,
     )
 
     # neither record's own provenance/evidence is touched by the merge
@@ -192,14 +228,21 @@ def test_merge_rejects_merging_into_self_and_double_merge(repo: StorageRepositor
     pid = _project(repo)
     f = repo.create_finding(make_finding(pid))
     with pytest.raises(ValidationFailedError, match="itself"):
-        svc.merge_finding(repo, pid, f.finding_id, into_finding_id=f.finding_id,
-                          expected_revision=1)
+        svc.merge_finding(
+            repo, pid, f.finding_id, into_finding_id=f.finding_id, expected_revision=1
+        )
     other = repo.create_finding(make_finding(pid, title="other"))
-    merged, _ = svc.merge_finding(repo, pid, f.finding_id, into_finding_id=other.finding_id,
-                                  expected_revision=1)
+    merged, _ = svc.merge_finding(
+        repo, pid, f.finding_id, into_finding_id=other.finding_id, expected_revision=1
+    )
     with pytest.raises(ConflictError):
-        svc.merge_finding(repo, pid, f.finding_id, into_finding_id=other.finding_id,
-                          expected_revision=merged.revision)
+        svc.merge_finding(
+            repo,
+            pid,
+            f.finding_id,
+            into_finding_id=other.finding_id,
+            expected_revision=merged.revision,
+        )
 
 
 def test_unmerge_rejects_a_finding_that_is_not_merged(repo: StorageRepository) -> None:
@@ -213,8 +256,9 @@ def test_get_finding_detail_reports_module_risk_and_merge_lineage(repo: StorageR
     pid = _project(repo)
     original = repo.create_finding(make_finding(pid, title="Original", rule_id="WEB-TLS-001"))
     dup = repo.create_finding(make_finding(pid, title="Duplicate"))
-    svc.merge_finding(repo, pid, dup.finding_id, into_finding_id=original.finding_id,
-                      expected_revision=1)
+    svc.merge_finding(
+        repo, pid, dup.finding_id, into_finding_id=original.finding_id, expected_revision=1
+    )
     detail = svc.get_finding_detail(repo, pid, original.finding_id)
     assert detail.module == "web_app"
     assert "tier" in detail.risk and "score" in detail.risk

@@ -39,9 +39,7 @@ _MODULE_PREFIXES: dict[str, str] = {
     "API-": "api_security",
 }
 
-SortField = Literal[
-    "updated_at", "created_at", "severity", "risk_score", "title", "analyst_status"
-]
+SortField = Literal["updated_at", "created_at", "severity", "risk_score", "title", "analyst_status"]
 
 
 def module_for(finding: Finding) -> str:
@@ -197,7 +195,10 @@ _SORT_KEYS: dict[str, Any] = {
     "title": lambda it: it.finding.title.lower(),
     "analyst_status": lambda it: it.finding.analyst_status.value,
     "severity": lambda it: {
-        Severity.CRITICAL: 0, Severity.HIGH: 1, Severity.MEDIUM: 2, Severity.LOW: 3,
+        Severity.CRITICAL: 0,
+        Severity.HIGH: 1,
+        Severity.MEDIUM: 2,
+        Severity.LOW: 3,
         Severity.INFORMATIONAL: 4,
     }[it.finding.severity],
     "risk_score": lambda it: it.risk_score,
@@ -209,8 +210,11 @@ def _view(repo: StorageRepository, finding: Finding) -> FindingListItem:
     breakdown = score_finding(finding, assets)
     worst = max_asset_criticality(assets)
     return FindingListItem(
-        finding=finding, module=module_for(finding), risk_score=breakdown.score,
-        risk_tier=breakdown.tier, asset_criticality=worst,
+        finding=finding,
+        module=module_for(finding),
+        risk_score=breakdown.score,
+        risk_tier=breakdown.tier,
+        asset_criticality=worst,
         reviewed=finding.analyst_status != AnalystStatus.NEW,
     )
 
@@ -254,8 +258,12 @@ def get_finding_detail(
         f for f in _iter_project_findings(repo, project_id) if f.merged_into == finding_id
     ]
     return FindingDetailView(
-        finding=finding, module=module_for(finding), risk=breakdown.as_dict(), assets=assets,
-        duplicate_of=duplicate_of, merged_duplicates=merged_duplicates,
+        finding=finding,
+        module=module_for(finding),
+        risk=breakdown.as_dict(),
+        assets=assets,
+        duplicate_of=duplicate_of,
+        merged_duplicates=merged_duplicates,
     )
 
 
@@ -263,8 +271,12 @@ _EDITABLE_FIELDS = {"analyst_status", "business_impact", "business_priority", "r
 
 
 def update_finding(
-    repo: StorageRepository, project_id: str, finding_id: str, *,
-    changes: dict[str, Any], expected_revision: int,
+    repo: StorageRepository,
+    project_id: str,
+    finding_id: str,
+    *,
+    changes: dict[str, Any],
+    expected_revision: int,
 ) -> Finding:
     """Analyst triage edit. Only the explicitly editable fields may change; everything a
     scanner/import wrote (severity, confidence, sources, evidence, cwe_ids, mappings,
@@ -282,13 +294,20 @@ def update_finding(
         metadata[field] = {"from": str(getattr(before, field)), "to": str(getattr(updated, field))}
     repo.audit.record(
         AuditAction.FINDING_UPDATED,
-        project_id=project_id, target_ids=[finding_id], metadata=metadata,
+        project_id=project_id,
+        target_ids=[finding_id],
+        metadata=metadata,
     )
     return updated
 
 
 def add_comment(
-    repo: StorageRepository, project_id: str, finding_id: str, *, text: str, expected_revision: int,
+    repo: StorageRepository,
+    project_id: str,
+    finding_id: str,
+    *,
+    text: str,
+    expected_revision: int,
 ) -> Finding:
     comment = FindingComment(comment_id=new_id("comment"), text=text)
 
@@ -299,15 +318,22 @@ def add_comment(
         project_id, finding_id, apply, expected_revision=expected_revision
     )
     repo.audit.record(
-        AuditAction.FINDING_COMMENT_ADDED, project_id=project_id, target_ids=[finding_id],
+        AuditAction.FINDING_COMMENT_ADDED,
+        project_id=project_id,
+        target_ids=[finding_id],
         metadata={"comment_id": comment.comment_id},
     )
     return updated
 
 
 def merge_finding(
-    repo: StorageRepository, project_id: str, finding_id: str, *, into_finding_id: str,
-    expected_revision: int, note: str = "",
+    repo: StorageRepository,
+    project_id: str,
+    finding_id: str,
+    *,
+    into_finding_id: str,
+    expected_revision: int,
+    note: str = "",
 ) -> tuple[Finding, Finding]:
     """Mark `finding_id` as a confirmed duplicate of `into_finding_id`. Both records are
     kept (never deleted): the duplicate's own sources/evidence stay on its own record for
@@ -321,26 +347,33 @@ def merge_finding(
         raise ConflictError("this finding is already merged into another finding")
 
     def apply_dup(current: Finding) -> Finding:
-        return current.model_copy(update={
-            "merged_into": into_finding_id,
-            "dedup_history": (current.dedup_history + [
-                DedupEvent(action="merged", other_finding_id=into_finding_id, note=note)
-            ])[-500:],
-        })
+        return current.model_copy(
+            update={
+                "merged_into": into_finding_id,
+                "dedup_history": (
+                    current.dedup_history
+                    + [DedupEvent(action="merged", other_finding_id=into_finding_id, note=note)]
+                )[-500:],
+            }
+        )
 
     def apply_target(current: Finding) -> Finding:
-        return current.model_copy(update={
-            "dedup_history": (current.dedup_history + [
-                DedupEvent(action="merged", other_finding_id=finding_id, note=note)
-            ])[-500:],
-        })
+        return current.model_copy(
+            update={
+                "dedup_history": (
+                    current.dedup_history
+                    + [DedupEvent(action="merged", other_finding_id=finding_id, note=note)]
+                )[-500:],
+            }
+        )
 
     updated_dup = repo.update_finding(
         project_id, finding_id, apply_dup, expected_revision=expected_revision
     )
     updated_target = repo.update_finding(project_id, into_finding_id, apply_target)
     repo.audit.record(
-        AuditAction.FINDING_MERGED, project_id=project_id,
+        AuditAction.FINDING_MERGED,
+        project_id=project_id,
         target_ids=[finding_id, into_finding_id],
         metadata={"duplicate_of": into_finding_id, "note": note},
     )
@@ -348,7 +381,11 @@ def merge_finding(
 
 
 def unmerge_finding(
-    repo: StorageRepository, project_id: str, finding_id: str, *, expected_revision: int,
+    repo: StorageRepository,
+    project_id: str,
+    finding_id: str,
+    *,
+    expected_revision: int,
 ) -> Finding:
     current_record = repo.get_finding(project_id, finding_id)
     if current_record.merged_into is None:
@@ -356,18 +393,23 @@ def unmerge_finding(
     was_merged_into = current_record.merged_into
 
     def apply(current: Finding) -> Finding:
-        return current.model_copy(update={
-            "merged_into": None,
-            "dedup_history": (current.dedup_history + [
-                DedupEvent(action="unmerged", other_finding_id=was_merged_into)
-            ])[-500:],
-        })
+        return current.model_copy(
+            update={
+                "merged_into": None,
+                "dedup_history": (
+                    current.dedup_history
+                    + [DedupEvent(action="unmerged", other_finding_id=was_merged_into)]
+                )[-500:],
+            }
+        )
 
     updated = repo.update_finding(
         project_id, finding_id, apply, expected_revision=expected_revision
     )
     repo.audit.record(
-        AuditAction.FINDING_UNMERGED, project_id=project_id, target_ids=[finding_id],
+        AuditAction.FINDING_UNMERGED,
+        project_id=project_id,
+        target_ids=[finding_id],
         metadata={"was_merged_into": was_merged_into},
     )
     return updated

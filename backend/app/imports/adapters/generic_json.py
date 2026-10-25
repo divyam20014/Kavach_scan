@@ -86,13 +86,19 @@ class GenericJsonAdapter:
             result.warn(f"found {len(records)} records; only the first {MAX_RECORDS} were imported")
             records = records[:MAX_RECORDS]
         result.mapping_gaps = [
-            name for name in _GAP_WORTHY_FIELDS
-            if not any(isinstance(r, dict) and self._field(r, name, field_map) not in (None, "")
-                      for r in records)
+            name
+            for name in _GAP_WORTHY_FIELDS
+            if not any(
+                isinstance(r, dict) and self._field(r, name, field_map) not in (None, "")
+                for r in records
+            )
         ]
         if result.mapping_gaps:
-            result.warn("no field matched for: " + ", ".join(result.mapping_gaps) +
-                       " (these fields will be empty or default on every imported record)")
+            result.warn(
+                "no field matched for: "
+                + ", ".join(result.mapping_gaps)
+                + " (these fields will be empty or default on every imported record)"
+            )
         for row, rec in enumerate(records, start=1):
             try:
                 self._parse_record(rec, field_map, row, result)
@@ -122,8 +128,9 @@ class GenericJsonAdapter:
                     return rec[key]
         return None
 
-    def _parse_record(self, rec: Any, field_map: dict[str, str], row: int,
-                      result: ParseResult) -> None:
+    def _parse_record(
+        self, rec: Any, field_map: dict[str, str], row: int, result: ParseResult
+    ) -> None:
         if not isinstance(rec, dict):
             result.rejected_count += 1
             result.warn(f"record {row}: not a JSON object; skipped")
@@ -136,28 +143,36 @@ class GenericJsonAdapter:
         severity, original = normalize_severity(self._field(rec, "severity", field_map))
         cwe_text = _as_text(self._field(rec, "cwe", field_map))
         refs = self._field(rec, "references", field_map)
-        ref_list = [str(r)[:500] for r in refs][:20] if isinstance(refs, list) else (
-            [str(refs)[:500]] if refs else [])
-        result.findings.append(ParsedFinding(
-            title=truncate(title, 300), severity=severity,
-            confidence=normalize_confidence(
-                _as_text(self._field(rec, "confidence", field_map)) or None),
-            original_severity=original,
-            original_confidence=_as_text(self._field(rec, "confidence", field_map)),
-            summary=truncate(_as_text(self._field(rec, "summary", field_map))),
-            remediation=truncate(_as_text(self._field(rec, "remediation", field_map))),
-            url=(_as_text(self._field(rec, "url", field_map)) or None),
-            host=(_as_text(self._field(rec, "host", field_map)) or None),
-            method=(_as_text(self._field(rec, "method", field_map)) or None),
-            parameter=truncate(_as_text(self._field(rec, "parameter", field_map)), 200),
-            component=truncate(_as_text(self._field(rec, "component", field_map)), 300),
-            cwe_ids=extract_cwe_ids(cwe_text), rule_id=truncate(_as_text(
-                self._field(rec, "rule_id", field_map)), 150),
-            # Only a genuine tool-provided ID goes here (see generic_csv.py for why a
-            # synthetic "record-N" placeholder would defeat dedup.fingerprint()).
-            source_finding_id=truncate(_as_text(self._field(rec, "source_id", field_map)), 300),
-            references=ref_list, row=row,
-        ))
+        ref_list = (
+            [str(r)[:500] for r in refs][:20]
+            if isinstance(refs, list)
+            else ([str(refs)[:500]] if refs else [])
+        )
+        result.findings.append(
+            ParsedFinding(
+                title=truncate(title, 300),
+                severity=severity,
+                confidence=normalize_confidence(
+                    _as_text(self._field(rec, "confidence", field_map)) or None
+                ),
+                original_severity=original,
+                original_confidence=_as_text(self._field(rec, "confidence", field_map)),
+                summary=truncate(_as_text(self._field(rec, "summary", field_map))),
+                remediation=truncate(_as_text(self._field(rec, "remediation", field_map))),
+                url=(_as_text(self._field(rec, "url", field_map)) or None),
+                host=(_as_text(self._field(rec, "host", field_map)) or None),
+                method=(_as_text(self._field(rec, "method", field_map)) or None),
+                parameter=truncate(_as_text(self._field(rec, "parameter", field_map)), 200),
+                component=truncate(_as_text(self._field(rec, "component", field_map)), 300),
+                cwe_ids=extract_cwe_ids(cwe_text),
+                rule_id=truncate(_as_text(self._field(rec, "rule_id", field_map)), 150),
+                # Only a genuine tool-provided ID goes here (see generic_csv.py for why a
+                # synthetic "record-N" placeholder would defeat dedup.fingerprint()).
+                source_finding_id=truncate(_as_text(self._field(rec, "source_id", field_map)), 300),
+                references=ref_list,
+                row=row,
+            )
+        )
         result.parsed_count += 1
 
 

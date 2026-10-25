@@ -18,20 +18,39 @@ FINDINGS_JSON_SCHEMA_VERSION = 1
 ASSETS_JSON_SCHEMA_VERSION = 1
 
 _FINDING_CSV_COLUMNS = [
-    "finding_id", "title", "severity", "confidence", "analyst_status", "business_priority",
-    "module", "url", "parameter", "component", "cwe_ids", "owasp_mappings", "cvss_vector",
-    "cvss_base_score", "remediation", "rule_id", "first_seen", "last_seen",
+    "finding_id",
+    "title",
+    "severity",
+    "confidence",
+    "analyst_status",
+    "business_priority",
+    "module",
+    "url",
+    "parameter",
+    "component",
+    "cwe_ids",
+    "owasp_mappings",
+    "cvss_vector",
+    "cvss_base_score",
+    "remediation",
+    "rule_id",
+    "first_seen",
+    "last_seen",
 ]
 _ASSET_CSV_COLUMNS = [
-    "asset_id", "asset_type", "locator", "scope_status", "criticality", "confidence",
-    "first_seen", "last_seen",
+    "asset_id",
+    "asset_type",
+    "locator",
+    "scope_status",
+    "criticality",
+    "confidence",
+    "first_seen",
+    "last_seen",
 ]
 
 
 def _owasp_mapping_text(finding: Any) -> str:
-    return "; ".join(
-        f"{m.catalog}:{m.catalog_version}:{m.entry_id}" for m in finding.mappings
-    )
+    return "; ".join(f"{m.catalog}:{m.catalog_version}:{m.entry_id}" for m in finding.mappings)
 
 
 _FORMULA_LEAD_CHARS = ("=", "+", "-", "@", "\t", "\r")
@@ -70,16 +89,31 @@ def findings_to_csv(data: ReportData) -> bytes:
     from app.services.findings import module_for
 
     for f in data.findings:
-        writer.writerow([
-            _csv_safe(v) for v in (
-                f.finding_id, f.title, f.severity.value, f.confidence.value,
-                f.analyst_status.value, f.business_priority or "", module_for(f), f.url or "",
-                f.parameter, f.component, ",".join(str(c) for c in f.cwe_ids),
-                _owasp_mapping_text(f), f.cvss.vector if f.cvss else "",
-                f.cvss.base_score if f.cvss else "", f.remediation, f.rule_id,
-                f.created_at.isoformat(), f.updated_at.isoformat(),
-            )
-        ])
+        writer.writerow(
+            [
+                _csv_safe(v)
+                for v in (
+                    f.finding_id,
+                    f.title,
+                    f.severity.value,
+                    f.confidence.value,
+                    f.analyst_status.value,
+                    f.business_priority or "",
+                    module_for(f),
+                    f.url or "",
+                    f.parameter,
+                    f.component,
+                    ",".join(str(c) for c in f.cwe_ids),
+                    _owasp_mapping_text(f),
+                    f.cvss.vector if f.cvss else "",
+                    f.cvss.base_score if f.cvss else "",
+                    f.remediation,
+                    f.rule_id,
+                    f.created_at.isoformat(),
+                    f.updated_at.isoformat(),
+                )
+            ]
+        )
     return buf.getvalue().encode("utf-8")
 
 
@@ -99,11 +133,19 @@ def assets_to_csv(data: ReportData) -> bytes:
     writer = csv.writer(buf)
     writer.writerow(_ASSET_CSV_COLUMNS)
     for a in data.assets:
-        writer.writerow([
-            _csv_safe(v) for v in (
-                a.asset_id, a.asset_type.value, a.locator, a.scope_status.value,
-                a.criticality or "", a.confidence.value, a.first_seen.isoformat(),
-                a.last_seen.isoformat(),
-            )
-        ])
+        writer.writerow(
+            [
+                _csv_safe(v)
+                for v in (
+                    a.asset_id,
+                    a.asset_type.value,
+                    a.locator,
+                    a.scope_status.value,
+                    a.criticality or "",
+                    a.confidence.value,
+                    a.first_seen.isoformat(),
+                    a.last_seen.isoformat(),
+                )
+            ]
+        )
     return buf.getvalue().encode("utf-8")

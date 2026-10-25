@@ -37,6 +37,10 @@ vapt-data/
 /backups/
 *.vaptbak
 
+# ---- Diagnostic support bundles (python -m app support-bundle default output) ----
+support-bundle*.zip
+/backend/support-bundle*.zip
+
 # ---- Logs and temporary tool output ----
 /logs/
 *.log

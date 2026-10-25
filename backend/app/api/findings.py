@@ -66,21 +66,31 @@ def list_findings(
     limit: Limit = 25,
 ) -> Page[svc.FindingListItem]:
     filters = svc.FindingListFilters(
-        project_id=project_id, q=q,
-        severity=_set(severity), confidence=_set(confidence), analyst_status=_set(analyst_status),
-        scan_id=scan_id, module=_set(module), source=_set(source), asset_id=asset_id, cwe=cwe,
-        mapping_catalog=mapping_catalog, mapping_entry=mapping_entry, reviewed=reviewed,
-        include_merged=include_merged, first_seen_from=first_seen_from, first_seen_to=first_seen_to,
-        last_seen_from=last_seen_from, last_seen_to=last_seen_to,
+        project_id=project_id,
+        q=q,
+        severity=_set(severity),
+        confidence=_set(confidence),
+        analyst_status=_set(analyst_status),
+        scan_id=scan_id,
+        module=_set(module),
+        source=_set(source),
+        asset_id=asset_id,
+        cwe=cwe,
+        mapping_catalog=mapping_catalog,
+        mapping_entry=mapping_entry,
+        reviewed=reviewed,
+        include_merged=include_merged,
+        first_seen_from=first_seen_from,
+        first_seen_to=first_seen_to,
+        last_seen_from=last_seen_from,
+        last_seen_to=last_seen_to,
     )
     return svc.list_findings(
         repo, filters=filters, sort=sort, descending=order == "desc", offset=offset, limit=limit
     )
 
 
-@router.get(
-    "/projects/{project_id}/findings/{finding_id}", response_model=svc.FindingDetailView
-)
+@router.get("/projects/{project_id}/findings/{finding_id}", response_model=svc.FindingDetailView)
 def finding_detail(project_id: str, finding_id: str, repo: Repository) -> svc.FindingDetailView:
     return svc.get_finding_detail(repo, project_id, finding_id)
 
@@ -140,8 +150,12 @@ def merge_finding(
     project_id: str, finding_id: str, body: MergeRequest, repo: Repository
 ) -> svc.FindingDetailView:
     svc.merge_finding(
-        repo, project_id, finding_id, into_finding_id=body.into_finding_id,
-        expected_revision=body.expected_revision, note=body.note,
+        repo,
+        project_id,
+        finding_id,
+        into_finding_id=body.into_finding_id,
+        expected_revision=body.expected_revision,
+        note=body.note,
     )
     return svc.get_finding_detail(repo, project_id, finding_id)
 
@@ -177,8 +191,13 @@ class CatalogView(StrictModel):
 def list_catalogs() -> list[CatalogView]:
     return [
         CatalogView(
-            catalog=c.catalog, version=c.version, label=c.label, source=c.source,
-            imported_at=c.imported_at, entry_count=c.entry_count, coverage_note=c.coverage_note,
+            catalog=c.catalog,
+            version=c.version,
+            label=c.label,
+            source=c.source,
+            imported_at=c.imported_at,
+            entry_count=c.entry_count,
+            coverage_note=c.coverage_note,
         )
         for c in CATALOGS.values()
     ]

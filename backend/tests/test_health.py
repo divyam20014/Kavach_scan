@@ -15,6 +15,7 @@ SYSTEM_ROUTES = {
     "/api/readiness",
     "/api/diagnostics/storage",
     "/api/diagnostics/integrity-check",
+    "/api/diagnostics/support-bundle",
     # Phase 02
     "/api/projects",
     "/api/projects/{project_id}",

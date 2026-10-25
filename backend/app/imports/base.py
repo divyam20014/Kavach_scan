@@ -54,8 +54,13 @@ def normalize_severity(raw: str | float | int | None) -> tuple[Severity, str]:
     if score <= 0:
         return Severity.INFORMATIONAL, original
     if 0 < score <= 4 and score == int(score):  # Nessus-style 0/1/2/3/4 ordinal
-        return [Severity.INFORMATIONAL, Severity.LOW, Severity.MEDIUM, Severity.HIGH,
-                Severity.CRITICAL][int(score)], original
+        return [
+            Severity.INFORMATIONAL,
+            Severity.LOW,
+            Severity.MEDIUM,
+            Severity.HIGH,
+            Severity.CRITICAL,
+        ][int(score)], original
     if score < 4.0:
         return Severity.LOW, original
     if score < 7.0:

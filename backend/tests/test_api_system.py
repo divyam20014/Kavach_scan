@@ -83,7 +83,8 @@ def test_request_size_limit(settings: RuntimeSettings, repo: StorageRepository) 
 
 
 def test_upload_routes_use_their_own_larger_size_limit_not_the_json_default(
-    settings: RuntimeSettings, repo: StorageRepository,
+    settings: RuntimeSettings,
+    repo: StorageRepository,
 ) -> None:
     """Phase 12 verification defect: the global request-size guard used one small, JSON-sized
     default for every route, including file-upload routes that each declare and enforce their
@@ -101,14 +102,21 @@ def test_upload_routes_use_their_own_larger_size_limit_not_the_json_default(
         pid = repo.create_project(surface_project([80], hosts=["x.test"])).project_id
 
         # ~2 MiB CVE catalog: over the 1 MiB JSON-sized default, well under its own 15 MiB cap.
-        catalog = json_mod.dumps({
-            "source": "big", "catalog_version": "1.0",
-            "entries": [
-                {"product": f"p{i}", "version_spec": "<1.0", "cve_id": "CVE-2020-0001",
-                 "summary": "A" * 400}
-                for i in range(4000)
-            ],
-        }).encode()
+        catalog = json_mod.dumps(
+            {
+                "source": "big",
+                "catalog_version": "1.0",
+                "entries": [
+                    {
+                        "product": f"p{i}",
+                        "version_spec": "<1.0",
+                        "cve_id": "CVE-2020-0001",
+                        "summary": "A" * 400,
+                    }
+                    for i in range(4000)
+                ],
+            }
+        ).encode()
         assert len(catalog) > settings.max_request_bytes
         resp = c.post(
             "/api/cve-catalog/import", files={"file": ("big.json", catalog, "application/json")}
@@ -116,12 +124,14 @@ def test_upload_routes_use_their_own_larger_size_limit_not_the_json_default(
         assert resp.status_code == 201, resp.text
 
         # ~2 MiB generic-JSON import: over the JSON-sized default, well under the 25 MiB cap.
-        findings_doc = json_mod.dumps({
-            "findings": [
-                {"title": f"Finding {i}", "severity": "low", "host": "10.0.0.1"}
-                for i in range(20_000)
-            ]
-        }).encode()
+        findings_doc = json_mod.dumps(
+            {
+                "findings": [
+                    {"title": f"Finding {i}", "severity": "low", "host": "10.0.0.1"}
+                    for i in range(20_000)
+                ]
+            }
+        ).encode()
         assert len(findings_doc) > settings.max_request_bytes
         up = c.post(
             f"/api/projects/{pid}/imports",

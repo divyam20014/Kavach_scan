@@ -36,8 +36,16 @@ _GAP_WORTHY_FIELDS = ("severity", "host", "url", "cwe", "remediation", "componen
 
 # field -> accepted header names (lowercase, compared case-insensitively against the header row)
 ALIASES: dict[str, tuple[str, ...]] = {
-    "title": ("title", "name", "vulnerability", "vulnerability name", "finding", "issue",
-             "summary title", "plugin name"),
+    "title": (
+        "title",
+        "name",
+        "vulnerability",
+        "vulnerability name",
+        "finding",
+        "issue",
+        "summary title",
+        "plugin name",
+    ),
     "severity": ("severity", "risk", "risk rating", "priority"),
     "confidence": ("confidence", "certainty"),
     "summary": ("summary", "description", "synopsis", "details"),
@@ -95,8 +103,9 @@ class GenericCsvAdapter:
             try:
                 raw.decode("utf-8-sig" if raw.startswith(b"\xef\xbb\xbf") else "utf-8")
             except UnicodeDecodeError:
-                result.warn("the file did not decode cleanly as UTF-8; "
-                           "some characters may be wrong")
+                result.warn(
+                    "the file did not decode cleanly as UTF-8; some characters may be wrong"
+                )
         column_map = None
         if options and isinstance(options.get("column_map"), dict):
             column_map = {str(k): str(v) for k, v in options["column_map"].items()}
@@ -125,8 +134,11 @@ class GenericCsvAdapter:
             )
         result.mapping_gaps = [f for f in _GAP_WORTHY_FIELDS if f not in field_index]
         if result.mapping_gaps:
-            result.warn("no column matched for: " + ", ".join(result.mapping_gaps) +
-                       " (these fields will be empty or default on every imported row)")
+            result.warn(
+                "no column matched for: "
+                + ", ".join(result.mapping_gaps)
+                + " (these fields will be empty or default on every imported row)"
+            )
         if len(data_rows) > MAX_ROWS:
             result.warn(f"file has {len(data_rows)} rows; only the first {MAX_ROWS} were imported")
             data_rows = data_rows[:MAX_ROWS]
@@ -138,8 +150,9 @@ class GenericCsvAdapter:
                 result.warn(f"row {row_num}: could not normalize ({type(exc).__name__})")
         return result
 
-    def _parse_row(self, row: list[str], idx: dict[str, int], row_num: int,
-                   result: ParseResult) -> None:
+    def _parse_row(
+        self, row: list[str], idx: dict[str, int], row_num: int, result: ParseResult
+    ) -> None:
         def get(field: str) -> str:
             i = idx.get(field)
             return row[i].strip() if i is not None and i < len(row) else ""
@@ -151,22 +164,31 @@ class GenericCsvAdapter:
             return
         severity, original = normalize_severity(get("severity") or None)
         cwe_text = f"{get('cwe')} {get('summary')}"
-        result.findings.append(ParsedFinding(
-            title=truncate(title, 300), severity=severity,
-            confidence=normalize_confidence(get("confidence") or None),
-            original_severity=original, original_confidence=get("confidence"),
-            summary=truncate(get("summary")), remediation=truncate(get("remediation")),
-            url=get("url") or None, host=get("host") or None, method=(get("method") or None),
-            parameter=truncate(get("parameter"), 200), component=truncate(get("component"), 300),
-            cwe_ids=extract_cwe_ids(cwe_text), rule_id=truncate(get("rule_id"), 150),
-            # Only a genuine tool-provided ID goes here. A synthetic "row-N" placeholder
-            # would look like a real strong identity signal to dedup.fingerprint() and
-            # make every row artificially unique, defeating duplicate detection entirely
-            # for any report that has no explicit ID column.
-            source_finding_id=truncate(get("source_id"), 300),
-            references=[r.strip() for r in get("references").split() if r.strip()][:20],
-            row=row_num,
-        ))
+        result.findings.append(
+            ParsedFinding(
+                title=truncate(title, 300),
+                severity=severity,
+                confidence=normalize_confidence(get("confidence") or None),
+                original_severity=original,
+                original_confidence=get("confidence"),
+                summary=truncate(get("summary")),
+                remediation=truncate(get("remediation")),
+                url=get("url") or None,
+                host=get("host") or None,
+                method=(get("method") or None),
+                parameter=truncate(get("parameter"), 200),
+                component=truncate(get("component"), 300),
+                cwe_ids=extract_cwe_ids(cwe_text),
+                rule_id=truncate(get("rule_id"), 150),
+                # Only a genuine tool-provided ID goes here. A synthetic "row-N" placeholder
+                # would look like a real strong identity signal to dedup.fingerprint() and
+                # make every row artificially unique, defeating duplicate detection entirely
+                # for any report that has no explicit ID column.
+                source_finding_id=truncate(get("source_id"), 300),
+                references=[r.strip() for r in get("references").split() if r.strip()][:20],
+                row=row_num,
+            )
+        )
         result.parsed_count += 1
 
 

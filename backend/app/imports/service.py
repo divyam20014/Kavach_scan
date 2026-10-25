@@ -34,13 +34,21 @@ MAX_LIST_PAGES = 200  # hard stop so a pathological project can't make this loop
 # field -> max_chars matching the eventual Finding field's own length limit, so redaction's
 # own default cap (4000) never truncates a legitimately long LongText field unnecessarily.
 _REDACT_FIELDS: dict[str, int] = {
-    "title": 200, "summary": 20_000, "technical_detail": 20_000, "remediation": 20_000,
-    "parameter": 500, "component": 500,
+    "title": 200,
+    "summary": 20_000,
+    "technical_detail": 20_000,
+    "remediation": 20_000,
+    "parameter": 500,
+    "component": 500,
 }
 
 _ASSET_TYPE_MAP = {
-    "domain": AssetType.DOMAIN, "hostname": AssetType.HOSTNAME, "ip": AssetType.IP,
-    "port": AssetType.PORT, "service": AssetType.SERVICE, "url": AssetType.URL,
+    "domain": AssetType.DOMAIN,
+    "hostname": AssetType.HOSTNAME,
+    "ip": AssetType.IP,
+    "port": AssetType.PORT,
+    "service": AssetType.SERVICE,
+    "url": AssetType.URL,
     "api_operation": AssetType.API_OPERATION,
 }
 
@@ -55,8 +63,9 @@ def _redacted(finding: ParsedFinding) -> ParsedFinding:
         finding,
         title=redact_text(finding.title, max_chars=_REDACT_FIELDS["title"]),
         summary=redact_text(finding.summary, max_chars=_REDACT_FIELDS["summary"]),
-        technical_detail=redact_text(finding.technical_detail,
-                                     max_chars=_REDACT_FIELDS["technical_detail"]),
+        technical_detail=redact_text(
+            finding.technical_detail, max_chars=_REDACT_FIELDS["technical_detail"]
+        ),
         remediation=redact_text(finding.remediation, max_chars=_REDACT_FIELDS["remediation"]),
         parameter=redact_text(finding.parameter, max_chars=_REDACT_FIELDS["parameter"]),
         component=redact_text(finding.component, max_chars=_REDACT_FIELDS["component"]),
@@ -82,14 +91,15 @@ def select_adapter(filename: str, raw: bytes, *, declared: str | None = None) ->
         if key in name:
             raise ImportSafetyError(f"{key}: {reason}")
     raise ImportSafetyError(
-        "could not detect the report format. Supported: " +
-        ", ".join(a.label for a in ADAPTERS) +
-        ". For a CSV/JSON export from another tool, pass options.column_map / field_map."
+        "could not detect the report format. Supported: "
+        + ", ".join(a.label for a in ADAPTERS)
+        + ". For a CSV/JSON export from another tool, pass options.column_map / field_map."
     )
 
 
-def parse_upload(filename: str, raw: bytes, *, declared: str | None = None,
-                 options: dict[str, Any] | None = None) -> tuple[Adapter, ParseResult]:
+def parse_upload(
+    filename: str, raw: bytes, *, declared: str | None = None, options: dict[str, Any] | None = None
+) -> tuple[Adapter, ParseResult]:
     """Full offline pipeline: size check -> optional single-member zip extraction ->
     format detection -> bounded parse. Raises `ImportSafetyError` for a fatal, whole-file
     problem; a bad individual record inside an otherwise-good file is reported as a
@@ -104,8 +114,10 @@ def parse_upload(filename: str, raw: bytes, *, declared: str | None = None,
     adapter = select_adapter(filename, raw, declared=declared)
     result = adapter.parse(raw, options=options)
     if len(result.findings) > MAX_RECORDS:
-        result.warn(f"more than {MAX_RECORDS} records were parsed; only the first "
-                   f"{MAX_RECORDS} are shown/committed")
+        result.warn(
+            f"more than {MAX_RECORDS} records were parsed; only the first "
+            f"{MAX_RECORDS} are shown/committed"
+        )
         result.findings = result.findings[:MAX_RECORDS]
     return adapter, result
 
@@ -180,8 +192,9 @@ class ImportPreview:
     truncated_sample: bool = False
 
 
-def preview(repo: StorageRepository, project_id: str, adapter: Adapter,
-           result: ParseResult) -> ImportPreview:
+def preview(
+    repo: StorageRepository, project_id: str, adapter: Adapter, result: ParseResult
+) -> ImportPreview:
     """Pure, read-only: looks at existing findings to classify records, writes nothing."""
     existing = _iter_findings(repo, project_id)
     existing_by_fp = {f.fingerprint: f.finding_id for f in existing if f.fingerprint}
@@ -204,11 +217,20 @@ def preview(repo: StorageRepository, project_id: str, adapter: Adapter,
             action = "duplicate_in_import"
         else:
             action = "new"
-        records.append(PreviewRecord(
-            index=i, title=f.title, severity=f.severity.value, confidence=f.confidence.value,
-            host=f.host, url=f.url, rule_id=f.rule_id,
-            action=action, existing_finding_id=existing_id, duplicate_of_index=dup_index,
-        ))
+        records.append(
+            PreviewRecord(
+                index=i,
+                title=f.title,
+                severity=f.severity.value,
+                confidence=f.confidence.value,
+                host=f.host,
+                url=f.url,
+                rule_id=f.rule_id,
+                action=action,
+                existing_finding_id=existing_id,
+                duplicate_of_index=dup_index,
+            )
+        )
         if existing_id is None and dup_index is None:
             unmatched_indices.append(i)
             seen_in_batch[fp] = i
@@ -225,12 +247,18 @@ def preview(repo: StorageRepository, project_id: str, adapter: Adapter,
     ]
     truncated = len(records) > MAX_PREVIEW_SAMPLE
     return ImportPreview(
-        source_type=adapter.source_type, label=adapter.label, parser_version=adapter.parser_version,
-        source_tool_version=result.source_tool_version, parsed_count=result.parsed_count,
-        rejected_count=result.rejected_count, warnings=list(result.warnings),
-        records=records[:MAX_PREVIEW_SAMPLE], duplicate_candidates=candidates[:MAX_PREVIEW_SAMPLE],
+        source_type=adapter.source_type,
+        label=adapter.label,
+        parser_version=adapter.parser_version,
+        source_tool_version=result.source_tool_version,
+        parsed_count=result.parsed_count,
+        rejected_count=result.rejected_count,
+        warnings=list(result.warnings),
+        records=records[:MAX_PREVIEW_SAMPLE],
+        duplicate_candidates=candidates[:MAX_PREVIEW_SAMPLE],
         mapping_gaps=list(result.mapping_gaps),
-        asset_count=len(result.assets), truncated_sample=truncated,
+        asset_count=len(result.assets),
+        truncated_sample=truncated,
     )
 
 
@@ -245,9 +273,14 @@ class CommitSummary:
     assets_updated: int = 0
 
 
-def _upsert_asset(repo: StorageRepository, project_id: str, import_id: str,
-                  parsed: ParsedAsset, by_locator: dict[tuple[str, str], Asset],
-                  summary: CommitSummary) -> None:
+def _upsert_asset(
+    repo: StorageRepository,
+    project_id: str,
+    import_id: str,
+    parsed: ParsedAsset,
+    by_locator: dict[tuple[str, str], Asset],
+    summary: CommitSummary,
+) -> None:
     asset_type = _ASSET_TYPE_MAP.get(parsed.asset_type)
     if asset_type is None:
         return
@@ -256,8 +289,11 @@ def _upsert_asset(repo: StorageRepository, project_id: str, import_id: str,
     observation = redact_text(parsed.observation) if parsed.observation else ""
     if current is None:
         asset = Asset(
-            asset_id=new_id("asset"), project_id=project_id, asset_type=asset_type,
-            locator=key[1], confidence=Confidence.PROBABLE,
+            asset_id=new_id("asset"),
+            project_id=project_id,
+            asset_type=asset_type,
+            locator=key[1],
+            confidence=Confidence.PROBABLE,
             scope_status=ScopeStatus.PENDING_APPROVAL,
             observations=[observation] if observation else [],
         )
@@ -277,8 +313,9 @@ def _upsert_asset(repo: StorageRepository, project_id: str, import_id: str,
     summary.assets_updated += 1
 
 
-def commit(repo: StorageRepository, project_id: str, import_id: str,
-          adapter: Adapter, result: ParseResult) -> CommitSummary:
+def commit(
+    repo: StorageRepository, project_id: str, import_id: str, adapter: Adapter, result: ParseResult
+) -> CommitSummary:
     """Writes normalized `Finding`/`Asset` records. Re-observes a Finding whose fingerprint
     already exists instead of duplicating it (same semantics as the live scanners'
     `FindingWriter`); everything else is created new. Every tool-derived text field is
@@ -287,41 +324,64 @@ def commit(repo: StorageRepository, project_id: str, import_id: str,
     existing = _iter_findings(repo, project_id)
     existing_by_fp = {f.fingerprint: f.finding_id for f in existing if f.fingerprint}
     source_base = FindingSource(
-        tool=adapter.label[:200], tool_version=result.source_tool_version[:500],
-        import_id=import_id, observed_at=utc_now())
+        tool=adapter.label[:200],
+        tool_version=result.source_tool_version[:500],
+        import_id=import_id,
+        observed_at=utc_now(),
+    )
     for parsed in result.findings:
         clean = _redacted(parsed)
         fp = fingerprint(project_id, clean)
-        source = source_base.model_copy(update={
-            "rule_id": clean.rule_id[:500], "source_finding_id": clean.source_finding_id[:500],
-            "original_severity": clean.original_severity[:500],
-            "original_confidence": clean.original_confidence[:500],
-        })
+        source = source_base.model_copy(
+            update={
+                "rule_id": clean.rule_id[:500],
+                "source_finding_id": clean.source_finding_id[:500],
+                "original_severity": clean.original_severity[:500],
+                "original_confidence": clean.original_confidence[:500],
+            }
+        )
         existing_id = existing_by_fp.get(fp)
         if existing_id:
+
             def apply(current: Finding, _source: FindingSource = source) -> Finding:
-                return current.model_copy(update={
-                    "sources": (current.sources + [_source])[-200:],
-                    "dedup_history": (current.dedup_history + [
-                        DedupEvent(action="reobserved", note=f"import {import_id}")
-                    ])[-500:],
-                })
+                return current.model_copy(
+                    update={
+                        "sources": (current.sources + [_source])[-200:],
+                        "dedup_history": (
+                            current.dedup_history
+                            + [DedupEvent(action="reobserved", note=f"import {import_id}")]
+                        )[-500:],
+                    }
+                )
 
             repo.update_finding(project_id, existing_id, apply)
             summary.findings_reobserved += 1
             continue
         finding = Finding(
-            finding_id=new_id("finding"), project_id=project_id, fingerprint=fp,
-            title=clean.title, summary=clean.summary, technical_detail=clean.technical_detail,
-            category=clean.category, url=clean.url, method=clean.method,
-            parameter=clean.parameter, component=clean.component, severity=clean.severity,
-            confidence=clean.confidence, verification_state="unverified",
-            analyst_status=(AnalystStatus.NEEDS_REVIEW
-                           if clean.confidence == Confidence.NEEDS_REVIEW
-                           else AnalystStatus.NEW),
-            cwe_ids=clean.cwe_ids, remediation=clean.remediation,
+            finding_id=new_id("finding"),
+            project_id=project_id,
+            fingerprint=fp,
+            title=clean.title,
+            summary=clean.summary,
+            technical_detail=clean.technical_detail,
+            category=clean.category,
+            url=clean.url,
+            method=clean.method,
+            parameter=clean.parameter,
+            component=clean.component,
+            severity=clean.severity,
+            confidence=clean.confidence,
+            verification_state="unverified",
+            analyst_status=(
+                AnalystStatus.NEEDS_REVIEW
+                if clean.confidence == Confidence.NEEDS_REVIEW
+                else AnalystStatus.NEW
+            ),
+            cwe_ids=clean.cwe_ids,
+            remediation=clean.remediation,
             references=[r for r in clean.references if r.startswith(("http://", "https://"))][:50],
-            rule_id=clean.rule_id, sources=[source],
+            rule_id=clean.rule_id,
+            sources=[source],
         )
         created = repo.create_finding(finding)
         existing_by_fp[fp] = created.finding_id

@@ -171,13 +171,13 @@ def formula_description() -> dict[str, object]:
         "severity_points": {k.value: v for k, v in SEVERITY_POINTS.items()},
         "confidence_multiplier": {k.value: v for k, v in CONFIDENCE_MULTIPLIER.items()},
         "asset_criticality_bonus": {
-            **ASSET_CRITICALITY_BONUS, "none": ASSET_CRITICALITY_BONUS_UNSET,
+            **ASSET_CRITICALITY_BONUS,
+            "none": ASSET_CRITICALITY_BONUS_UNSET,
         },
         "exposure_bonus": {"has_url": EXPOSURE_BONUS, "no_url": EXPOSURE_BONUS_NONE},
         "verification_bonus": VERIFICATION_BONUS,
-        "tier_bands": {name: threshold for threshold, name in _TIER_BANDS} | {
-            _INFORMATIONAL_TIER: 0.0
-        },
+        "tier_bands": {name: threshold for threshold, name in _TIER_BANDS}
+        | {_INFORMATIONAL_TIER: 0.0},
         "needs_review_tier_ceiling": _NEEDS_REVIEW_TIER_CEILING,
         "notes": (
             "This is an internal prioritization aid, not CVSS and not a claim of exploit "

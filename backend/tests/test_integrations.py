@@ -35,7 +35,8 @@ def _write_script(tmp_path: Path, code: str) -> Path:
 
 
 def test_list_integration_statuses_reports_not_configured_when_nothing_is_set(
-    repo: StorageRepository, monkeypatch: pytest.MonkeyPatch,
+    repo: StorageRepository,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     monkeypatch.setattr(integrations_mod, "detect_nmap", lambda: None)
     monkeypatch.setattr(integrations_mod, "detect_tls_tools", lambda: [])
@@ -96,7 +97,9 @@ def test_selftest_succeeds_against_a_real_executable(repo: StorageRepository) ->
 
 
 def test_selftest_reports_an_error_for_a_tool_that_produces_no_version_output(
-    repo: StorageRepository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    repo: StorageRepository,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     script = _write_script(tmp_path, "pass\n")  # exits silently, no output at all
     _set_tool_path(repo, "nmap", sys.executable)
@@ -109,7 +112,9 @@ def test_selftest_reports_an_error_for_a_tool_that_produces_no_version_output(
 
 
 def test_selftest_never_reports_verified_for_an_invalid_executable_that_exits_nonzero(
-    repo: StorageRepository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    repo: StorageRepository,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A binary that doesn't understand `--version` (wrong/unsupported version, or an
     invalid executable masquerading as the tool) often still prints *something* — usually an
@@ -117,9 +122,7 @@ def test_selftest_never_reports_verified_for_an_invalid_executable_that_exits_no
     a verified version: this is exactly the false-pass the self-test exists to prevent."""
     script = _write_script(
         tmp_path,
-        "import sys\n"
-        "print('Error: unrecognized option --version', file=sys.stderr)\n"
-        "sys.exit(2)\n",
+        "import sys\nprint('Error: unrecognized option --version', file=sys.stderr)\nsys.exit(2)\n",
     )
     _set_tool_path(repo, "nmap", sys.executable)
     monkeypatch.setattr(
@@ -133,7 +136,8 @@ def test_selftest_never_reports_verified_for_an_invalid_executable_that_exits_no
 
 
 def test_selftest_reports_a_clean_error_for_an_invalid_executable(
-    repo: StorageRepository, tmp_path: Path,
+    repo: StorageRepository,
+    tmp_path: Path,
 ) -> None:
     """A configured path can point at a file that exists but is not a real, runnable
     executable (wrong format, no execute permission). The OS rejects launching it before a
@@ -149,7 +153,9 @@ def test_selftest_reports_a_clean_error_for_an_invalid_executable(
 
 
 def test_selftest_times_out_on_a_hanging_tool(
-    repo: StorageRepository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    repo: StorageRepository,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     script = _write_script(tmp_path, "import time\ntime.sleep(30)\n")
     _set_tool_path(repo, "nmap", sys.executable)
@@ -163,13 +169,14 @@ def test_selftest_times_out_on_a_hanging_tool(
 
 
 def test_selftest_handles_binary_garbage_output_without_crashing(
-    repo: StorageRepository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    repo: StorageRepository,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Malformed (non-UTF-8) output must be decoded defensively, never crash the self-test."""
     script = _write_script(
         tmp_path,
-        "import sys\n"
-        "sys.stdout.buffer.write(bytes([0xff, 0xfe, 0x00, 0x01, 0x02]))\n",
+        "import sys\nsys.stdout.buffer.write(bytes([0xff, 0xfe, 0x00, 0x01, 0x02]))\n",
     )
     _set_tool_path(repo, "nmap", sys.executable)
     monkeypatch.setattr(
@@ -180,13 +187,13 @@ def test_selftest_handles_binary_garbage_output_without_crashing(
 
 
 def test_selftest_handles_oversized_output_without_hanging_or_crashing(
-    repo: StorageRepository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch,
+    repo: StorageRepository,
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     script = _write_script(
         tmp_path,
-        'print("Fake Tool 9.9.9")\n'
-        'import sys\n'
-        'sys.stdout.write("x" * (64 * 1024 * 1024))\n',
+        'print("Fake Tool 9.9.9")\nimport sys\nsys.stdout.write("x" * (64 * 1024 * 1024))\n',
     )
     _set_tool_path(repo, "nmap", sys.executable)
     monkeypatch.setattr(
@@ -218,10 +225,15 @@ def test_last_used_reflects_a_real_scan_without_any_runner_code_change(
     from app.models.common import ScanModule, utc_now
     from app.models.scan import ScanJob
 
-    scan = repo.create_scan(ScanJob(
-        scan_id=new_id("scan"), project_id=pid, module=ScanModule.ATTACK_SURFACE,
-        tool_versions={"nmap": "Nmap 7.93"}, queued_at=utc_now(),
-    ))
+    scan = repo.create_scan(
+        ScanJob(
+            scan_id=new_id("scan"),
+            project_id=pid,
+            module=ScanModule.ATTACK_SURFACE,
+            tool_versions={"nmap": "Nmap 7.93"},
+            queued_at=utc_now(),
+        )
+    )
     statuses = {s.id: s for s in list_integration_statuses(repo)}
     assert statuses["nmap"].last_used is not None
     assert statuses["nmap"].last_used.scan_id == scan.scan_id
@@ -249,12 +261,18 @@ def test_credential_alias_rejects_a_raw_looking_secret() -> None:
 
 
 def test_credential_alias_accepts_env_and_keychain_references() -> None:
-    assert IntegrationsSettings(
-        online_lookup_credential_alias="env:MY_API_KEY"
-    ).online_lookup_credential_alias == "env:MY_API_KEY"
-    assert IntegrationsSettings(
-        online_lookup_credential_alias="keychain:my-entry"
-    ).online_lookup_credential_alias == "keychain:my-entry"
+    assert (
+        IntegrationsSettings(
+            online_lookup_credential_alias="env:MY_API_KEY"
+        ).online_lookup_credential_alias
+        == "env:MY_API_KEY"
+    )
+    assert (
+        IntegrationsSettings(
+            online_lookup_credential_alias="keychain:my-entry"
+        ).online_lookup_credential_alias
+        == "keychain:my-entry"
+    )
 
 
 def test_app_settings_round_trips_integrations_through_storage(repo: StorageRepository) -> None:

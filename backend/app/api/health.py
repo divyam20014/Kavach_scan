@@ -8,10 +8,10 @@ future breaking change can be detected (see TBD-039).
 from __future__ import annotations
 
 import platform
-from typing import Literal
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Request
-from fastapi.responses import JSONResponse
+from fastapi import APIRouter, Query, Request
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
 from app import __version__
@@ -21,6 +21,7 @@ from app.models.audit import AuditAction
 from app.storage.diagnostics import StorageDiagnostics, diagnose
 from app.storage.integrity import IntegrityReport, check_integrity
 from app.storage.migrations import STORAGE_VERSION
+from app.support_bundle import build_support_bundle
 
 API_VERSION = "1"
 
@@ -106,3 +107,22 @@ def run_integrity_check(request: Request, repo: Repository) -> IntegrityReport:
         metadata={"issues": len(report.issues), "indexes_rebuilt": report.indexes_rebuilt},
     )
     return report
+
+
+@router.get("/diagnostics/support-bundle")
+def support_bundle(
+    repo: Repository, include_findings: Annotated[bool, Query()] = False
+) -> Response:
+    """A diagnostic ZIP for troubleshooting, never a restorable backup: no evidence blobs,
+    and full finding records only when `include_findings=true` is explicitly requested
+    (the default carries per-project record counts only)."""
+    archive = build_support_bundle(repo, repo.settings, include_findings=include_findings)
+    repo.audit.record(
+        AuditAction.SUPPORT_BUNDLE_EXPORTED,
+        metadata={"include_findings": include_findings, "bytes": len(archive)},
+    )
+    return Response(
+        content=archive,
+        media_type="application/zip",
+        headers={"Content-Disposition": 'attachment; filename="support-bundle.zip"'},
+    )

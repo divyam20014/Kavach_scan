@@ -17,7 +17,9 @@ def _project(repo: StorageRepository) -> str:
     return repo.create_project(surface_project([80], hosts=["x.test"])).project_id
 
 
-def test_upload_returns_preview_without_committing(client: TestClient, repo: StorageRepository) -> None:
+def test_upload_returns_preview_without_committing(
+    client: TestClient, repo: StorageRepository
+) -> None:
     pid = _project(repo)
     resp = client.post(
         f"/api/projects/{pid}/imports",
@@ -40,7 +42,9 @@ def test_upload_rejects_unparseable_file_but_still_records_the_attempt(
     pid = _project(repo)
     resp = client.post(
         f"/api/projects/{pid}/imports",
-        files={"file": ("mystery.bin", b"\x00garbage not a known format", "application/octet-stream")},
+        files={
+            "file": ("mystery.bin", b"\x00garbage not a known format", "application/octet-stream")
+        },
     )
     assert resp.status_code == 201
     body = resp.json()
@@ -118,7 +122,10 @@ def test_csv_column_map_override_round_trips_through_upload_and_detail(
     created = client.post(
         f"/api/projects/{pid}/imports",
         files={"file": ("weird.csv", raw, "text/csv")},
-        data={"source_type": "generic_csv", "options_json": json.dumps({"column_map": {"title": "Col A"}})},
+        data={
+            "source_type": "generic_csv",
+            "options_json": json.dumps({"column_map": {"title": "Col A"}}),
+        },
     ).json()
     assert created["error"] == ""
     import_id = created["summary"]["import_id"]
@@ -134,8 +141,15 @@ def test_formats_endpoint_lists_supported_and_unsupported() -> None:
     client = TestClient(main_mod.create_app(), base_url=LOCAL_BASE_URL, client=LOCAL_CLIENT)
     body = client.get("/api/imports/formats").json()
     types = {f["source_type"] for f in body["supported"]}
-    assert {"nmap_xml", "nessus", "nuclei_jsonl", "sarif", "generic_csv", "generic_json",
-           "pdf_text"} <= types
+    assert {
+        "nmap_xml",
+        "nessus",
+        "nuclei_jsonl",
+        "sarif",
+        "generic_csv",
+        "generic_json",
+        "pdf_text",
+    } <= types
     assert {"zap", "burp"} == {f["source_type"] for f in body["unsupported"]}
     assert all(f["reason"] for f in body["unsupported"])
 

@@ -101,6 +101,15 @@ def dumps_record(data: dict[str, Any]) -> bytes:
     return (json.dumps(data, ensure_ascii=False, sort_keys=True, indent=2) + "\n").encode("utf-8")
 
 
+def write_bytes_to_external_path(path: Path, data: bytes) -> None:
+    """Write bytes to an operator-specified path outside the data directory (the CLI's
+    `support-bundle --output`). Not a canonical-record write (no atomic-replace, no locking,
+    no schema) — this exists only so every file write in the codebase still funnels through
+    `app/storage/`, the invariant `tests/test_static_guards.py::test_no_file_io_outside_storage`
+    enforces, rather than letting `app/__main__.py` write files directly."""
+    path.write_bytes(data)
+
+
 def _open_for_read(path: Path) -> BinaryIO:
     """Open for reading. On Windows, share read/write/DELETE so that a concurrent reader can
     never make a writer's atomic os.replace fail (Python's open() omits FILE_SHARE_DELETE)."""

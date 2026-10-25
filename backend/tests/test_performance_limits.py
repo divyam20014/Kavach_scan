@@ -25,7 +25,8 @@ def _project_with_many_findings(repo: StorageRepository) -> str:
 
 
 def test_findings_list_is_paginated_not_a_giant_load(
-    client: TestClient, repo: StorageRepository,
+    client: TestClient,
+    repo: StorageRepository,
 ) -> None:
     pid = _project_with_many_findings(repo)
     page = client.get("/api/findings", params={"project_id": pid, "limit": 25}).json()
@@ -41,7 +42,8 @@ def test_findings_list_is_paginated_not_a_giant_load(
 
 
 def test_findings_list_rejects_an_oversized_page_size(
-    client: TestClient, repo: StorageRepository,
+    client: TestClient,
+    repo: StorageRepository,
 ) -> None:
     pid = _project_with_many_findings(repo)
     resp = client.get("/api/findings", params={"project_id": pid, "limit": 100_000})
@@ -49,7 +51,8 @@ def test_findings_list_rejects_an_oversized_page_size(
 
 
 def test_findings_list_scales_linearly_not_quadratically(
-    client: TestClient, repo: StorageRepository,
+    client: TestClient,
+    repo: StorageRepository,
 ) -> None:
     """`list_findings` reads every matching finding's full body (not just the returned page)
     to support rich cross-field filtering/sorting/risk-scoring (TBD-073) — an accepted,

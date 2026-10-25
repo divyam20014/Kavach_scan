@@ -54,8 +54,9 @@ def test_commit_then_reobserve_on_second_identical_import(repo: StorageRepositor
 def test_commit_redacts_tool_derived_text_fields(repo: StorageRepository) -> None:
     pid = _project(repo)
     secret_summary = "Login succeeded with Authorization: Bearer sk-ABCDEFGHIJKLMNOPQRSTUVWX"  # noqa: S105
-    raw = ("[{\"title\": \"Leaked token in logs\", \"severity\": \"high\", "
-          f"\"summary\": \"{secret_summary}\"}}]").encode()
+    raw = (
+        f'[{{"title": "Leaked token in logs", "severity": "high", "summary": "{secret_summary}"}}]'
+    ).encode()
     adapter, result = parse_upload("leak.json", raw)
     commit(repo, pid, new_id("import"), adapter, result)
     stored = repo.list_findings(pid).items[0]
@@ -72,7 +73,9 @@ def test_commit_creates_assets_from_nmap_import(repo: StorageRepository) -> None
     assert any(a.locator == "10.0.0.5" for a in assets)
 
 
-def test_commit_marks_needs_review_confidence_as_needs_review_status(repo: StorageRepository) -> None:
+def test_commit_marks_needs_review_confidence_as_needs_review_status(
+    repo: StorageRepository,
+) -> None:
     pid = _project(repo)
     adapter, result = parse_upload("report.pdf", fx.PDF_MINIMAL)
     commit(repo, pid, new_id("import"), adapter, result)

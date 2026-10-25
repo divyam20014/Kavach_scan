@@ -27,19 +27,19 @@ TOOL_IDS: tuple[str, ...] = ("nmap", "sslyze", "testssl.sh")
 
 _CAPABILITIES: dict[str, str] = {
     "nmap": "Bounded TCP connect port/service mapping for the attack surface mapper "
-            "(Module 6.2) — TCP connect only, never raw sockets or stealth scans.",
+    "(Module 6.2) — TCP connect only, never raw sockets or stealth scans.",
     "sslyze": "TLS protocol/cipher detail for the web scanner's certificate checks "
-              "(Module 5.3). Preferred over testssl.sh when both are available.",
+    "(Module 5.3). Preferred over testssl.sh when both are available.",
     "testssl.sh": "TLS protocol/cipher detail for the web scanner's certificate checks "
-                  "(Module 5.3). Used when sslyze is unavailable.",
+    "(Module 5.3). Used when sslyze is unavailable.",
 }
 _TROUBLESHOOTING: dict[str, str] = {
     "nmap": "Install Nmap and ensure it is on PATH, or set an explicit path in Settings. "
-            "If Nmap is missing, port/service checks fall back to a built-in TCP connect probe.",
+    "If Nmap is missing, port/service checks fall back to a built-in TCP connect probe.",
     "sslyze": "Install sslyze (`pip install sslyze`) or set an explicit path in Settings. "
-              "If neither TLS tool is available, protocol/cipher checks are reported skipped.",
+    "If neither TLS tool is available, protocol/cipher checks are reported skipped.",
     "testssl.sh": "Install testssl.sh (a bash script; not native on Windows — use WSL) or set "
-                  "an explicit path in Settings.",
+    "an explicit path in Settings.",
 }
 
 _SELFTEST_TIMEOUT_SECONDS = 20.0
@@ -128,10 +128,15 @@ def list_integration_statuses(repo: StorageRepository) -> list[IntegrationStatus
         detected = _detect_path(tool_id, configured)
         out.append(
             IntegrationStatus(
-                id=tool_id, label=tool_id, capability=_CAPABILITIES[tool_id],
-                configured_path=configured, detected_path=detected,
-                status=_status_for(tool_id, configured, detected), version="",
-                last_used=_last_use(repo, tool_id), last_error="",
+                id=tool_id,
+                label=tool_id,
+                capability=_CAPABILITIES[tool_id],
+                configured_path=configured,
+                detected_path=detected,
+                status=_status_for(tool_id, configured, detected),
+                version="",
+                last_used=_last_use(repo, tool_id),
+                last_error="",
                 troubleshooting=_TROUBLESHOOTING[tool_id],
             )
         )
@@ -156,10 +161,15 @@ def run_selftest(repo: StorageRepository, tool_id: str) -> IntegrationStatus:
     configured = _configured_path(settings, tool_id)
     detected = _detect_path(tool_id, configured)
     base = IntegrationStatus(
-        id=tool_id, label=tool_id, capability=_CAPABILITIES[tool_id],
-        configured_path=configured, detected_path=detected,
-        status=_status_for(tool_id, configured, detected), version="",
-        last_used=_last_use(repo, tool_id), last_error="",
+        id=tool_id,
+        label=tool_id,
+        capability=_CAPABILITIES[tool_id],
+        configured_path=configured,
+        detected_path=detected,
+        status=_status_for(tool_id, configured, detected),
+        version="",
+        last_used=_last_use(repo, tool_id),
+        last_error="",
         troubleshooting=_TROUBLESHOOTING[tool_id],
     )
     if not detected:
@@ -184,7 +194,8 @@ def run_selftest(repo: StorageRepository, tool_id: str) -> IntegrationStatus:
         return replace(base, status="error", last_error=f"could not run the executable: {exc}")
     if result.timed_out:
         return replace(
-            base, status="error",
+            base,
+            status="error",
             last_error=f"the tool did not respond within {_SELFTEST_TIMEOUT_SECONDS:.0f}s",
         )
     if result.exit_code != 0:

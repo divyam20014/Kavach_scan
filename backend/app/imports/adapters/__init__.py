@@ -17,8 +17,15 @@ from app.imports.adapters.sarif import ADAPTER as SARIF
 from app.imports.base import Adapter
 
 # Order matters: more specific/structured formats are sniffed before the generic fallbacks.
-ADAPTERS: list[Adapter] = [NMAP_XML, NESSUS, NUCLEI_JSONL, SARIF, GENERIC_CSV, GENERIC_JSON,
-                          PDF_TEXT]
+ADAPTERS: list[Adapter] = [
+    NMAP_XML,
+    NESSUS,
+    NUCLEI_JSONL,
+    SARIF,
+    GENERIC_CSV,
+    GENERIC_JSON,
+    PDF_TEXT,
+]
 
 UNSUPPORTED: dict[str, str] = {
     "zap": "OWASP ZAP export (JSON/XML/HTML): deferred. ZAP's own export schema varies "

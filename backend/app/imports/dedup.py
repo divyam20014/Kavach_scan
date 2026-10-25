@@ -57,10 +57,17 @@ def fingerprint(project_id: str, finding: ParsedFinding) -> str:
     host = _canonical_host(finding)
     path = _canonical_path(finding)
     strong = finding.source_finding_id.strip() or finding.rule_id.strip()
-    parts = "|".join([
-        project_id, host, path, (finding.method or "").upper(), finding.parameter.strip().lower(),
-        strong, ",".join(str(c) for c in sorted(finding.cwe_ids)),
-    ])
+    parts = "|".join(
+        [
+            project_id,
+            host,
+            path,
+            (finding.method or "").upper(),
+            finding.parameter.strip().lower(),
+            strong,
+            ",".join(str(c) for c in sorted(finding.cwe_ids)),
+        ]
+    )
     return hashlib.sha256(parts.encode("utf-8")).hexdigest()
 
 
@@ -72,8 +79,9 @@ class TitleCandidate:
     title: str
 
 
-def title_only_candidates(findings: list[ParsedFinding],
-                          existing: list[tuple[str, str]]) -> list[TitleCandidate]:
+def title_only_candidates(
+    findings: list[ParsedFinding], existing: list[tuple[str, str]]
+) -> list[TitleCandidate]:
     """`existing` is [(finding_id, title)] for findings already in the project. Flags pairs
     that share a normalized title but were NOT already unified by `fingerprint()` (the
     caller passes only findings whose fingerprint did not match)."""

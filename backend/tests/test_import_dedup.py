@@ -15,8 +15,9 @@ def _f(**kw: object) -> ParsedFinding:
 
 def test_fingerprint_matches_same_host_path_method_parameter() -> None:
     a = _f(title="XSS v1", url="http://x.test/search?q=1", method="get", parameter="q")
-    b = _f(title="Totally different title", url="http://x.test/search?q=2", method="GET",
-          parameter="q")
+    b = _f(
+        title="Totally different title", url="http://x.test/search?q=2", method="GET", parameter="q"
+    )
     assert fingerprint("p1", a) == fingerprint("p1", b)
 
 

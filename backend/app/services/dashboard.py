@@ -218,14 +218,19 @@ def _compute_trend(
         newer_counts = findings_by_scan.get(newer_id, Counter())
         older_counts = findings_by_scan.get(older_id, Counter())
         by_severity_delta = {
-            s.value: newer_counts.get(s.value, 0) - older_counts.get(s.value, 0)
-            for s in Severity
+            s.value: newer_counts.get(s.value, 0) - older_counts.get(s.value, 0) for s in Severity
         }
-        trend.append(ModuleTrend(
-            module=module, older_scan_id=older_id, newer_scan_id=newer_id,
-            older_at=older_at, newer_at=newer_at,
-            older_total=sum(older_counts.values()), newer_total=sum(newer_counts.values()),
-            findings_delta=sum(newer_counts.values()) - sum(older_counts.values()),
-            by_severity_delta=by_severity_delta,
-        ))
+        trend.append(
+            ModuleTrend(
+                module=module,
+                older_scan_id=older_id,
+                newer_scan_id=newer_id,
+                older_at=older_at,
+                newer_at=newer_at,
+                older_total=sum(older_counts.values()),
+                newer_total=sum(newer_counts.values()),
+                findings_delta=sum(newer_counts.values()) - sum(older_counts.values()),
+                by_severity_delta=by_severity_delta,
+            )
+        )
     return trend

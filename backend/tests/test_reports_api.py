@@ -51,9 +51,7 @@ def test_download_rejects_a_format_that_was_not_generated(
 ) -> None:
     pid = _project(repo)
     repo.create_finding(make_finding(pid))
-    created = client.post(
-        f"/api/projects/{pid}/reports", json={"formats": ["html"]}
-    ).json()
+    created = client.post(f"/api/projects/{pid}/reports", json={"formats": ["html"]}).json()
     resp = client.get(f"/api/projects/{pid}/reports/{created['report_id']}/download/pdf")
     assert resp.status_code == 404
 
@@ -61,9 +59,7 @@ def test_download_rejects_a_format_that_was_not_generated(
 def test_pdf_download_is_a_real_pdf(client: TestClient, repo: StorageRepository) -> None:
     pid = _project(repo)
     repo.create_finding(make_finding(pid, title="PDF check finding"))
-    created = client.post(
-        f"/api/projects/{pid}/reports", json={"formats": ["pdf"]}
-    ).json()
+    created = client.post(f"/api/projects/{pid}/reports", json={"formats": ["pdf"]}).json()
     resp = client.get(f"/api/projects/{pid}/reports/{created['report_id']}/download/pdf")
     assert resp.status_code == 200
     assert resp.headers["content-type"] == "application/pdf"
@@ -76,9 +72,7 @@ def test_html_response_escapes_a_script_tag_in_the_title(
     pid = _project(repo)
     repo.create_finding(make_finding(pid, title="<script>alert(1)</script>"))
     created = client.post(f"/api/projects/{pid}/reports", json={"formats": ["html"]}).json()
-    html = client.get(
-        f"/api/projects/{pid}/reports/{created['report_id']}/download/html"
-    ).text
+    html = client.get(f"/api/projects/{pid}/reports/{created['report_id']}/download/html").text
     assert "<script>alert(1)</script>" not in html
     assert "&lt;script&gt;" in html
 

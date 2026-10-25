@@ -85,31 +85,44 @@ class NucleiJsonlAdapter:
         severity, original = normalize_severity(info.get("severity"))
         matched = str(obj.get("matched-at") or obj.get("host") or "")[:2048]
         classification_raw = info.get("classification")
-        classification: dict[str, Any] = (classification_raw
-                                          if isinstance(classification_raw, dict) else {})
+        classification: dict[str, Any] = (
+            classification_raw if isinstance(classification_raw, dict) else {}
+        )
         cwe_field = classification.get("cwe-id")
         cwe_text = " ".join(cwe_field) if isinstance(cwe_field, list) else str(cwe_field or "")
         cve_field = classification.get("cve-id")
         cves = cve_field if isinstance(cve_field, list) else ([cve_field] if cve_field else [])
         references = info.get("reference")
-        refs = [str(r)[:500] for r in references][:50] if isinstance(references, list) else (
-            [str(references)[:500]] if references else [])
+        refs = (
+            [str(r)[:500] for r in references][:50]
+            if isinstance(references, list)
+            else ([str(references)[:500]] if references else [])
+        )
         description = truncate(info.get("description"))
         if cves:
             description = (description + "\n\nCVE: " + ", ".join(str(c) for c in cves[:20])).strip()
         matcher_status = obj.get("matcher-status")
         confidence = normalize_confidence(None, weak_evidence=matcher_status is False)
-        result.findings.append(ParsedFinding(
-            title=name, severity=severity, confidence=confidence,
-            original_severity=original, original_confidence="",
-            summary=description or f"Nuclei template {template_id} matched.",
-            technical_detail=truncate(json_excerpt(obj)),
-            category=truncate(",".join(str(t) for t in (info.get("tags") or [])[:10]), 200),
-            url=matched or None, host=_urlsplit_host(matched) if matched else None,
-            cwe_ids=extract_cwe_ids(cwe_text), rule_id=template_id,
-            source_finding_id=truncate(f"{template_id}:{matched}", 300),
-            remediation=truncate(info.get("remediation")), references=refs, row=row,
-        ))
+        result.findings.append(
+            ParsedFinding(
+                title=name,
+                severity=severity,
+                confidence=confidence,
+                original_severity=original,
+                original_confidence="",
+                summary=description or f"Nuclei template {template_id} matched.",
+                technical_detail=truncate(json_excerpt(obj)),
+                category=truncate(",".join(str(t) for t in (info.get("tags") or [])[:10]), 200),
+                url=matched or None,
+                host=_urlsplit_host(matched) if matched else None,
+                cwe_ids=extract_cwe_ids(cwe_text),
+                rule_id=template_id,
+                source_finding_id=truncate(f"{template_id}:{matched}", 300),
+                remediation=truncate(info.get("remediation")),
+                references=refs,
+                row=row,
+            )
+        )
         result.parsed_count += 1
 
 

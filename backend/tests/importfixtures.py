@@ -54,35 +54,69 @@ NESSUS_XML = b"""<?xml version="1.0"?>
 """
 
 NUCLEI_JSONL = (
-    json.dumps({
-        "template-id": "exposed-panel-jenkins", "matched-at": "http://10.0.0.7:8080/login",
-        "host": "10.0.0.7:8080",
-        "info": {"name": "Jenkins Login Panel Exposed", "severity": "medium",
-                 "description": "Jenkins login panel was detected.",
-                 "classification": {"cwe-id": ["CWE-200"], "cve-id": []},
-                 "reference": ["https://example.test/advisory"], "tags": ["panel", "jenkins"]},
-    }) + "\n" +
-    "not valid json\n" +
-    json.dumps({"template-id": "", "info": {}}) + "\n"
+    json.dumps(
+        {
+            "template-id": "exposed-panel-jenkins",
+            "matched-at": "http://10.0.0.7:8080/login",
+            "host": "10.0.0.7:8080",
+            "info": {
+                "name": "Jenkins Login Panel Exposed",
+                "severity": "medium",
+                "description": "Jenkins login panel was detected.",
+                "classification": {"cwe-id": ["CWE-200"], "cve-id": []},
+                "reference": ["https://example.test/advisory"],
+                "tags": ["panel", "jenkins"],
+            },
+        }
+    )
+    + "\n"
+    + "not valid json\n"
+    + json.dumps({"template-id": "", "info": {}})
+    + "\n"
 ).encode("utf-8")
 
-SARIF_JSON = json.dumps({
-    "version": "2.1.0", "$schema": "https://schemastore.azurepowershell.net/sarif-2.1.0.json",
-    "runs": [{
-        "tool": {"driver": {"name": "ExampleScanner", "version": "1.2.3", "rules": [
-            {"id": "JS0001", "shortDescription": {"text": "Use of eval()"},
-             "fullDescription": {"text": "eval() can execute arbitrary code (CWE-95)."},
-             "properties": {"tags": ["security", "CWE-95"]},
-             "helpUri": "https://example.test/rules/JS0001"},
-        ]}},
-        "results": [{
-            "ruleId": "JS0001", "level": "error",
-            "message": {"text": "eval() used with untrusted input"},
-            "locations": [{"physicalLocation": {
-                "artifactLocation": {"uri": "src/app.js"}, "region": {"startLine": 42}}}],
-        }],
-    }],
-}).encode("utf-8")
+SARIF_JSON = json.dumps(
+    {
+        "version": "2.1.0",
+        "$schema": "https://schemastore.azurepowershell.net/sarif-2.1.0.json",
+        "runs": [
+            {
+                "tool": {
+                    "driver": {
+                        "name": "ExampleScanner",
+                        "version": "1.2.3",
+                        "rules": [
+                            {
+                                "id": "JS0001",
+                                "shortDescription": {"text": "Use of eval()"},
+                                "fullDescription": {
+                                    "text": "eval() can execute arbitrary code (CWE-95)."
+                                },
+                                "properties": {"tags": ["security", "CWE-95"]},
+                                "helpUri": "https://example.test/rules/JS0001",
+                            },
+                        ],
+                    }
+                },
+                "results": [
+                    {
+                        "ruleId": "JS0001",
+                        "level": "error",
+                        "message": {"text": "eval() used with untrusted input"},
+                        "locations": [
+                            {
+                                "physicalLocation": {
+                                    "artifactLocation": {"uri": "src/app.js"},
+                                    "region": {"startLine": 42},
+                                }
+                            }
+                        ],
+                    }
+                ],
+            }
+        ],
+    }
+).encode("utf-8")
 
 GENERIC_CSV = (
     b"Vulnerability Name,Risk,Host,Solution\r\n"
@@ -96,14 +130,22 @@ GENERIC_CSV_NESSUS_STYLE = (
     b"A vulnerable version of OpenSSL is in use.,Upgrade OpenSSL\r\n"
 )
 
-GENERIC_JSON = json.dumps({
-    "findings": [
-        {"title": "Reflected XSS", "severity": "high", "host": "10.0.0.6",
-         "url": "http://10.0.0.6/search?q=1", "parameter": "q", "cwe": "CWE-79",
-         "summary": "Unsanitized input reflected in response."},
-        {"severity": "low"},  # no title -> rejected
-    ]
-}).encode("utf-8")
+GENERIC_JSON = json.dumps(
+    {
+        "findings": [
+            {
+                "title": "Reflected XSS",
+                "severity": "high",
+                "host": "10.0.0.6",
+                "url": "http://10.0.0.6/search?q=1",
+                "parameter": "q",
+                "cwe": "CWE-79",
+                "summary": "Unsanitized input reflected in response.",
+            },
+            {"severity": "low"},  # no title -> rejected
+        ]
+    }
+).encode("utf-8")
 
 PDF_MINIMAL = base64.b64decode(
     "JVBERi0xLjMKJeLjz9MKMSAwIG9iago8PAovUHJvZHVjZXIgKHB5cGRmKQo+PgplbmRvYmoKMiAwIG9iago8PAovVHlwZSAvUGFnZXMKL0NvdW50IDEKL0tpZHMgWyA0IDAgUiBdCj4+CmVuZG9iagozIDAgb2JqCjw8Ci9UeXBlIC9DYXRhbG9nCi9QYWdlcyAyIDAgUgo+PgplbmRvYmoKNCAwIG9iago8PAovVHlwZSAvUGFnZQovUmVzb3VyY2VzIDw8Ci9Gb250IDw8Ci9GMSA1IDAgUgo+Pgo+PgovTWVkaWFCb3ggWyAwLjAgMC4wIDMwMCAxNTAgXQovUGFyZW50IDIgMCBSCi9Db250ZW50cyA2IDAgUgo+PgplbmRvYmoKNSAwIG9iago8PAovVHlwZSAvRm9udAovU3VidHlwZSAvVHlwZTEKL0Jhc2VGb250IC9IZWx2ZXRpY2EKPj4KZW5kb2JqCjYgMCBvYmoKPDwKL0xlbmd0aCA3MQo+PgpzdHJlYW0KQlQgL0YxIDE4IFRmIDIwIDEwMCBUZCAoU2FtcGxlIFZBUFQgZmluZGluZyB0ZXh0IGV4dHJhY3Rpb24gdGVzdCkgVGogRVQKZW5kc3RyZWFtCmVuZG9iagp4cmVmCjAgNwowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwMTUgMDAwMDAgbiAKMDAwMDAwMDA1NCAwMDAwMCBuIAowMDAwMDAwMTEzIDAwMDAwIG4gCjAwMDAwMDAxNjIgMDAwMDAgbiAKMDAwMDAwMDI5NCAwMDAwMCBuIAowMDAwMDAwMzY0IDAwMDAwIG4gCnRyYWlsZXIKPDwKL1NpemUgNwovUm9vdCAzIDAgUgovSW5mbyAxIDAgUgo+PgpzdGFydHhyZWYKNDg1CiUlRU9GCg=="

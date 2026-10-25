@@ -1,6 +1,6 @@
 # Testing Strategy — VAPT Workbench
 
-> **Status:** Phase 01 (2026-10-20). 20 backend test files / 466 tests. Use the fixtures in `backend/tests/conftest.py` (`settings`, `repo`, `client`, `make_project/finding/asset`): each test gets a temporary data root. API test clients must use `base_url="http://127.0.0.1"` and `client=("127.0.0.1", <port>)`, because the guards reject Starlette's default `testserver` host and `testclient` peer.
+> **Status:** Phase 13 verification (2026-10-25). 1968 backend tests passed / 1 skipped; 77 frontend tests passed. Use the fixtures in `backend/tests/conftest.py` (`settings`, `repo`, `client`, `make_project/finding/asset`): each test gets a temporary data root. API test clients must use `base_url="http://127.0.0.1"` and `client=("127.0.0.1", <port>)`, because the guards reject Starlette's default `testserver` host and `testclient` peer.
 
 ## 1. Ground rules
 
@@ -22,6 +22,34 @@ Run from `backend/` (see [DEVELOPMENT.md](DEVELOPMENT.md) for setup):
 | Type check (strict, `app/`) | `poetry run mypy` |
 
 Frontend (Phase 02+, planned): `npm test` (Vitest), `npm run lint` (ESLint), `npm run typecheck` (`tsc --noEmit`), `npm run build`.
+
+### Results recorded at Phase 13 verification (2026-10-25)
+
+| Command | Result |
+|---|---|
+| `poetry run pytest -q` | **1968 passed, 1 skipped** (+10 regression tests from this verification pass) |
+| `poetry run ruff check .` / `ruff format --check .` | clean / clean (199 files) |
+| `poetry run mypy` | clean, 129 source files |
+| `poetry run pytest tests/test_static_guards.py tests/test_startup.py -q` | **680 passed** |
+| `npm test` / `typecheck` / `lint` / `build` / `audit` | unchanged (no frontend file touched in this pass): 77 passed, clean, clean |
+
+Verification found and fixed **4 defects**, all in Phase 13's own new code (CLI and a standalone script), none security-critical: (1) `python -m app support-bundle --output <bad path>` crashed with a raw traceback and a misleading exit code (1, reserved for `diagnose`'s "not ready") instead of a clean error — reproduced directly, fixed by catching `OSError` and returning exit code 2. (2) `scripts/generate_demo_project.py --data-dir <relative path>` crashed the same way — reproduced directly, fixed by catching `StorageError`. (3) The support bundle's `include_findings=True` output silently truncated a project's findings past a 500-record cap with no indication — fixed by adding `total`/`included`/`truncated` fields to `findings/{project_id}.json`. (4) The CLI's own documented default output path (`./support-bundle.zip`, landing in `backend/` when run as documented) was not git-ignored — reproduced directly, fixed with a `.gitignore` rule and 2 new `tests/test_repo_hygiene.py` cases. New tests: `tests/test_main_entrypoint.py` (+3), `tests/test_support_bundle.py` (+1), `tests/test_generate_demo_project.py` (+3, new file), `tests/test_repo_hygiene.py` (+2). Also reviewed with no defect found: `.env.example` cross-checked 1:1 against `app/core/settings.py::_ENV_FIELDS`; the support-bundle HTTP route's audit/redaction/headers; the demo generator's network/subprocess-free source; `.github/workflows/ci.yml` YAML validity. `docs/RELEASE_CHECKLIST.md` gained an explicit "Unsupported OS/tool combinations and known limitations" section (previously only an indirect pointer).
+
+### Results recorded at Phase 13 (2026-10-25)
+
+| Command | Result |
+|---|---|
+| `poetry run pytest -q` | **1958 passed, 1 skipped** (adds `test_support_bundle.py`, 6 tests; no other tests added in Phase 13 proper) |
+| `poetry run ruff check .` | clean |
+| `poetry run ruff format --check .` | clean (198 files) — fixed a pre-existing drift of 51 files, undetected since roughly Phase 07 because `ruff format --check` had dropped out of the routine verification loop; corrected with `ruff format .` (whitespace/line-wrap only, confirmed zero behavior change via an unchanged full test re-run) |
+| `poetry run mypy` | clean, 129 source files |
+| `poetry run pytest tests/test_static_guards.py tests/test_startup.py -q` | **680 passed** |
+| `npm run typecheck` / `npm run lint` | clean |
+| `npm test` | **77 passed** |
+| `npm run build` | succeeds (one cosmetic chunk-size warning, not an error) |
+| `npm audit` | 0 vulnerabilities |
+
+No new defects were found in Phase 13 itself (a packaging/documentation phase); the format drift above was a housekeeping gap, not a functional defect. See `docs/IMPLEMENTATION_STATUS.md`'s "Final release assessment" for the consolidated module status and every remaining TBD decision, and `docs/RELEASE_CHECKLIST.md` for the exact, repeatable command set this table was generated from.
 
 ### Results recorded at Phase 12 verification (2026-10-25)
 

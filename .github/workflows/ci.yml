@@ -1,0 +1,92 @@
+name: CI
+
+# Entirely offline: every backend test runs behind an autouse guard that fails the test if it
+# ever opens a non-loopback socket (backend/tests/conftest.py::_offline_guard), and every
+# frontend test runs against a mocked fetch client (frontend/src/test/utils.tsx::mockApi).
+# No database or broker service is started here because this application does not use one
+# (filesystem-only persistence) — see TBD-027.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  backend:
+    name: Backend (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python-version: ["3.12", "3.13"]
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Poetry
+        run: pip install "poetry>=2,<3"
+
+      - name: Install dependencies (locked)
+        run: poetry install --no-interaction
+
+      - name: Lint (ruff)
+        run: poetry run ruff check .
+
+      - name: Format check (ruff)
+        run: poetry run ruff format --check .
+
+      - name: Type check (mypy, strict on app/)
+        run: poetry run mypy
+
+      - name: Tests (pytest)
+        run: poetry run pytest -q
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies (locked)
+        run: npm ci
+
+      - name: Type check
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Tests (vitest)
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Dependency audit
+        run: npm audit --audit-level=high
+
+  # Real-browser Playwright E2E (frontend/e2e/) and the live-server smoke checks in
+  # docs/TESTING.md are not run here: they drive a real local Edge/Chromium instance and a real
+  # backend process, which needs more setup than a stock Ubuntu runner provides out of the box.
+  # They are part of the documented release checklist (docs/RELEASE_CHECKLIST.md) instead, run
+  # manually before a release. See docs/TESTING.md for exact commands and recorded results.

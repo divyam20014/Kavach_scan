@@ -4,9 +4,14 @@
     python -m app diagnose     read-only data-directory readiness report (JSON)
     python -m app integrations  run the external-tool self-test (version only; no target
                                  traffic) and print integration status as JSON
+    python -m app support-bundle [--output PATH] [--include-findings]
+                                 write a redacted diagnostic ZIP for troubleshooting (never a
+                                 restorable backup; no evidence blobs; full finding records
+                                 only with --include-findings)
     python -m app --version
 
-Exit codes: 0 ok · 1 not ready (diagnose) · 2 configuration error · 3 storage error.
+Exit codes: 0 ok · 1 not ready (diagnose) · 2 configuration error (including an unwritable
+`support-bundle --output` path) · 3 storage error.
 """
 
 from __future__ import annotations
@@ -33,6 +38,19 @@ def _parser() -> argparse.ArgumentParser:
     sub.add_parser(
         "integrations",
         help="run the external-tool self-test (version capture only; no target traffic)",
+    )
+    bundle = sub.add_parser(
+        "support-bundle", help="write a redacted diagnostic ZIP (never a restorable backup)"
+    )
+    bundle.add_argument(
+        "--output",
+        default="support-bundle.zip",
+        help="output file path (default: ./support-bundle.zip)",
+    )
+    bundle.add_argument(
+        "--include-findings",
+        action="store_true",
+        help="include full (redacted) finding records per project; never evidence blobs",
     )
     return parser
 
@@ -105,12 +123,44 @@ def _integrations() -> int:
     return 0
 
 
+def _support_bundle(output: str, include_findings: bool) -> int:
+    try:
+        settings = load_settings()
+    except (SettingsError, InsecureBindError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+    from pathlib import Path
+
+    from app.storage.atomic import write_bytes_to_external_path
+    from app.storage.repository import StorageRepository
+    from app.support_bundle import build_support_bundle
+
+    try:
+        repo = StorageRepository.open(settings)
+    except StorageError as exc:
+        print(f"error: {exc.message}", file=sys.stderr)
+        return 3
+    try:
+        archive = build_support_bundle(repo, settings, include_findings=include_findings)
+    finally:
+        repo.close()
+    try:
+        write_bytes_to_external_path(Path(output), archive)
+    except OSError as exc:
+        print(f"error: could not write {output}: {exc}", file=sys.stderr)
+        return 2
+    print(f"wrote {output} ({len(archive)} bytes)")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parser().parse_args(argv)
     if args.command == "diagnose":
         return _diagnose()
     if args.command == "integrations":
         return _integrations()
+    if args.command == "support-bundle":
+        return _support_bundle(args.output, args.include_findings)
     return _serve()
 
 

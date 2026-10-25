@@ -173,6 +173,8 @@ describe("settings", () => {
     expect(screen.getByText("✓ Ready")).toBeInTheDocument();
     expect(await screen.findByText("Not available in this build")).toBeInTheDocument();
     expect(screen.getByText(/never a false pass/)).toBeInTheDocument();
+    const bundleLink = screen.getByRole("link", { name: "Download support bundle" });
+    expect(bundleLink).toHaveAttribute("href", "/api/diagnostics/support-bundle");
   });
 });
 

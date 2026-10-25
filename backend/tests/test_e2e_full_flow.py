@@ -78,7 +78,8 @@ def _e2e_flow(settings: RuntimeSettings, api_server: Any) -> None:
                 "name": "E2E Assessment",
                 "client_name": "Acme Corp",
                 "authorization": {
-                    "organization": "Acme Corp", "target_owner": "Acme IT",
+                    "organization": "Acme Corp",
+                    "target_owner": "Acme IT",
                     "authorized_by": "CISO Jane Doe",
                     "window_start": (NOW - timedelta(days=1)).isoformat(),
                     "window_end": (NOW + timedelta(days=30)).isoformat(),
@@ -88,7 +89,9 @@ def _e2e_flow(settings: RuntimeSettings, api_server: Any) -> None:
                 "scope_preview_hash": _preview_hash(scope),
                 "scan_policy": {
                     "allowed_modules": ["web_app", "attack_surface", "api_security"],
-                    "requests_per_second": 10, "max_concurrency": 4, "max_pages": 50,
+                    "requests_per_second": 10,
+                    "max_concurrency": 4,
+                    "max_pages": 50,
                 },
             }
             created = client.post("/api/projects", json=body)
@@ -116,8 +119,10 @@ def _e2e_flow(settings: RuntimeSettings, api_server: Any) -> None:
             web_scan = client.post(
                 f"/api/projects/{pid}/scans",
                 json={
-                    "module": "web_app", "confirmed": True,
-                    "targets": [f"http://127.0.0.1:{lab_port}/"], "parameters": {},
+                    "module": "web_app",
+                    "confirmed": True,
+                    "targets": [f"http://127.0.0.1:{lab_port}/"],
+                    "parameters": {},
                 },
             )
             assert web_scan.status_code == 202, web_scan.text
@@ -129,14 +134,17 @@ def _e2e_flow(settings: RuntimeSettings, api_server: Any) -> None:
             surface_scan = client.post(
                 f"/api/projects/{pid}/scans",
                 json={
-                    "module": "attack_surface", "confirmed": True,
+                    "module": "attack_surface",
+                    "confirmed": True,
                     "targets": ["127.0.0.1"],
                     "parameters": {"ports": f"{lab_port},{api_port}"},
                 },
             )
             assert surface_scan.status_code == 202, surface_scan.text
             surface_done = _wait(client, pid, surface_scan.json()["scan_id"])
-            assert surface_done["scan"]["state"] in ("completed", "completed_with_warnings"), surface_done
+            assert surface_done["scan"]["state"] in ("completed", "completed_with_warnings"), (
+                surface_done
+            )
             assets = client.get("/api/assets", params={"project_id": pid}).json()
             assert assets["total"] >= 1
 
@@ -163,7 +171,9 @@ def _e2e_flow(settings: RuntimeSettings, api_server: Any) -> None:
             api_scan = client.post(
                 f"/api/projects/{pid}/scans",
                 json={
-                    "module": "api_security", "confirmed": True, "targets": ["api-spec"],
+                    "module": "api_security",
+                    "confirmed": True,
+                    "targets": ["api-spec"],
                     "parameters": {"import_id": spec_import_id, "inventory_only": True},
                 },
             )
@@ -193,7 +203,9 @@ def _e2e_flow(settings: RuntimeSettings, api_server: Any) -> None:
                 )
                 assert commit.status_code == 200, (filename, commit.text)
 
-            findings_page = client.get("/api/findings", params={"project_id": pid, "limit": 200}).json()
+            findings_page = client.get(
+                "/api/findings", params={"project_id": pid, "limit": 200}
+            ).json()
             assert findings_page["total"] >= 3  # at least one finding per imported fixture
             sources = {item["module"] for item in findings_page["items"]}
             assert "import" in sources
@@ -204,7 +216,8 @@ def _e2e_flow(settings: RuntimeSettings, api_server: Any) -> None:
             triaged = client.patch(
                 f"/api/projects/{pid}/findings/{first['finding_id']}",
                 json={
-                    "expected_revision": first["revision"], "analyst_status": "confirmed",
+                    "expected_revision": first["revision"],
+                    "analyst_status": "confirmed",
                     "business_priority": "p2",
                 },
             )
@@ -212,7 +225,8 @@ def _e2e_flow(settings: RuntimeSettings, api_server: Any) -> None:
             assert triaged.json()["finding"]["analyst_status"] == "confirmed"
 
             second = next(
-                i["finding"] for i in findings_page["items"]
+                i["finding"]
+                for i in findings_page["items"]
                 if i["finding"]["finding_id"] != first["finding_id"]
             )
             merged = client.post(

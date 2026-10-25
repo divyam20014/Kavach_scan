@@ -38,7 +38,9 @@ def test_standard_mapping_requires_a_non_empty_catalog_version() -> None:
     assert ok.catalog_version == "2025"
 
 
-def test_every_standard_mapping_emitted_by_the_web_rule_catalog_carries_its_catalog_version() -> None:
+def test_every_standard_mapping_emitted_by_the_web_rule_catalog_carries_its_catalog_version() -> (
+    None
+):
     """End-to-end: run the actual rule-to-mapping code path (not just the model in
     isolation) and confirm every emitted mapping names a real, non-empty catalog version
     matching the live catalog registry — not a stale or placeholder string."""
@@ -75,8 +77,11 @@ def make_web_scan_findings_with_mappings() -> list[Finding]:
         created_ids = []
         for rule in candidates:
             result = CheckResult(
-                rule_id=rule.rule_id, outcome=Outcome.FINDING, subject="https://x.test/",
-                rationale="test", detail="test",
+                rule_id=rule.rule_id,
+                outcome=Outcome.FINDING,
+                subject="https://x.test/",
+                rationale="test",
+                detail="test",
             )
             finding_id = writer.write(result)
             if finding_id:
@@ -104,7 +109,8 @@ def test_cvss_record_rejects_a_score_that_does_not_match_its_vector() -> None:
     an unrelated/made-up score must fail validation, not be stored verbatim."""
     with pytest.raises(ValidationError, match="does not match"):
         CvssRecord(
-            version="3.1", vector="CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+            version="3.1",
+            vector="CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
             base_score=1.0,  # the real score for this vector is 9.8
             source="supplied",
         )
@@ -112,16 +118,21 @@ def test_cvss_record_rejects_a_score_that_does_not_match_its_vector() -> None:
 
 def test_cvss_record_accepts_a_correct_vector_and_score() -> None:
     rec = CvssRecord(
-        version="3.1", vector="CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
-        base_score=9.8, source="supplied",
+        version="3.1",
+        vector="CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+        base_score=9.8,
+        source="supplied",
     )
     assert rec.base_score == 9.8
 
 
 def _finding(**overrides: object) -> Finding:
     data: dict[str, object] = {
-        "finding_id": new_id("finding"), "project_id": new_id("project"),
-        "title": "t", "severity": Severity.CRITICAL, "confidence": Confidence.NEEDS_REVIEW,
+        "finding_id": new_id("finding"),
+        "project_id": new_id("project"),
+        "title": "t",
+        "severity": Severity.CRITICAL,
+        "confidence": Confidence.NEEDS_REVIEW,
     }
     data.update(overrides)
     return Finding(**data)  # type: ignore[arg-type]
@@ -130,13 +141,19 @@ def _finding(**overrides: object) -> Finding:
 def test_needs_review_confidence_can_never_reach_the_critical_tier() -> None:
     """Hard requirement: 'avoid upgrading speculative findings to Critical.'"""
     worst_case = _finding(
-        severity=Severity.CRITICAL, confidence=Confidence.NEEDS_REVIEW,
-        verification_state="manually_verified", url="https://x.test/",
+        severity=Severity.CRITICAL,
+        confidence=Confidence.NEEDS_REVIEW,
+        verification_state="manually_verified",
+        url="https://x.test/",
     )
     asset = Asset(
-        asset_id=new_id("asset"), project_id=worst_case.project_id, asset_type=AssetType.URL,
-        locator="https://x.test/", confidence=Confidence.CONFIRMED,
-        scope_status=ScopeStatus.IN_SCOPE, criticality="critical",
+        asset_id=new_id("asset"),
+        project_id=worst_case.project_id,
+        asset_type=AssetType.URL,
+        locator="https://x.test/",
+        confidence=Confidence.CONFIRMED,
+        scope_status=ScopeStatus.IN_SCOPE,
+        criticality="critical",
     )
     breakdown = score_finding(worst_case, [asset])
     assert breakdown.tier != "critical"
@@ -145,13 +162,19 @@ def test_needs_review_confidence_can_never_reach_the_critical_tier() -> None:
 
 def test_confirmed_critical_with_full_corroboration_reaches_critical_tier() -> None:
     f = _finding(
-        severity=Severity.CRITICAL, confidence=Confidence.CONFIRMED,
-        verification_state="manually_verified", url="https://x.test/",
+        severity=Severity.CRITICAL,
+        confidence=Confidence.CONFIRMED,
+        verification_state="manually_verified",
+        url="https://x.test/",
     )
     asset = Asset(
-        asset_id=new_id("asset"), project_id=f.project_id, asset_type=AssetType.URL,
-        locator="https://x.test/", confidence=Confidence.CONFIRMED,
-        scope_status=ScopeStatus.IN_SCOPE, criticality="critical",
+        asset_id=new_id("asset"),
+        project_id=f.project_id,
+        asset_type=AssetType.URL,
+        locator="https://x.test/",
+        confidence=Confidence.CONFIRMED,
+        scope_status=ScopeStatus.IN_SCOPE,
+        criticality="critical",
     )
     breakdown = score_finding(f, [asset])
     assert breakdown.tier == "critical"
@@ -176,8 +199,12 @@ def test_risk_score_never_mutates_the_stored_severity_or_confidence() -> None:
 def test_score_is_bounded_zero_to_one_hundred() -> None:
     low = _finding(severity=Severity.INFORMATIONAL, confidence=Confidence.POTENTIAL)
     assert 0.0 <= score_finding(low, []).score <= 100.0
-    high = _finding(severity=Severity.CRITICAL, confidence=Confidence.CONFIRMED,
-                    verification_state="manually_verified", url="https://x.test/")
+    high = _finding(
+        severity=Severity.CRITICAL,
+        confidence=Confidence.CONFIRMED,
+        verification_state="manually_verified",
+        url="https://x.test/",
+    )
     assert 0.0 <= score_finding(high, []).score <= 100.0
 
 

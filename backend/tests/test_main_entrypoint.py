@@ -84,6 +84,35 @@ def test_version_flag() -> None:
     assert out.returncode == 0 and out.stdout.strip() == f"vapt-workbench {__version__}"
 
 
+def test_support_bundle_command_writes_a_readable_zip(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    output = tmp_path / "bundle.zip"
+    assert entry.main(["support-bundle", "--output", str(output)]) == 0
+    assert output.is_file() and output.stat().st_size > 0
+    import zipfile
+
+    with zipfile.ZipFile(output) as zf:
+        assert "version.json" in zf.namelist()
+        assert not any(n.startswith("findings/") for n in zf.namelist())
+
+
+def test_support_bundle_command_with_include_findings_flag(tmp_path: Path) -> None:
+    output = tmp_path / "bundle.zip"
+    assert entry.main(["support-bundle", "--output", str(output), "--include-findings"]) == 0
+    assert output.is_file()
+
+
+def test_support_bundle_command_reports_a_clean_error_for_an_unwritable_output_path(
+    capsys: pytest.CaptureFixture[str], tmp_path: Path
+) -> None:
+    bad_output = tmp_path / "does-not-exist" / "bundle.zip"
+    assert entry.main(["support-bundle", "--output", str(bad_output)]) == 2
+    err = capsys.readouterr().err
+    assert "error: could not write" in err
+    assert not bad_output.exists()
+
+
 def test_diagnose_command_reports_readiness(tmp_path: Path) -> None:
     env = {k: v for k, v in __import__("os").environ.items() if not k.upper().startswith("VAPT_")}
     env["VAPT_DATA_DIR"] = str(tmp_path / "fresh")

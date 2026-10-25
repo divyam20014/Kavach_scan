@@ -83,12 +83,20 @@ def _finding_block(pdf: ReportPDF, data: ReportData, f: Finding) -> None:
     linked = [assets_by_id[aid] for aid in f.affected_asset_ids if aid in assets_by_id]
     breakdown = score_finding(f, linked)
     pdf.set_font("Helvetica", "B", 11)
-    pdf.multi_cell(0, 6, _ascii_safe(f"[{f.severity.value.upper()}] {f.title}"),
-                  new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.multi_cell(
+        0,
+        6,
+        _ascii_safe(f"[{f.severity.value.upper()}] {f.title}"),
+        new_x=XPos.LMARGIN,
+        new_y=YPos.NEXT,
+    )
     pdf.set_font("Helvetica", "I", 9)
-    _p(pdf, f"Confidence: {f.confidence.value} | Analyst status: {f.analyst_status.value} | "
-            f"Module: {module_for(f)} | Internal risk: {breakdown.score}/100 "
-            f"({breakdown.tier}) - not CVSS")
+    _p(
+        pdf,
+        f"Confidence: {f.confidence.value} | Analyst status: {f.analyst_status.value} | "
+        f"Module: {module_for(f)} | Internal risk: {breakdown.score}/100 "
+        f"({breakdown.tier}) - not CVSS",
+    )
     pdf.set_font("Helvetica", size=9)
     if f.url:
         _p(pdf, f"Affected: {f.url}")
@@ -100,14 +108,23 @@ def _finding_block(pdf: ReportPDF, data: ReportData, f: Finding) -> None:
         _p(pdf, f"Business impact: {f.business_impact}")
     _p(pdf, f"Remediation: {f.remediation or 'Not yet documented.'}")
     if f.cvss:
-        _p(pdf, f"CVSS {f.cvss.version}: {f.cvss.vector} (base score {f.cvss.base_score}, "
-                f"verified by {f.cvss.calculator or 'cvss'})")
+        _p(
+            pdf,
+            f"CVSS {f.cvss.version}: {f.cvss.vector} (base score {f.cvss.base_score}, "
+            f"verified by {f.cvss.calculator or 'cvss'})",
+        )
     for m in f.mappings:
-        _p(pdf, f"Mapping: {m.catalog} {m.catalog_version} {m.entry_id}"
-                f"{' - ' + m.title if m.title else ''}")
+        _p(
+            pdf,
+            f"Mapping: {m.catalog} {m.catalog_version} {m.entry_id}"
+            f"{' - ' + m.title if m.title else ''}",
+        )
     for s in f.sources:
-        _p(pdf, f"Source: {s.tool} {s.tool_version} rule={s.rule_id or '-'}"
-                f"{' original=' + s.original_severity if s.original_severity else ''}")
+        _p(
+            pdf,
+            f"Source: {s.tool} {s.tool_version} rule={s.rule_id or '-'}"
+            f"{' original=' + s.original_severity if s.original_severity else ''}",
+        )
     pdf.ln(3)
 
 
@@ -117,77 +134,127 @@ def render_pdf(data: ReportData) -> bytes:
     pdf.add_page()
     pdf.set_font("Helvetica", "B", 20)
     pdf.ln(40)
-    pdf.cell(0, 12, _ascii_safe(data.filters.classification_label), align="C",
-            new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.cell(
+        0,
+        12,
+        _ascii_safe(data.filters.classification_label),
+        align="C",
+        new_x=XPos.LMARGIN,
+        new_y=YPos.NEXT,
+    )
     pdf.set_font("Helvetica", "B", 18)
-    pdf.multi_cell(0, 10, _ascii_safe(data.filters.title), align="C",
-            new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.multi_cell(
+        0, 10, _ascii_safe(data.filters.title), align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT
+    )
     pdf.set_font("Helvetica", size=12)
-    pdf.cell(0, 8, _ascii_safe(f"{data.project.client_name} - {data.project.name}"),
-            align="C", new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.cell(
+        0,
+        8,
+        _ascii_safe(f"{data.project.client_name} - {data.project.name}"),
+        align="C",
+        new_x=XPos.LMARGIN,
+        new_y=YPos.NEXT,
+    )
     pdf.set_font("Helvetica", "I", 10)
-    pdf.cell(0, 8, _ascii_safe(f"Generated {data.generated_at.isoformat()}"), align="C",
-            new_x=XPos.LMARGIN, new_y=YPos.NEXT)
+    pdf.cell(
+        0,
+        8,
+        _ascii_safe(f"Generated {data.generated_at.isoformat()}"),
+        align="C",
+        new_x=XPos.LMARGIN,
+        new_y=YPos.NEXT,
+    )
 
     pdf.add_page()
     _h2(pdf, "Executive summary")
     total = len(data.findings)
     confirmed = data.status_counts.get("confirmed", 0)
-    _p(pdf, f"This assessment identified {total} finding(s) meeting the selected criteria, "
-            f"of which {confirmed} are analyst-confirmed.")
+    _p(
+        pdf,
+        f"This assessment identified {total} finding(s) meeting the selected criteria, "
+        f"of which {confirmed} are analyst-confirmed.",
+    )
     _table(
-        pdf, ["Severity", "Count"],
-        [[s, str(data.severity_counts.get(s, 0))]
-         for s in ("critical", "high", "medium", "low", "informational")],
+        pdf,
+        ["Severity", "Count"],
+        [
+            [s, str(data.severity_counts.get(s, 0))]
+            for s in ("critical", "high", "medium", "low", "informational")
+        ],
         [60, 30],
     )
-    _p(pdf, "This report does not claim the assessed system is secure. It reflects only the "
-            "checks executed within the configured scope and limits.")
+    _p(
+        pdf,
+        "This report does not claim the assessed system is secure. It reflects only the "
+        "checks executed within the configured scope and limits.",
+    )
 
     _h2(pdf, "Scope and authorization")
     auth = data.project.authorization
     if auth:
-        _p(pdf, f"Organization: {auth.organization} | Target owner: {auth.target_owner} | "
-                f"Authorized by: {auth.authorized_by}")
+        _p(
+            pdf,
+            f"Organization: {auth.organization} | Target owner: {auth.target_owner} | "
+            f"Authorized by: {auth.authorized_by}",
+        )
         _p(pdf, f"Window: {auth.window_start.isoformat()} to {auth.window_end.isoformat()}")
     else:
         _p(pdf, "No authorization record is present for this project.")
     scope = data.project.scope
-    _p(pdf, f"Hosts: {', '.join(scope.hosts) or '-'} | Ports: "
-            f"{', '.join(str(p) for p in scope.ports) or '-'}")
+    _p(
+        pdf,
+        f"Hosts: {', '.join(scope.hosts) or '-'} | Ports: "
+        f"{', '.join(str(p) for p in scope.ports) or '-'}",
+    )
 
     _h2(pdf, "Methodology")
     modules = sorted({s.scan.module.value for s in data.scans}) or ["none executed"]
     _p(pdf, f"Modules exercised: {', '.join(modules)}.")
     _table(
-        pdf, ["Tool", "Version"],
+        pdf,
+        ["Tool", "Version"],
         [[k, v] for k, v in sorted(data.tool_versions.items())],
         [90, 90],
     )
 
     _h2(pdf, "Scan coverage")
     _table(
-        pdf, ["Scan", "Module", "State", "Checks", "Skipped", "Errors"],
-        [[s.scan.scan_id[:12], s.scan.module.value, s.scan.state.value,
-          str(s.coverage_total), str(s.coverage_skipped), str(s.coverage_errors)]
-         for s in data.scans],
+        pdf,
+        ["Scan", "Module", "State", "Checks", "Skipped", "Errors"],
+        [
+            [
+                s.scan.scan_id[:12],
+                s.scan.module.value,
+                s.scan.state.value,
+                str(s.coverage_total),
+                str(s.coverage_skipped),
+                str(s.coverage_errors),
+            ]
+            for s in data.scans
+        ],
         [35, 30, 25, 20, 20, 20],
     )
 
     _h2(pdf, f"Finding details ({len(data.findings)})")
     if not data.findings:
-        _p(pdf, "No findings were detected by the checks executed, within the selected "
-                "criteria and the scan limits described below. This is not a claim that the "
-                "assessed system is secure.")
+        _p(
+            pdf,
+            "No findings were detected by the checks executed, within the selected "
+            "criteria and the scan limits described below. This is not a claim that the "
+            "assessed system is secure.",
+        )
     for f in data.findings:
         _finding_block(pdf, data, f)
 
     if data.assets:
         _h2(pdf, f"Attack surface inventory ({len(data.assets)})")
         _table(
-            pdf, ["Locator", "Type", "Scope", "Criticality"],
-            [[a.locator, a.asset_type.value, a.scope_status.value, a.criticality or "-"]
-             for a in data.assets],
+            pdf,
+            ["Locator", "Type", "Scope", "Criticality"],
+            [
+                [a.locator, a.asset_type.value, a.scope_status.value, a.criticality or "-"]
+                for a in data.assets
+            ],
             [70, 30, 30, 30],
         )
 

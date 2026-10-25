@@ -1,6 +1,6 @@
 # Dependency and Feature Inventory — VAPT Workbench
 
-> Last updated: Phase 12 (2026-10-25). The sources of truth are `backend/pyproject.toml` and `backend/poetry.lock`. Licenses were read from installed package metadata (`importlib.metadata`) in the project venv. Phase 12 added no new dependency; it upgraded three existing ones to patch disclosed vulnerabilities found by `pip-audit` (TBD-073) — see §2/§3.
+> Last updated: Phase 13 (2026-10-25). The sources of truth are `backend/pyproject.toml` and `backend/poetry.lock`. Licenses were read from installed package metadata (`importlib.metadata`) in the project venv. Phase 12 added no new dependency; it upgraded three existing ones to patch disclosed vulnerabilities found by `pip-audit` (TBD-073) — see §2/§3. Phase 13 (packaging/docs/support-bundle/demo-generator/CI) also added **no new runtime or dev dependency** — confirmed via `git diff --stat backend/pyproject.toml` across this phase.
 
 ## 1. Policy
 

@@ -63,7 +63,10 @@ def update_settings(body: SettingsUpdateRequest, repo: Repository) -> AppSetting
     if body.integrations is not None:
         integ = dict(data["integrations"])
         for field_name in (
-            "nmap_path", "sslyze_path", "testssl_path", "online_lookup_credential_alias",
+            "nmap_path",
+            "sslyze_path",
+            "testssl_path",
+            "online_lookup_credential_alias",
         ):
             value = getattr(body.integrations, field_name)
             if value is not None:
@@ -79,7 +82,8 @@ def update_settings(body: SettingsUpdateRequest, repo: Repository) -> AppSetting
         ) from exc
     saved = repo.save_settings(updated, expected_revision=body.expected_revision)
     repo.audit.record(
-        AuditAction.TOOL_CONFIG_CHANGED if integration_fields_changed
+        AuditAction.TOOL_CONFIG_CHANGED
+        if integration_fields_changed
         else AuditAction.SETTINGS_CHANGED,
         metadata={"fields": changed_fields},
     )
@@ -111,10 +115,16 @@ class IntegrationStatusResponse(StrictModel):
 
 def _to_response(s: IntegrationStatus) -> IntegrationStatusResponse:
     return IntegrationStatusResponse(
-        id=s.id, label=s.label, capability=s.capability, configured_path=s.configured_path,
-        detected_path=s.detected_path, status=s.status, version=s.version,
+        id=s.id,
+        label=s.label,
+        capability=s.capability,
+        configured_path=s.configured_path,
+        detected_path=s.detected_path,
+        status=s.status,
+        version=s.version,
         last_used=ToolUsageResponse(**s.last_used.__dict__) if s.last_used else None,
-        last_error=s.last_error, troubleshooting=s.troubleshooting,
+        last_error=s.last_error,
+        troubleshooting=s.troubleshooting,
     )
 
 
@@ -159,11 +169,16 @@ class CveCatalogMetadataResponse(StrictModel):
 def _catalog_response(record: CveCatalogRecord) -> CveCatalogMetadataResponse:
     age_days = (utc_now() - record.imported_at).days
     return CveCatalogMetadataResponse(
-        source=record.source, catalog_version=record.catalog_version,
-        imported_at=record.imported_at.isoformat(), file_sha256=record.file_sha256,
-        file_name=record.file_name, parser_version=record.parser_version,
-        entry_count=len(record.entries), stale_after_days=record.stale_after_days,
-        is_stale=age_days > record.stale_after_days, warnings=record.warnings,
+        source=record.source,
+        catalog_version=record.catalog_version,
+        imported_at=record.imported_at.isoformat(),
+        file_sha256=record.file_sha256,
+        file_name=record.file_name,
+        parser_version=record.parser_version,
+        entry_count=len(record.entries),
+        stale_after_days=record.stale_after_days,
+        is_stale=age_days > record.stale_after_days,
+        warnings=record.warnings,
     )
 
 
@@ -174,9 +189,7 @@ def get_cve_catalog(repo: Repository) -> CveCatalogMetadataResponse | None:
 
 
 @router.post("/cve-catalog/import", response_model=CveCatalogMetadataResponse, status_code=201)
-async def import_cve_catalog(
-    repo: Repository, file: UploadFile
-) -> CveCatalogMetadataResponse:
+async def import_cve_catalog(repo: Repository, file: UploadFile) -> CveCatalogMetadataResponse:
     raw = await file.read(MAX_CATALOG_BYTES + 1)
     if len(raw) > MAX_CATALOG_BYTES:
         raise ValidationFailedError(f"catalog file exceeds the {MAX_CATALOG_BYTES} byte limit")
@@ -188,8 +201,10 @@ async def import_cve_catalog(
     repo.audit.record(
         AuditAction.CVE_CATALOG_IMPORTED,
         metadata={
-            "source": saved.source, "catalog_version": saved.catalog_version,
-            "entry_count": len(saved.entries), "file_sha256": saved.file_sha256,
+            "source": saved.source,
+            "catalog_version": saved.catalog_version,
+            "entry_count": len(saved.entries),
+            "file_sha256": saved.file_sha256,
         },
     )
     return _catalog_response(saved)

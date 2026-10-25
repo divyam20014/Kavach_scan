@@ -35,9 +35,7 @@ class RequestSizeLimitMiddleware:
     this setting's configurable maximum).
     """
 
-    def __init__(
-        self, app: ASGIApp, max_bytes: int, path_limits: Sequence[PathLimit] = ()
-    ) -> None:
+    def __init__(self, app: ASGIApp, max_bytes: int, path_limits: Sequence[PathLimit] = ()) -> None:
         self.app = app
         self.max_bytes = max_bytes
         self.path_limits = path_limits

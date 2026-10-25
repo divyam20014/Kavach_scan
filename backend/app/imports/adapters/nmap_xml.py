@@ -23,8 +23,9 @@ class NmapXmlAdapter:
 
     def sniff(self, filename: str, raw: bytes) -> bool:
         head = raw.lstrip()[:4096]
-        return ((filename.lower().endswith(".xml") or b"<nmaprun" in head) and
-                b"<nmaprun" in raw[:65536])
+        return (filename.lower().endswith(".xml") or b"<nmaprun" in head) and b"<nmaprun" in raw[
+            :65536
+        ]
 
     def parse(self, raw: bytes, *, options: dict[str, Any] | None = None) -> ParseResult:
         result = ParseResult()
@@ -51,8 +52,9 @@ class NmapXmlAdapter:
         status = host.find("status")
         if status is not None and status.get("state") != "up":
             return
-        address_el = next((a for a in host.findall("address") if a.get("addrtype") in
-                           ("ipv4", "ipv6")), None)
+        address_el = next(
+            (a for a in host.findall("address") if a.get("addrtype") in ("ipv4", "ipv6")), None
+        )
         ip = address_el.get("addr", "") if address_el is not None else ""
         hostname_el = host.find("hostnames/hostname")
         hostname = hostname_el.get("name", "") if hostname_el is not None else ""
@@ -61,12 +63,20 @@ class NmapXmlAdapter:
             return
         primary = hostname or ip
         if ip:
-            result.assets.append(ParsedAsset(asset_type="ip", locator=ip,
-                                             parent_locator=hostname or None,
-                                             observation="imported from Nmap XML"))
+            result.assets.append(
+                ParsedAsset(
+                    asset_type="ip",
+                    locator=ip,
+                    parent_locator=hostname or None,
+                    observation="imported from Nmap XML",
+                )
+            )
         if hostname:
-            result.assets.append(ParsedAsset(asset_type="hostname", locator=hostname,
-                                             observation="imported from Nmap XML"))
+            result.assets.append(
+                ParsedAsset(
+                    asset_type="hostname", locator=hostname, observation="imported from Nmap XML"
+                )
+            )
         for port_el in host.findall("ports/port"):
             if port_el.get("protocol") != "tcp":
                 continue  # UDP results are inventoried nowhere in this build; TCP only for now
@@ -87,33 +97,60 @@ class NmapXmlAdapter:
             host_ref = ip or hostname
             bracketed = f"[{host_ref}]" if ":" in host_ref else host_ref
             port_locator = f"tcp://{bracketed}:{port}"
-            result.assets.append(ParsedAsset(
-                asset_type="port", locator=port_locator, parent_locator=ip or hostname,
-                observation=truncate(f"service={service} product={product} version={svc_version} "
-                                     f"{extra}".strip(), 480)))
+            result.assets.append(
+                ParsedAsset(
+                    asset_type="port",
+                    locator=port_locator,
+                    parent_locator=ip or hostname,
+                    observation=truncate(
+                        f"service={service} product={product} version={svc_version} "
+                        f"{extra}".strip(),
+                        480,
+                    ),
+                )
+            )
             label = DATABASE_PORTS.get(port) or ADMIN_PORTS.get(port) or CLEARTEXT_PORTS.get(port)
             if label:
-                result.findings.append(ParsedFinding(
-                    title=f"{label} service reachable", severity=Severity.MEDIUM,
-                    confidence=Confidence.CONFIRMED, original_severity="", original_confidence="",
-                    summary=f"Nmap reported TCP port {port} ({label}) open on {primary}.",
-                    technical_detail=truncate(
-                        f"service={service} product={product} version={svc_version} {extra}"),
-                    category="exposure", host=host_ref, parameter=str(port),
-                    component=truncate(f"{product} {svc_version}".strip()),
-                    rule_id=f"nmap-open-{label}", source_finding_id=f"{host_ref}:{port}/tcp"))
+                result.findings.append(
+                    ParsedFinding(
+                        title=f"{label} service reachable",
+                        severity=Severity.MEDIUM,
+                        confidence=Confidence.CONFIRMED,
+                        original_severity="",
+                        original_confidence="",
+                        summary=f"Nmap reported TCP port {port} ({label}) open on {primary}.",
+                        technical_detail=truncate(
+                            f"service={service} product={product} version={svc_version} {extra}"
+                        ),
+                        category="exposure",
+                        host=host_ref,
+                        parameter=str(port),
+                        component=truncate(f"{product} {svc_version}".strip()),
+                        rule_id=f"nmap-open-{label}",
+                        source_finding_id=f"{host_ref}:{port}/tcp",
+                    )
+                )
             if product and svc_version:
-                result.findings.append(ParsedFinding(
-                    title="Service banner discloses product version",
-                    severity=Severity.INFORMATIONAL,
-                    confidence=Confidence.CONFIRMED, original_severity="", original_confidence="",
-                    summary=f"{product} {svc_version} identified on {primary}:{port} by Nmap "
-                    "service/version detection.",
-                    technical_detail=truncate(f"service={service} product={product} "
-                                              f"version={svc_version} {extra}"),
-                    category="information-disclosure", host=host_ref, parameter=str(port),
-                    component=truncate(f"{product} {svc_version}"),
-                    rule_id="nmap-version-disclosure", source_finding_id=f"{host_ref}:{port}/tcp"))
+                result.findings.append(
+                    ParsedFinding(
+                        title="Service banner discloses product version",
+                        severity=Severity.INFORMATIONAL,
+                        confidence=Confidence.CONFIRMED,
+                        original_severity="",
+                        original_confidence="",
+                        summary=f"{product} {svc_version} identified on {primary}:{port} by Nmap "
+                        "service/version detection.",
+                        technical_detail=truncate(
+                            f"service={service} product={product} version={svc_version} {extra}"
+                        ),
+                        category="information-disclosure",
+                        host=host_ref,
+                        parameter=str(port),
+                        component=truncate(f"{product} {svc_version}"),
+                        rule_id="nmap-version-disclosure",
+                        source_finding_id=f"{host_ref}:{port}/tcp",
+                    )
+                )
             result.parsed_count += 1
 
 

@@ -20,7 +20,13 @@ from tests import importfixtures as fx
 
 def test_registry_is_ordered_per_tbd_023() -> None:
     assert [a.source_type for a in ADAPTERS] == [
-        "nmap_xml", "nessus", "nuclei_jsonl", "sarif", "generic_csv", "generic_json", "pdf_text",
+        "nmap_xml",
+        "nessus",
+        "nuclei_jsonl",
+        "sarif",
+        "generic_csv",
+        "generic_json",
+        "pdf_text",
     ]
     assert set(UNSUPPORTED) == {"zap", "burp"}
     for reason in UNSUPPORTED.values():
@@ -64,8 +70,9 @@ def test_nessus_adapter() -> None:
     assert 295 in f.cwe_ids
     assert "CVE-2020-0001" in f.summary
     assert any(a.asset_type == "ip" and a.locator == "10.0.0.9" for a in result.assets)
-    assert any(a.asset_type == "hostname" and a.locator == "app.internal.test"
-              for a in result.assets)
+    assert any(
+        a.asset_type == "hostname" and a.locator == "app.internal.test" for a in result.assets
+    )
 
 
 def test_nessus_style_csv_is_handled_by_generic_csv() -> None:
@@ -142,7 +149,14 @@ def test_generic_csv_reports_mapping_gaps_for_unmatched_columns() -> None:
     raw = b"Title,Extra\r\nSomething odd,x\r\n"
     result = GENERIC_CSV.parse(raw)
     assert result.parsed_count == 1
-    assert set(result.mapping_gaps) >= {"severity", "host", "url", "cwe", "remediation", "component"}
+    assert set(result.mapping_gaps) >= {
+        "severity",
+        "host",
+        "url",
+        "cwe",
+        "remediation",
+        "component",
+    }
     assert any("no column matched for" in w for w in result.warnings)
 
 

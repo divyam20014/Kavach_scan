@@ -117,7 +117,7 @@ def test_zip_symlink_member_is_rejected() -> None:
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w") as zf:
         info = zipfile.ZipInfo("link.txt")
-        info.external_attr = (0o120777 << 16)  # S_IFLNK
+        info.external_attr = 0o120777 << 16  # S_IFLNK
         zf.writestr(info, "/etc/passwd")
     with pytest.raises(ImportSafetyError, match="symlink"):
         maybe_extract_single_member(buf.getvalue())

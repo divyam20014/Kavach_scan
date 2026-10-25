@@ -19,8 +19,11 @@ def test_list_findings_cross_project_with_rich_filters(
     client: TestClient, repo: StorageRepository
 ) -> None:
     pid = _project(repo)
-    repo.create_finding(make_finding(pid, title="Reflected XSS", severity="high",
-                                     rule_id="WEB-XSS-001", cwe_ids=[79]))
+    repo.create_finding(
+        make_finding(
+            pid, title="Reflected XSS", severity="high", rule_id="WEB-XSS-001", cwe_ids=[79]
+        )
+    )
     repo.create_finding(make_finding(pid, title="Outdated jQuery", severity="low"))
     body = client.get("/api/findings", params={"project_id": pid}).json()
     assert body["total"] == 2
@@ -50,8 +53,12 @@ def test_finding_detail_update_comment_and_audit_trail(
 
     resp = client.patch(
         f"/api/projects/{pid}/findings/{f.finding_id}",
-        json={"expected_revision": 1, "analyst_status": "confirmed",
-             "business_impact": "Exposes customer data", "business_priority": "p1"},
+        json={
+            "expected_revision": 1,
+            "analyst_status": "confirmed",
+            "business_impact": "Exposes customer data",
+            "business_priority": "p1",
+        },
     )
     assert resp.status_code == 200
     updated = resp.json()
@@ -63,7 +70,10 @@ def test_finding_detail_update_comment_and_audit_trail(
 
     commented = client.post(
         f"/api/projects/{pid}/findings/{f.finding_id}/comments",
-        json={"text": "Confirmed via manual review", "expected_revision": updated["finding"]["revision"]},
+        json={
+            "text": "Confirmed via manual review",
+            "expected_revision": updated["finding"]["revision"],
+        },
     )
     assert commented.status_code == 200
     assert commented.json()["finding"]["comments"][0]["text"] == "Confirmed via manual review"
@@ -132,17 +142,27 @@ def test_unknown_finding_routes_are_404(client: TestClient, repo: StorageReposit
     pid = _project(repo)
     missing = "fnd_" + "0" * 32
     assert client.get(f"/api/projects/{pid}/findings/{missing}").status_code == 404
-    assert client.patch(
-        f"/api/projects/{pid}/findings/{missing}",
-        json={"expected_revision": 1, "analyst_status": "confirmed"},
-    ).status_code == 404
-    assert client.post(
-        f"/api/projects/{pid}/findings/{missing}/comments",
-        json={"text": "note", "expected_revision": 1},
-    ).status_code == 404
-    assert client.post(
-        f"/api/projects/{pid}/findings/{missing}/unmerge", json={"expected_revision": 1},
-    ).status_code == 404
+    assert (
+        client.patch(
+            f"/api/projects/{pid}/findings/{missing}",
+            json={"expected_revision": 1, "analyst_status": "confirmed"},
+        ).status_code
+        == 404
+    )
+    assert (
+        client.post(
+            f"/api/projects/{pid}/findings/{missing}/comments",
+            json={"text": "note", "expected_revision": 1},
+        ).status_code
+        == 404
+    )
+    assert (
+        client.post(
+            f"/api/projects/{pid}/findings/{missing}/unmerge",
+            json={"expected_revision": 1},
+        ).status_code
+        == 404
+    )
 
 
 def test_comment_and_unmerge_reject_a_stale_revision(
@@ -248,15 +268,27 @@ def test_dashboard_trend_appears_only_with_comparable_completed_scans(
     from app.models.scan import ScanJob
 
     pid = _project(repo)
-    s1 = repo.create_scan(ScanJob(scan_id=new_id("scan"), project_id=pid,
-                                  module=ScanModule.WEB_APP, state=ScanState.COMPLETED))
+    s1 = repo.create_scan(
+        ScanJob(
+            scan_id=new_id("scan"),
+            project_id=pid,
+            module=ScanModule.WEB_APP,
+            state=ScanState.COMPLETED,
+        )
+    )
     repo.create_finding(make_finding(pid, scan_id=s1.scan_id, severity="high"))
     # Only one completed scan so far: no comparable pair, so no trend yet.
     summary_one = client.get("/api/dashboard/summary", params={"project_id": pid}).json()
     assert summary_one["trend"] == []
 
-    s2 = repo.create_scan(ScanJob(scan_id=new_id("scan"), project_id=pid,
-                                  module=ScanModule.WEB_APP, state=ScanState.COMPLETED))
+    s2 = repo.create_scan(
+        ScanJob(
+            scan_id=new_id("scan"),
+            project_id=pid,
+            module=ScanModule.WEB_APP,
+            state=ScanState.COMPLETED,
+        )
+    )
     repo.create_finding(make_finding(pid, scan_id=s2.scan_id, severity="high"))
     repo.create_finding(make_finding(pid, scan_id=s2.scan_id, severity="critical"))
 

@@ -44,8 +44,9 @@ def decode_text(raw: bytes, *, declared: str | None = None) -> str:
     return raw.decode("latin-1")
 
 
-def check_json_bounds(node: object, *, max_depth: int = MAX_JSON_DEPTH,
-                      max_nodes: int = MAX_JSON_NODES) -> None:
+def check_json_bounds(
+    node: object, *, max_depth: int = MAX_JSON_DEPTH, max_nodes: int = MAX_JSON_NODES
+) -> None:
     counter = [0]
 
     def walk(value: object, depth: int) -> None:
@@ -64,8 +65,13 @@ def check_json_bounds(node: object, *, max_depth: int = MAX_JSON_DEPTH,
     walk(node, 0)
 
 
-def parse_xml_safely(raw: bytes, *, max_bytes: int = MAX_UPLOAD_BYTES,
-                     max_depth: int = MAX_XML_DEPTH, max_nodes: int = MAX_XML_NODES) -> ET.Element:
+def parse_xml_safely(
+    raw: bytes,
+    *,
+    max_bytes: int = MAX_UPLOAD_BYTES,
+    max_depth: int = MAX_XML_DEPTH,
+    max_nodes: int = MAX_XML_NODES,
+) -> ET.Element:
     """Parse XML defensively: reject DTD/ENTITY declarations (XXE/billion-laughs) before
     parsing, cap size, and bound the resulting tree's depth and node count."""
     if len(raw) > max_bytes:

@@ -141,6 +141,26 @@ export function SettingsPage() {
           </QueryState>
         </Card>
 
+        <Card withBorder component="section" aria-labelledby="support-h">
+          <Title order={2} size="h4" id="support-h" mb="sm">
+            Diagnostic support bundle
+          </Title>
+          <Text size="sm" c="dimmed" mb="sm">
+            A redacted ZIP for troubleshooting — version/storage info, settings, recent audit
+            events, integration status, and per-project record counts. Never a restorable
+            backup, and never includes evidence blobs. Full (still redacted) finding records
+            are opt-in only.
+          </Text>
+          <Group>
+            <Anchor href="/api/diagnostics/support-bundle" download>
+              Download support bundle
+            </Anchor>
+            <Anchor href="/api/diagnostics/support-bundle?include_findings=true" download>
+              Download with finding records
+            </Anchor>
+          </Group>
+        </Card>
+
         <Card withBorder component="section" aria-labelledby="tools-h">
           <Title order={2} size="h4" id="tools-h" mb="sm">
             External tools &amp; CVE catalog

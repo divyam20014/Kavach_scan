@@ -17,8 +17,13 @@ from app.reports.builder import ReportData
 from app.services.findings import module_for
 from app.services.risk import score_finding
 
-_SEVERITY_ORDER = [Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW,
-                  Severity.INFORMATIONAL]
+_SEVERITY_ORDER = [
+    Severity.CRITICAL,
+    Severity.HIGH,
+    Severity.MEDIUM,
+    Severity.LOW,
+    Severity.INFORMATIONAL,
+]
 
 _STYLE = """
 :root { color-scheme: light; }
@@ -68,8 +73,10 @@ def _cover(data: ReportData) -> str:
     p = data.project
     window = ""
     if p.authorization:
-        window = (f"Authorized window: {_fmt(p.authorization.window_start)} "
-                 f"to {_fmt(p.authorization.window_end)}")
+        window = (
+            f"Authorized window: {_fmt(p.authorization.window_start)} "
+            f"to {_fmt(p.authorization.window_end)}"
+        )
     return f"""
 <header class="cover">
   <p class="classification">{_e(data.filters.classification_label)}</p>
@@ -86,7 +93,7 @@ def _executive_summary(data: ReportData) -> str:
     confirmed = data.status_counts.get("confirmed", 0)
     rows = "".join(
         f'<tr><td class="{_sev_class(s.value)}">{_e(s.value.title())}</td>'
-        f'<td>{data.severity_counts.get(s.value, 0)}</td></tr>'
+        f"<td>{data.severity_counts.get(s.value, 0)}</td></tr>"
         for s in _SEVERITY_ORDER
     )
     return f"""
@@ -142,9 +149,13 @@ def _scope_section(data: ReportData) -> str:
 
 def _methodology_section(data: ReportData) -> str:
     modules = sorted({s.scan.module.value for s in data.scans}) or ["none executed"]
-    tool_rows = "".join(
-        f"<tr><td>{_e(k)}</td><td>{_e(v)}</td></tr>" for k, v in sorted(data.tool_versions.items())
-    ) or '<tr><td colspan="2">No external tool versions were recorded.</td></tr>'
+    tool_rows = (
+        "".join(
+            f"<tr><td>{_e(k)}</td><td>{_e(v)}</td></tr>"
+            for k, v in sorted(data.tool_versions.items())
+        )
+        or '<tr><td colspan="2">No external tool versions were recorded.</td></tr>'
+    )
     return f"""
 <section aria-labelledby="method-h">
   <h2 id="method-h">Methodology</h2>
@@ -158,12 +169,15 @@ def _methodology_section(data: ReportData) -> str:
 
 
 def _coverage_section(data: ReportData) -> str:
-    rows = "".join(
-        f"<tr><td>{_e(s.scan.scan_id[:12])}…</td><td>{_e(s.scan.module.value)}</td>"
-        f"<td>{_e(s.scan.state.value)}</td><td>{s.coverage_total}</td>"
-        f"<td>{s.coverage_skipped}</td><td>{s.coverage_errors}</td></tr>"
-        for s in data.scans
-    ) or '<tr><td colspan="6">No scans matched the selected filters.</td></tr>'
+    rows = (
+        "".join(
+            f"<tr><td>{_e(s.scan.scan_id[:12])}…</td><td>{_e(s.scan.module.value)}</td>"
+            f"<td>{_e(s.scan.state.value)}</td><td>{s.coverage_total}</td>"
+            f"<td>{s.coverage_skipped}</td><td>{s.coverage_errors}</td></tr>"
+            for s in data.scans
+        )
+        or '<tr><td colspan="6">No scans matched the selected filters.</td></tr>'
+    )
     return f"""
 <section aria-labelledby="coverage-h">
   <h2 id="coverage-h">Scan coverage</h2>
@@ -180,17 +194,22 @@ def _finding_html(data: ReportData, f: Finding) -> str:
     assets_by_id = {a.asset_id: a for a in data.assets}
     linked_assets = [assets_by_id[aid] for aid in f.affected_asset_ids if aid in assets_by_id]
     breakdown = score_finding(f, linked_assets)
-    mappings = "".join(
-        f'<li>{_e(m.catalog)} {_e(m.catalog_version)} — {_e(m.entry_id)}'
-        f'{f": {_e(m.title)}" if m.title else ""}'
-        f' <span class="muted">({_e(m.rationale)})</span></li>'
-        for m in f.mappings
-    ) or "<li>No standards mapping assigned.</li>"
+    mappings = (
+        "".join(
+            f"<li>{_e(m.catalog)} {_e(m.catalog_version)} — {_e(m.entry_id)}"
+            f"{f': {_e(m.title)}' if m.title else ''}"
+            f' <span class="muted">({_e(m.rationale)})</span></li>'
+            for m in f.mappings
+        )
+        or "<li>No standards mapping assigned.</li>"
+    )
     cvss_html = ""
     if f.cvss:
-        cvss_html = (f"<p><strong>CVSS {_e(f.cvss.version)}:</strong> "
-                    f"<code>{_e(f.cvss.vector)}</code> — base score {f.cvss.base_score} "
-                    f"(verified by {_e(f.cvss.calculator or 'cvss')})</p>")
+        cvss_html = (
+            f"<p><strong>CVSS {_e(f.cvss.version)}:</strong> "
+            f"<code>{_e(f.cvss.vector)}</code> — base score {f.cvss.base_score} "
+            f"(verified by {_e(f.cvss.calculator or 'cvss')})</p>"
+        )
     refs = "".join(f'<li><a href="{_e(r)}">{_e(r)}</a></li>' for r in f.references)
     evidence = data.evidence_by_finding.get(f.finding_id, [])
     evidence_html = "".join(
@@ -208,14 +227,13 @@ def _finding_html(data: ReportData, f: Finding) -> str:
             "<p><strong>Reproduction / technical detail:</strong></p>"
             f'<div class="evidence">{_e(f.technical_detail)}</div>'
         )
-    url_line = (
-        f'<p><strong>Affected URL/endpoint:</strong> {_e(f.url)}</p>' if f.url else ""
-    )
+    url_line = f"<p><strong>Affected URL/endpoint:</strong> {_e(f.url)}</p>" if f.url else ""
     impact_line = (
-        f'<p><strong>Business impact:</strong> {_e(f.business_impact)}</p>'
-        if f.business_impact else ""
+        f"<p><strong>Business impact:</strong> {_e(f.business_impact)}</p>"
+        if f.business_impact
+        else ""
     )
-    refs_block = f'<p><strong>References:</strong></p><ul>{refs}</ul>' if refs else ""
+    refs_block = f"<p><strong>References:</strong></p><ul>{refs}</ul>" if refs else ""
     status_line = (
         f"Confidence: {_e(f.confidence.value)} · "
         f"Analyst status: {_e(f.analyst_status.value)} · "
@@ -317,16 +335,18 @@ def _appendix_section(data: ReportData) -> str:
 
 
 def render_html(data: ReportData) -> str:
-    sections = "".join([
-        _executive_summary(data),
-        _scope_section(data),
-        _methodology_section(data),
-        _coverage_section(data),
-        _findings_section(data),
-        _assets_section(data),
-        _limitations_section(data),
-        _appendix_section(data),
-    ])
+    sections = "".join(
+        [
+            _executive_summary(data),
+            _scope_section(data),
+            _methodology_section(data),
+            _coverage_section(data),
+            _findings_section(data),
+            _assets_section(data),
+            _limitations_section(data),
+            _appendix_section(data),
+        ]
+    )
     return f"""<!doctype html>
 <html lang="en">
 <head>

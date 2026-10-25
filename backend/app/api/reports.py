@@ -30,7 +30,10 @@ _MEDIA_TYPES: dict[ReportFormat, str] = {
     "csv": "text/csv",
 }
 _FILE_NAMES: dict[ReportFormat, str] = {
-    "html": "report.html", "pdf": "report.pdf", "json": "findings.json", "csv": "findings.csv",
+    "html": "report.html",
+    "pdf": "report.pdf",
+    "json": "findings.json",
+    "csv": "findings.csv",
 }
 
 
@@ -48,9 +51,11 @@ class ReportFilterRequest(StrictModel):
 
     def to_filters(self, project_id: str) -> ReportFilters:
         return ReportFilters(
-            project_id=project_id, title=self.title,
+            project_id=project_id,
+            title=self.title,
             classification_label=self.classification_label,
-            scan_date_from=self.scan_date_from, scan_date_to=self.scan_date_to,
+            scan_date_from=self.scan_date_from,
+            scan_date_to=self.scan_date_to,
             modules=set(self.modules) if self.modules else None,
             severity_threshold=self.severity_threshold,
             analyst_statuses=set(self.analyst_statuses) if self.analyst_statuses else None,
@@ -76,8 +81,10 @@ def _preview_from_data(data: ReportData) -> ReportPreviewResponse:
         finding_ids=[f.finding_id for f in data.findings],
         asset_ids=[a.asset_id for a in data.assets],
         scan_ids=[s.scan.scan_id for s in data.scans],
-        severity_counts=data.severity_counts, status_counts=data.status_counts,
-        module_counts=data.module_counts, limitations=data.limitations,
+        severity_counts=data.severity_counts,
+        status_counts=data.status_counts,
+        module_counts=data.module_counts,
+        limitations=data.limitations,
         tool_versions=data.tool_versions,
     )
 
@@ -110,10 +117,15 @@ class ReportSummary(StrictModel):
 
 def _summary(m: ReportMetadata) -> ReportSummary:
     return ReportSummary(
-        report_id=m.report_id, project_id=m.project_id, title=m.title,
-        classification_label=m.classification_label, formats=m.formats,
-        finding_count=len(m.finding_ids), asset_count=len(m.asset_ids),
-        evidence_included=m.evidence_included, created_at=m.created_at.isoformat(),
+        report_id=m.report_id,
+        project_id=m.project_id,
+        title=m.title,
+        classification_label=m.classification_label,
+        formats=m.formats,
+        finding_count=len(m.finding_ids),
+        asset_count=len(m.asset_ids),
+        evidence_included=m.evidence_included,
+        created_at=m.created_at.isoformat(),
     )
 
 
@@ -136,11 +148,15 @@ def generate_report(
             rendered[fmt] = findings_to_csv(data)
 
     metadata = ReportMetadata(
-        report_id=report_id, project_id=project_id, title=filters.title,
-        classification_label=filters.classification_label, formats=body.formats,
+        report_id=report_id,
+        project_id=project_id,
+        title=filters.title,
+        classification_label=filters.classification_label,
+        formats=body.formats,
         finding_ids=[f.finding_id for f in data.findings],
         asset_ids=[a.asset_id for a in data.assets],
-        evidence_included=filters.include_evidence, filters=filters.as_dict(),  # type: ignore[arg-type]
+        evidence_included=filters.include_evidence,
+        filters=filters.as_dict(),  # type: ignore[arg-type]
         generator_version="vapt-reports 1.0.0",
     )
     created = repo.save_report_metadata(metadata)
@@ -150,7 +166,9 @@ def generate_report(
     created = repo.update_report_metadata(project_id, report_id, {"file_sha256": file_sha})
 
     repo.audit.record(
-        AuditAction.REPORT_GENERATED, project_id=project_id, target_ids=[report_id],
+        AuditAction.REPORT_GENERATED,
+        project_id=project_id,
+        target_ids=[report_id],
         metadata={"formats": body.formats, "finding_count": len(data.findings)},
     )
     return _summary(created)
@@ -176,11 +194,14 @@ def download_report(
         raise NotFoundError(f"this report was not generated in the {fmt} format")
     data = repo.read_report_file(project_id, report_id, _FILE_NAMES[fmt])
     repo.audit.record(
-        AuditAction.REPORT_DOWNLOADED, project_id=project_id, target_ids=[report_id],
+        AuditAction.REPORT_DOWNLOADED,
+        project_id=project_id,
+        target_ids=[report_id],
         metadata={"format": fmt},
     )
     return Response(
-        content=data, media_type=_MEDIA_TYPES[fmt],
+        content=data,
+        media_type=_MEDIA_TYPES[fmt],
         headers={"Content-Disposition": f'attachment; filename="{_FILE_NAMES[fmt]}"'},
     )
 
@@ -192,7 +213,8 @@ def download_report(
 def export_findings_json(project_id: str, repo: Repository) -> Response:
     data = build_report_data(repo, ReportFilters(project_id=project_id, include_evidence=False))
     return Response(
-        content=findings_to_json(data), media_type="application/json",
+        content=findings_to_json(data),
+        media_type="application/json",
         headers={"Content-Disposition": 'attachment; filename="findings.json"'},
     )
 
@@ -201,7 +223,8 @@ def export_findings_json(project_id: str, repo: Repository) -> Response:
 def export_findings_csv(project_id: str, repo: Repository) -> Response:
     data = build_report_data(repo, ReportFilters(project_id=project_id, include_evidence=False))
     return Response(
-        content=findings_to_csv(data), media_type="text/csv",
+        content=findings_to_csv(data),
+        media_type="text/csv",
         headers={"Content-Disposition": 'attachment; filename="findings.csv"'},
     )
 
@@ -210,7 +233,8 @@ def export_findings_csv(project_id: str, repo: Repository) -> Response:
 def export_assets_json(project_id: str, repo: Repository) -> Response:
     data = build_report_data(repo, ReportFilters(project_id=project_id, include_evidence=False))
     return Response(
-        content=assets_to_json(data), media_type="application/json",
+        content=assets_to_json(data),
+        media_type="application/json",
         headers={"Content-Disposition": 'attachment; filename="assets.json"'},
     )
 
@@ -219,7 +243,8 @@ def export_assets_json(project_id: str, repo: Repository) -> Response:
 def export_assets_csv(project_id: str, repo: Repository) -> Response:
     data = build_report_data(repo, ReportFilters(project_id=project_id, include_evidence=False))
     return Response(
-        content=assets_to_csv(data), media_type="text/csv",
+        content=assets_to_csv(data),
+        media_type="text/csv",
         headers={"Content-Disposition": 'attachment; filename="assets.csv"'},
     )
 
@@ -229,16 +254,19 @@ def export_assets_csv(project_id: str, repo: Repository) -> Response:
 
 @router.get("/projects/{project_id}/backup/export")
 def backup_export(
-    project_id: str, repo: Repository,
+    project_id: str,
+    repo: Repository,
     include_evidence_blobs: Annotated[bool, Query()] = True,
 ) -> Response:
     archive = export_archive(repo, project_id, include_evidence_blobs=include_evidence_blobs)
     repo.audit.record(
-        AuditAction.BACKUP_CREATED, project_id=project_id,
+        AuditAction.BACKUP_CREATED,
+        project_id=project_id,
         metadata={"include_evidence_blobs": include_evidence_blobs, "bytes": len(archive)},
     )
     return Response(
-        content=archive, media_type="application/zip",
+        content=archive,
+        media_type="application/zip",
         headers={"Content-Disposition": f'attachment; filename="{project_id}-backup.zip"'},
     )
 
@@ -266,12 +294,16 @@ async def backup_preview(repo: Repository, file: UploadFile) -> BackupPreviewRes
     except ArchiveSafetyError as exc:
         raise ValidationFailedError(str(exc)) from exc
     return BackupPreviewResponse(
-        project_id=preview.project_id, project_name=preview.project_name,
-        exported_at=preview.exported_at, app_version=preview.app_version,
+        project_id=preview.project_id,
+        project_name=preview.project_name,
+        exported_at=preview.exported_at,
+        app_version=preview.app_version,
         storage_version=preview.storage_version,
-        include_evidence_blobs=preview.include_evidence_blobs, counts=preview.counts,
+        include_evidence_blobs=preview.include_evidence_blobs,
+        counts=preview.counts,
         checksum_mismatches=preview.checksum_mismatches,
-        project_already_exists=preview.project_already_exists, warnings=preview.warnings,
+        project_already_exists=preview.project_already_exists,
+        warnings=preview.warnings,
     )
 
 
@@ -282,7 +314,8 @@ class RestoreResponse(StrictModel):
 
 @router.post("/backup/restore", response_model=RestoreResponse)
 async def backup_restore(
-    repo: Repository, file: UploadFile,
+    repo: Repository,
+    file: UploadFile,
     confirmed: Annotated[bool, Query()] = False,
     overwrite: Annotated[bool, Query()] = False,
 ) -> RestoreResponse:
@@ -294,7 +327,8 @@ async def backup_restore(
     except ArchiveSafetyError as exc:
         raise ValidationFailedError(str(exc)) from exc
     repo.audit.record(
-        AuditAction.BACKUP_RESTORED, project_id=result.project_id,
+        AuditAction.BACKUP_RESTORED,
+        project_id=result.project_id,
         metadata={"counts": result.counts, "overwrite": overwrite},
     )
     return RestoreResponse(project_id=result.project_id, counts=result.counts)

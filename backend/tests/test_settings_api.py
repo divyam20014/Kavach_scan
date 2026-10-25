@@ -14,7 +14,9 @@ from app.storage.repository import StorageRepository
 def test_get_settings_returns_defaults(client: TestClient) -> None:
     body = client.get("/api/settings").json()
     assert body["integrations"] == {
-        "nmap_path": "", "sslyze_path": "", "testssl_path": "",
+        "nmap_path": "",
+        "sslyze_path": "",
+        "testssl_path": "",
         "online_lookup_credential_alias": "",
     }
 
@@ -55,7 +57,10 @@ def test_patch_settings_accepts_a_valid_credential_alias_and_it_round_trips(
     assert resp.status_code == 200
     assert resp.json()["integrations"]["online_lookup_credential_alias"] == "env:MY_KEY"
     # the settings-read API returns exactly what was stored: a reference, never a raw secret
-    assert client.get("/api/settings").json()["integrations"]["online_lookup_credential_alias"] == "env:MY_KEY"
+    assert (
+        client.get("/api/settings").json()["integrations"]["online_lookup_credential_alias"]
+        == "env:MY_KEY"
+    )
 
 
 def test_patch_settings_honors_expected_revision_conflict(client: TestClient) -> None:
@@ -113,10 +118,15 @@ def test_integration_selftest_missing_binary_is_not_a_false_pass(client: TestCli
 def _catalog_bytes() -> bytes:
     import json
 
-    return json.dumps({
-        "source": "Test catalog", "catalog_version": "1.0",
-        "entries": [{"product": "jquery", "version_spec": "<1.12.4", "cve_id": "CVE-2015-9251"}],
-    }).encode()
+    return json.dumps(
+        {
+            "source": "Test catalog",
+            "catalog_version": "1.0",
+            "entries": [
+                {"product": "jquery", "version_spec": "<1.12.4", "cve_id": "CVE-2015-9251"}
+            ],
+        }
+    ).encode()
 
 
 def test_cve_catalog_is_none_before_import(client: TestClient) -> None:
@@ -126,7 +136,8 @@ def test_cve_catalog_is_none_before_import(client: TestClient) -> None:
 
 
 def test_cve_catalog_import_preview_and_delete_round_trip(
-    client: TestClient, repo: StorageRepository,
+    client: TestClient,
+    repo: StorageRepository,
 ) -> None:
     resp = client.post(
         "/api/cve-catalog/import",
@@ -173,7 +184,8 @@ def test_cve_catalog_import_rejects_an_oversized_file(client: TestClient) -> Non
 
 
 def test_cve_catalog_shows_stale_after_the_configured_window(
-    client: TestClient, repo: StorageRepository,
+    client: TestClient,
+    repo: StorageRepository,
 ) -> None:
     from datetime import timedelta
 
@@ -181,9 +193,12 @@ def test_cve_catalog_shows_stale_after_the_configured_window(
     from app.models.common import utc_now
 
     record = parse_catalog_file(_catalog_bytes())
-    stale = record.model_copy(update={
-        "stale_after_days": 1, "imported_at": utc_now() - timedelta(days=5),
-    })
+    stale = record.model_copy(
+        update={
+            "stale_after_days": 1,
+            "imported_at": utc_now() - timedelta(days=5),
+        }
+    )
     repo.save_cve_catalog(stale)
     body = client.get("/api/cve-catalog").json()
     assert body["is_stale"] is True

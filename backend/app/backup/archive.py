@@ -52,9 +52,7 @@ def _validate_record(model: type[_M], data: dict[str, Any], label: str) -> _M:
         ) from exc
 
 
-def _iter_all(
-    lister: Callable[..., Page[T]], limit: int = 200, pages: int = 200
-) -> list[T]:
+def _iter_all(lister: Callable[..., Page[T]], limit: int = 200, pages: int = 200) -> list[T]:
     out: list[T] = []
     offset = 0
     for _ in range(pages):
@@ -79,10 +77,14 @@ class ArchiveManifest:
 
     def as_dict(self) -> dict[str, object]:
         return {
-            "schema_version": self.schema_version, "exported_at": self.exported_at,
-            "app_version": self.app_version, "storage_version": self.storage_version,
-            "project_id": self.project_id, "include_evidence_blobs": self.include_evidence_blobs,
-            "counts": self.counts, "checksums": self.checksums,
+            "schema_version": self.schema_version,
+            "exported_at": self.exported_at,
+            "app_version": self.app_version,
+            "storage_version": self.storage_version,
+            "project_id": self.project_id,
+            "include_evidence_blobs": self.include_evidence_blobs,
+            "counts": self.counts,
+            "checksums": self.checksums,
         }
 
 
@@ -99,6 +101,7 @@ def export_archive(
     buf = io.BytesIO()
     checksums: dict[str, str] = {}
     with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_DEFLATED) as zf:
+
         def put(name: str, data: bytes) -> None:
             import hashlib
 
@@ -121,8 +124,10 @@ def export_archive(
                     continue
                 put(f"evidence/{e.evidence_id}.bin", blob)
         for imp in imports:
-            put(f"imports/{imp.import_id}/import.json",
-               imp.model_dump_json(indent=2).encode("utf-8"))
+            put(
+                f"imports/{imp.import_id}/import.json",
+                imp.model_dump_json(indent=2).encode("utf-8"),
+            )
             try:
                 raw = repo.read_import_raw(project_id, imp.import_id)
             except StorageError:
@@ -132,11 +137,16 @@ def export_archive(
         manifest = ArchiveManifest(
             schema_version=MANIFEST_SCHEMA_VERSION,
             exported_at=datetime.now(project.created_at.tzinfo).isoformat(),
-            app_version=__version__, storage_version=STORAGE_VERSION, project_id=project_id,
+            app_version=__version__,
+            storage_version=STORAGE_VERSION,
+            project_id=project_id,
             include_evidence_blobs=include_evidence_blobs,
             counts={
-                "scans": len(scans), "findings": len(findings), "assets": len(assets),
-                "evidence": len(evidence), "imports": len(imports),
+                "scans": len(scans),
+                "findings": len(findings),
+                "assets": len(assets),
+                "evidence": len(evidence),
+                "imports": len(imports),
             },
             checksums=dict(checksums),
         )
@@ -184,7 +194,8 @@ def _parse_members(raw: bytes) -> tuple[dict[str, ArchiveManifest], dict[str, Sa
             storage_version=raw_manifest["storage_version"],
             project_id=raw_manifest["project_id"],
             include_evidence_blobs=bool(raw_manifest["include_evidence_blobs"]),
-            counts=dict(raw_manifest["counts"]), checksums=dict(raw_manifest["checksums"]),
+            counts=dict(raw_manifest["counts"]),
+            checksums=dict(raw_manifest["checksums"]),
         )
     except (KeyError, TypeError) as exc:
         raise ValidationFailedError(f"manifest.json is missing a required field: {exc}") from exc
@@ -222,9 +233,7 @@ def _check_project_id_consistency(
     except (ValueError, UnicodeDecodeError):
         return problems  # reported separately
     if isinstance(project_raw, dict) and project_raw.get("project_id") != manifest.project_id:
-        problems.append(
-            "manifest.json project_id does not match project.json's own project_id"
-        )
+        problems.append("manifest.json project_id does not match project.json's own project_id")
     return problems
 
 
@@ -238,10 +247,9 @@ def _check_every_record_belongs_to_this_project(
     every record, before any write happens."""
     problems: list[str] = []
     for name, member in sorted(by_name.items()):
-        is_json_record = (
-            name.startswith(("scans/", "findings/", "assets/", "evidence/"))
-            and name.endswith(".json")
-        )
+        is_json_record = name.startswith(
+            ("scans/", "findings/", "assets/", "evidence/")
+        ) and name.endswith(".json")
         is_import_record = name.startswith("imports/") and name.endswith("/import.json")
         is_record = is_json_record or is_import_record
         if not is_record:
@@ -291,11 +299,15 @@ def preview_archive(repo: StorageRepository, raw: bytes) -> ArchivePreview:
             f"{STORAGE_VERSION}"
         )
     return ArchivePreview(
-        project_id=manifest.project_id, project_name=project_name,
-        exported_at=manifest.exported_at, app_version=manifest.app_version,
+        project_id=manifest.project_id,
+        project_name=project_name,
+        exported_at=manifest.exported_at,
+        app_version=manifest.app_version,
         storage_version=manifest.storage_version,
-        include_evidence_blobs=manifest.include_evidence_blobs, counts=manifest.counts,
-        checksum_mismatches=mismatches, project_already_exists=already_exists,
+        include_evidence_blobs=manifest.include_evidence_blobs,
+        counts=manifest.counts,
+        checksum_mismatches=mismatches,
+        project_already_exists=already_exists,
         warnings=warnings,
     )
 

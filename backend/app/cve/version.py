@@ -41,9 +41,12 @@ class VersionCondition:
     def satisfied_by(self, candidate: tuple[int, ...]) -> bool:
         cmp = _compare(candidate, self.version)
         return {
-            "==": cmp == 0, "!=": cmp != 0,
-            "<=": cmp <= 0, ">=": cmp >= 0,
-            "<": cmp < 0, ">": cmp > 0,
+            "==": cmp == 0,
+            "!=": cmp != 0,
+            "<=": cmp <= 0,
+            ">=": cmp >= 0,
+            "<": cmp < 0,
+            ">": cmp > 0,
         }[self.op]
 
 

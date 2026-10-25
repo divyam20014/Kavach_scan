@@ -133,8 +133,12 @@ def test_export_preview_restore_round_trip_preserves_counts_and_evidence_links(
     repo.create_asset(make_asset(pid))
     ev = repo.save_evidence(
         EvidenceMetadata(
-            evidence_id="evd_" + "1" * 32, project_id=pid, finding_ids=[f.finding_id],
-            evidence_type="text_excerpt", request_excerpt="req", response_excerpt="resp",
+            evidence_id="evd_" + "1" * 32,
+            project_id=pid,
+            finding_ids=[f.finding_id],
+            evidence_type="text_excerpt",
+            request_excerpt="req",
+            response_excerpt="resp",
         ),
         blob=b"raw evidence bytes",
     )
@@ -152,8 +156,13 @@ def test_export_preview_restore_round_trip_preserves_counts_and_evidence_links(
         preview = preview_archive(clean_repo, archive)
         assert preview.project_already_exists is False
         assert preview.checksum_mismatches == []
-        assert preview.counts == {"scans": 0, "findings": 1, "assets": 1, "evidence": 1,
-                                  "imports": 0}
+        assert preview.counts == {
+            "scans": 0,
+            "findings": 1,
+            "assets": 1,
+            "evidence": 1,
+            "imports": 0,
+        }
 
         result = restore_archive(clean_repo, archive, confirmed=True)
         assert result.project_id == pid
@@ -202,7 +211,7 @@ def test_restore_rejects_a_tampered_checksum(repo: StorageRepository) -> None:
     # tamper with a finding record after it was checksummed
     for name in list(members):
         if name.startswith("findings/"):
-            members[name] = members[name].replace(b"\"title\"", b"\"tampered\"")
+            members[name] = members[name].replace(b'"title"', b'"tampered"')
     tampered = io.BytesIO()
     with zipfile.ZipFile(tampered, "w") as zf:
         for name, data in members.items():
@@ -235,8 +244,12 @@ def test_export_can_exclude_evidence_blobs(repo: StorageRepository) -> None:
     f = repo.create_finding(make_finding(pid))
     ev = repo.save_evidence(
         EvidenceMetadata(
-            evidence_id="evd_" + "2" * 32, project_id=pid, finding_ids=[f.finding_id],
-            evidence_type="text_excerpt", request_excerpt="req", response_excerpt="resp",
+            evidence_id="evd_" + "2" * 32,
+            project_id=pid,
+            finding_ids=[f.finding_id],
+            evidence_type="text_excerpt",
+            request_excerpt="req",
+            response_excerpt="resp",
         ),
         blob=b"secret-looking blob data",
     )
@@ -361,14 +374,16 @@ def test_restore_rejects_a_project_json_that_fails_schema_validation(
 ) -> None:
     """A `Project.model_validate` failure on fully attacker-controlled bytes must become a
     clean validation error, never an unhandled exception."""
-    bad = _make_zip({
-        "manifest.json": (
-            '{"schema_version": 1, "exported_at": "x", "app_version": "x", '
-            '"storage_version": 1, "project_id": "prj_' + "1" * 32 + '", '
-            '"include_evidence_blobs": true, "counts": {}, "checksums": {}}'
-        ),
-        "project.json": '{"not": "a project"}',
-    })
+    bad = _make_zip(
+        {
+            "manifest.json": (
+                '{"schema_version": 1, "exported_at": "x", "app_version": "x", '
+                '"storage_version": 1, "project_id": "prj_' + "1" * 32 + '", '
+                '"include_evidence_blobs": true, "counts": {}, "checksums": {}}'
+            ),
+            "project.json": '{"not": "a project"}',
+        }
+    )
     with pytest.raises(ValidationFailedError, match="project.json"):
         restore_archive(repo, bad, confirmed=True)
 

@@ -28,8 +28,13 @@ from app.services.findings import FindingListFilters, list_findings, module_for
 from app.storage.errors import StorageError
 from app.storage.repository import StorageRepository
 
-_SEVERITY_ORDER = [Severity.CRITICAL, Severity.HIGH, Severity.MEDIUM, Severity.LOW,
-                  Severity.INFORMATIONAL]
+_SEVERITY_ORDER = [
+    Severity.CRITICAL,
+    Severity.HIGH,
+    Severity.MEDIUM,
+    Severity.LOW,
+    Severity.INFORMATIONAL,
+]
 MAX_FINDINGS_PER_REPORT = 2000  # a bound, not a claim every finding ever fits one document
 
 
@@ -56,7 +61,8 @@ class ReportFilters:
             "modules": sorted(self.modules) if self.modules else [],
             "severity_threshold": self.severity_threshold.value,
             "analyst_statuses": sorted(s.value for s in self.analyst_statuses)
-            if self.analyst_statuses else [],
+            if self.analyst_statuses
+            else [],
             "finding_ids": list(self.finding_ids) if self.finding_ids else [],
             "include_asset_inventory": self.include_asset_inventory,
             "include_evidence": self.include_evidence,
@@ -94,8 +100,13 @@ def _severity_at_or_above(severity: Severity, threshold: Severity) -> bool:
 
 
 _FINDING_TEXT_FIELDS: dict[str, int] = {
-    "title": 200, "summary": 20_000, "technical_detail": 20_000, "remediation": 20_000,
-    "parameter": 500, "component": 500, "business_impact": 20_000,
+    "title": 200,
+    "summary": 20_000,
+    "technical_detail": 20_000,
+    "remediation": 20_000,
+    "parameter": 500,
+    "component": 500,
+    "business_impact": 20_000,
 }
 
 
@@ -108,10 +119,12 @@ def _redact_finding(f: Finding) -> Finding:
 
 
 def _redact_evidence(e: EvidenceMetadata) -> EvidenceMetadata:
-    return e.model_copy(update={
-        "request_excerpt": redact_text(e.request_excerpt, max_chars=8192),
-        "response_excerpt": redact_text(e.response_excerpt, max_chars=8192),
-    })
+    return e.model_copy(
+        update={
+            "request_excerpt": redact_text(e.request_excerpt, max_chars=8192),
+            "response_excerpt": redact_text(e.response_excerpt, max_chars=8192),
+        }
+    )
 
 
 def _read_scan_json(
@@ -135,9 +148,9 @@ def _scan_summary(repo: StorageRepository, project_id: str, scan: ScanJob) -> Sc
     rows: list[Any] = raw_results if isinstance(raw_results, list) else []
     skipped = [r for r in rows if isinstance(r, dict) and r.get("outcome") == "skipped"]
     errored = [r for r in rows if isinstance(r, dict) and r.get("outcome") == "error"]
-    skip_reasons = sorted({
-        str(r.get("rationale", ""))[:300] for r in skipped if r.get("rationale")
-    })[:50]
+    skip_reasons = sorted(
+        {str(r.get("rationale", ""))[:300] for r in skipped if r.get("rationale")}
+    )[:50]
     limitations = summary_json.get("limitations")
     return ScanSummary(
         scan=scan,
@@ -191,13 +204,19 @@ def build_report_data(repo: StorageRepository, filters: ReportFilters) -> Report
         page = list_findings(
             repo,
             filters=FindingListFilters(
-                project_id=filters.project_id, analyst_status=statuses,
-                first_seen_from=filters.scan_date_from, first_seen_to=filters.scan_date_to,
+                project_id=filters.project_id,
+                analyst_status=statuses,
+                first_seen_from=filters.scan_date_from,
+                first_seen_to=filters.scan_date_to,
             ),
-            sort="severity", descending=False, offset=0, limit=500,
+            sort="severity",
+            descending=False,
+            offset=0,
+            limit=500,
         )
         findings = [
-            item.finding for item in page.items
+            item.finding
+            for item in page.items
             if _severity_at_or_above(item.finding.severity, filters.severity_threshold)
             and (filters.modules is None or module_for(item.finding) in filters.modules)
         ][:MAX_FINDINGS_PER_REPORT]
@@ -221,7 +240,8 @@ def build_report_data(repo: StorageRepository, filters: ReportFilters) -> Report
     all_assets = _iter_project_assets(repo, filters.project_id)
     included_asset_ids = {aid for f in findings for aid in f.affected_asset_ids}
     assets = (
-        all_assets if filters.include_asset_inventory
+        all_assets
+        if filters.include_asset_inventory
         else [a for a in all_assets if a.asset_id in included_asset_ids]
     )
 
@@ -230,11 +250,13 @@ def build_report_data(repo: StorageRepository, filters: ReportFilters) -> Report
     if filters.modules is not None:
         selected_scans = [s for s in selected_scans if s.module.value in filters.modules]
     if filters.scan_date_from or filters.scan_date_to:
+
         def in_range(s: ScanJob) -> bool:
             at = s.finished_at or s.queued_at or s.created_at
             if filters.scan_date_from and at < filters.scan_date_from:
                 return False
             return not (filters.scan_date_to and at > filters.scan_date_to)
+
         selected_scans = [s for s in selected_scans if in_range(s)]
     scan_summaries = [_scan_summary(repo, filters.project_id, s) for s in selected_scans]
 
@@ -275,9 +297,16 @@ def build_report_data(repo: StorageRepository, filters: ReportFilters) -> Report
         tool_versions.update(sc.tool_versions)
 
     return ReportData(
-        project=project, filters=filters, generated_at=generated_at, findings=findings,
-        assets=assets, scans=scan_summaries, evidence_by_finding=evidence_by_finding,
-        severity_counts=severity_counts, status_counts=status_counts,
-        module_counts=module_counts, limitations=deduped_limitations,
+        project=project,
+        filters=filters,
+        generated_at=generated_at,
+        findings=findings,
+        assets=assets,
+        scans=scan_summaries,
+        evidence_by_finding=evidence_by_finding,
+        severity_counts=severity_counts,
+        status_counts=status_counts,
+        module_counts=module_counts,
+        limitations=deduped_limitations,
         tool_versions=tool_versions,
     )

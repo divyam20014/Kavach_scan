@@ -912,8 +912,12 @@ class StorageRepository:
         return self._create_child(REPORTS, report)
 
     def update_report_metadata(
-        self, project_id: str, report_id: str, changes: Changes,
-        *, expected_revision: int | None = None,
+        self,
+        project_id: str,
+        report_id: str,
+        changes: Changes,
+        *,
+        expected_revision: int | None = None,
     ) -> ReportMetadata:
         return self._update_child(REPORTS, project_id, report_id, changes, expected_revision)
 
@@ -940,8 +944,12 @@ class StorageRepository:
         )
 
     _REPORT_FILE_NAMES = {
-        "report.html", "report.pdf", "findings.json", "findings.csv",
-        "assets.json", "assets.csv",
+        "report.html",
+        "report.pdf",
+        "findings.json",
+        "findings.csv",
+        "assets.json",
+        "assets.csv",
     }
 
     def write_report_file(self, project_id: str, report_id: str, name: str, data: bytes) -> str:

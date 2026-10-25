@@ -2,6 +2,20 @@
 
 > Code: `backend/app/services/integrations.py`, `backend/app/api/settings.py` (`/api/integrations`, `/api/integrations/{id}/selftest`), `backend/app/models/settings.py` (`IntegrationsSettings`). Frontend: `frontend/src/pages/IntegrationsPage.tsx`.
 
+## 0. Prerequisites, installation, and platform caveats
+
+**None of these tools are bundled with this application.** They are entirely optional; the app works fully without any of them, degrading each related check to a built-in fallback or an honest `skipped` outcome — never a false pass. Install only what you actually want to use.
+
+| Tool / source | Used for | Install | Platform notes |
+|---|---|---|---|
+| **Nmap** | Bounded TCP-connect port/service mapping (attack surface mapper) | [nmap.org](https://nmap.org/download.html), or your OS package manager (`apt install nmap`, `brew install nmap`, the official Windows installer) | Works natively on Windows/macOS/Linux. This app only ever runs it with a fixed, safe argument list (`-sT -Pn -n --unprivileged`, TCP-connect only) — no stealth/SYN scans, no NSE scripts, no OS fingerprinting, regardless of what Nmap itself supports. |
+| **sslyze** | TLS protocol/cipher detail (web scanner certificate checks) | `pip install sslyze` (or `pipx install sslyze`) | Pure Python; works identically on all three platforms. Preferred over testssl.sh when both are installed. |
+| **testssl.sh** | Same as sslyze, used when sslyze is unavailable | [github.com/testssl/testssl.sh](https://github.com/testssl/testssl.sh) | A bash script. Native on Linux/macOS; on Windows it only runs under WSL — there is no native Windows port. |
+| **crt.sh (passive subdomain source)** | Optional, off-by-default passive subdomain discovery (attack surface mapper) | Nothing to install — it's a public HTTPS lookup the app can optionally query | Off by default; when enabled it is disclosed in the scan profile, rate-limited, and only ever sends a domain name (never target response content or credentials). See `docs/SURFACE_MAPPER.md`. |
+| **Local CVE catalog** | Component/version → CVE matching | Nothing to install — you import a JSON file you (or your own tooling) produce | Never fetched automatically; no catalog is bundled. See `docs/CVE_CATALOG.md` for the exact file format. |
+
+After installing a tool, either put it on your `PATH` or set an explicit path in Settings → Integrations, then click **Run self-test** — being found on `PATH` alone is shown as "detected (unverified)," never "working," until a self-test actually runs it successfully (§1).
+
 ## 1. Detection vs. verification — never a false green
 
 Listing integrations (`GET /api/integrations`) is **detection only**: a PATH lookup (or checking an explicit configured path exists), never a subprocess execution. A tool found this way is shown `detected` (blue) — present, but unverified. The only way a tool is ever shown `verified` (green) is an explicit, operator-triggered self-test (`POST /api/integrations/{id}/selftest`) that actually ran `<tool> --version` and got a readable response in *this* process. This satisfies the Phase 11 acceptance criterion directly: "Missing external tools create clear skipped checks, not false passes" — and by extension, a tool that is merely *present* is never claimed to be *working*.

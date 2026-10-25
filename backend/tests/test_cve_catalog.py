@@ -102,13 +102,21 @@ def test_parse_catalog_file_rejects_entries_not_a_list() -> None:
 
 
 def test_parse_catalog_file_skips_malformed_individual_entries_with_a_warning() -> None:
-    record = parse_catalog_file(_good_catalog_bytes(entries=[
-        {"product": "jquery", "version_spec": "<1.12.4", "cve_id": "CVE-2015-9251"},
-        {"product": "bad", "version_spec": "<1.0", "cve_id": "not-a-cve-id"},  # bad cve_id
-        {"product": "bad2", "cve_id": "CVE-2020-0001"},  # missing version_spec
-        {"product": "bad3", "version_spec": "~garbage~", "cve_id": "CVE-2020-0002"},  # bad spec
-        "not even an object",
-    ]))
+    record = parse_catalog_file(
+        _good_catalog_bytes(
+            entries=[
+                {"product": "jquery", "version_spec": "<1.12.4", "cve_id": "CVE-2015-9251"},
+                {"product": "bad", "version_spec": "<1.0", "cve_id": "not-a-cve-id"},  # bad cve_id
+                {"product": "bad2", "cve_id": "CVE-2020-0001"},  # missing version_spec
+                {
+                    "product": "bad3",
+                    "version_spec": "~garbage~",
+                    "cve_id": "CVE-2020-0002",
+                },  # bad spec
+                "not even an object",
+            ]
+        )
+    )
     assert len(record.entries) == 1
     assert record.entries[0].cve_id == "CVE-2015-9251"
     assert len(record.warnings) == 4
@@ -126,11 +134,15 @@ def test_parse_catalog_file_rejects_oversized_entry_count() -> None:
     parser_mod.MAX_ENTRIES = 2
     try:
         with pytest.raises(CveCatalogParseError, match="more than"):
-            parse_catalog_file(_good_catalog_bytes(entries=[
-                {"product": "a", "version_spec": "<1.0", "cve_id": "CVE-2020-0001"},
-                {"product": "b", "version_spec": "<1.0", "cve_id": "CVE-2020-0002"},
-                {"product": "c", "version_spec": "<1.0", "cve_id": "CVE-2020-0003"},
-            ]))
+            parse_catalog_file(
+                _good_catalog_bytes(
+                    entries=[
+                        {"product": "a", "version_spec": "<1.0", "cve_id": "CVE-2020-0001"},
+                        {"product": "b", "version_spec": "<1.0", "cve_id": "CVE-2020-0002"},
+                        {"product": "c", "version_spec": "<1.0", "cve_id": "CVE-2020-0003"},
+                    ]
+                )
+            )
     finally:
         parser_mod.MAX_ENTRIES = old
 
@@ -145,9 +157,7 @@ def test_parse_catalog_file_caps_stale_after_days_to_a_sane_range() -> None:
 
 def test_catalog_staleness_is_derived_from_imported_at(repo: StorageRepository) -> None:
     record = parse_catalog_file(_good_catalog_bytes(stale_after_days=10))
-    stale_record = record.model_copy(
-        update={"imported_at": utc_now() - timedelta(days=11)}
-    )
+    stale_record = record.model_copy(update={"imported_at": utc_now() - timedelta(days=11)})
     saved = repo.save_cve_catalog(stale_record)
     age_days = (utc_now() - saved.imported_at).days
     assert age_days > saved.stale_after_days
@@ -222,12 +232,16 @@ def test_cve_results_never_marks_a_match_as_confirmed(repo: StorageRepository) -
     catalog = StoredCveCatalog(repo)
 
     range_comp = Component(name="jquery", version="1.11.0", confidence=Confidence.CONFIRMED)
-    range_results = [r for r in cve_results([range_comp], catalog) if r.rationale.startswith("CVE-")]
+    range_results = [
+        r for r in cve_results([range_comp], catalog) if r.rationale.startswith("CVE-")
+    ]
     assert len(range_results) == 1
     assert range_results[0].confidence != Confidence.CONFIRMED  # None -> rule default needs_review
 
     exact_comp = Component(name="openssl", version="1.0.1", confidence=Confidence.CONFIRMED)
-    exact_results = [r for r in cve_results([exact_comp], catalog) if r.rationale.startswith("CVE-")]
+    exact_results = [
+        r for r in cve_results([exact_comp], catalog) if r.rationale.startswith("CVE-")
+    ]
     assert len(exact_results) == 1
     assert exact_results[0].confidence == Confidence.PROBABLE  # elevated, but never confirmed
 
@@ -252,10 +266,17 @@ def test_cve_results_passes_when_no_catalog_entry_matches(repo: StorageRepositor
 
 def test_importing_a_new_catalog_replaces_the_old_one(repo: StorageRepository) -> None:
     repo.save_cve_catalog(parse_catalog_file(_good_catalog_bytes()))
-    repo.save_cve_catalog(parse_catalog_file(_good_catalog_bytes(
-        source="Second export", catalog_version="2026.11",
-        entries=[{"product": "lodash", "version_spec": "<4.17.21", "cve_id": "CVE-2021-23337"}],
-    )))
+    repo.save_cve_catalog(
+        parse_catalog_file(
+            _good_catalog_bytes(
+                source="Second export",
+                catalog_version="2026.11",
+                entries=[
+                    {"product": "lodash", "version_spec": "<4.17.21", "cve_id": "CVE-2021-23337"}
+                ],
+            )
+        )
+    )
     current = repo.get_cve_catalog()
     assert current is not None
     assert current.source == "Second export"
@@ -271,7 +292,8 @@ def test_delete_cve_catalog_reverts_to_unavailable(repo: StorageRepository) -> N
 
 
 def test_cve_catalog_matches_a_real_component_in_a_full_offline_scan(
-    repo: StorageRepository, settings: RuntimeSettings,
+    repo: StorageRepository,
+    settings: RuntimeSettings,
 ) -> None:
     """Acceptance criterion: "Confirm offline scanning works against local fixtures" and
     "the component/version to CVE matching" actually functions end to end — not just the
@@ -284,27 +306,35 @@ def test_cve_catalog_matches_a_real_component_in_a_full_offline_scan(
     from tests.jobhelpers import terminal, wait_for
     from tests.webfixtures import MapResolver, lab_project, lab_servers
 
-    repo.save_cve_catalog(parse_catalog_file(_good_catalog_bytes(
-        source="Offline scan test catalog", catalog_version="2026.10",
-        entries=[
-            # the lab fixture server reports "Apache/2.4.41" via its Server header
-            {"product": "Apache", "version_spec": "<2.4.42", "cve_id": "CVE-2021-41773"},
-        ],
-    )))
+    repo.save_cve_catalog(
+        parse_catalog_file(
+            _good_catalog_bytes(
+                source="Offline scan test catalog",
+                catalog_version="2026.10",
+                entries=[
+                    # the lab fixture server reports "Apache/2.4.41" via its Server header
+                    {"product": "Apache", "version_spec": "<2.4.42", "cve_id": "CVE-2021-41773"},
+                ],
+            )
+        )
+    )
     catalog = StoredCveCatalog(repo)
 
     with lab_servers() as (lab, _victim):
         pid = repo.create_project(lab_project([lab])).project_id
         jm = JobManager(
-            repo, settings,
+            repo,
+            settings,
             runners={ScanModule.WEB_APP: WebAppRunner(tls_tools=lambda: [], cve_catalog=catalog)},
             resolver_factory=MapResolver,
         )
         scan, _ = jm.submit(
             pid,
             StartScanRequest(
-                module=ScanModule.WEB_APP, targets=[f"http://lab.test:{lab}/"],
-                parameters={}, confirmed=True,
+                module=ScanModule.WEB_APP,
+                targets=[f"http://lab.test:{lab}/"],
+                parameters={},
+                confirmed=True,
             ),
         )
         jm.start()
@@ -315,8 +345,12 @@ def test_cve_catalog_matches_a_real_component_in_a_full_offline_scan(
 
     assert done.state in (ScanState.COMPLETED, ScanState.COMPLETED_WITH_WARNINGS), done.final_reason
     findings = repo.list_findings(pid, limit=200).items
-    cve_findings = [f for f in findings if f.rule_id == "WEB-COMP-002" and "CVE-" in f.technical_detail]
-    assert len(cve_findings) >= 1, [f.technical_detail for f in findings if f.rule_id == "WEB-COMP-002"]
+    cve_findings = [
+        f for f in findings if f.rule_id == "WEB-COMP-002" and "CVE-" in f.technical_detail
+    ]
+    assert len(cve_findings) >= 1, [
+        f.technical_detail for f in findings if f.rule_id == "WEB-COMP-002"
+    ]
     f = cve_findings[0]
     assert "CVE-2021-41773" in f.technical_detail
     assert "Offline scan test catalog" in f.technical_detail  # source
@@ -328,8 +362,14 @@ def test_cve_catalog_matches_a_real_component_in_a_full_offline_scan(
 def test_cve_catalog_record_rejects_a_malformed_cve_id_at_the_model_level() -> None:
     with pytest.raises(Exception, match="cve_id|CVE"):
         CveCatalogRecord(
-            source="x", catalog_version="x", file_sha256="a" * 64,
-            entries=[{
-                "product": "x", "version_spec": "<1.0", "cve_id": "not-a-real-id",
-            }],
+            source="x",
+            catalog_version="x",
+            file_sha256="a" * 64,
+            entries=[
+                {
+                    "product": "x",
+                    "version_spec": "<1.0",
+                    "cve_id": "not-a-real-id",
+                }
+            ],
         )
