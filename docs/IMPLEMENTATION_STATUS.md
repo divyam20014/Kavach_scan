@@ -407,3 +407,12 @@ The scan-start dialog's own per-engine "Run via Docker" toggle — the last gap.
 - **The Docker-based execution roadmap is now complete**: detection (phase 1) → image pull (phase 2) → argv builders, verified against real containers (phase 3) → job-system wiring, verified with a real unmocked end-to-end run (phase 4) → this frontend toggle (phase 5). Docker-based repository scanning is reachable, configurable, and runnable entirely through the UI.
 - Full rationale in TBD-094.
 
+## Operator-reported fix: Trivy DB download had no Docker fallback (2026-10-26, TBD-095)
+
+Found using the real application after TBD-094: an operator who pulled Trivy's Docker image but never installed it natively had no way to download the vulnerability database — `POST /api/integrations/trivy/download-db` only ever looked for a native `trivy` executable.
+
+- **Root cause confirmed from the operator's own real app data directory**: all three Docker images were genuinely pulled (proving the Phase 1/2 UI works end to end), but no Trivy DB status existed — confirming the route had no Docker fallback at all.
+- **Fix**: the route now tries native first, then falls back to the pulled Docker image (requiring both Docker and the pulled image, same pairing the scan runner already enforces). New argv builder `build_trivy_db_download_docker_argv`, independently verified against a second real Docker invocation using the operator's own already-pulled image — confirmed the real ~1.6 GB database landed at the expected host path in ~69s, readable by the existing scan paths unchanged.
+- Tests: `tests/test_repo_scan_docker_argv.py` (+1), `tests/test_settings_api.py` (+1). Full backend suite re-run clean; `ruff check`/`ruff format --check`/`mypy` all clean.
+- No frontend change needed — the improved error message surfaces automatically through the existing error-display handling.
+

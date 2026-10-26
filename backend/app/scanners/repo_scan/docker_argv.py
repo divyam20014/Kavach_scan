@@ -227,3 +227,33 @@ def build_trivy_docker_argv(
         f"{timeout_seconds}s",
         "--skip-db-update",
     ]
+
+
+def build_trivy_db_download_docker_argv(
+    docker_executable: str, image: str, cache_dir: Path
+) -> list[str]:
+    """`docker run --rm -v <cache_dir>:/cache <image> fs . --download-db-only --cache-dir
+    /cache --disable-telemetry --no-progress --skip-version-check` -- the Docker-mode
+    equivalent of the native adapter's own `build_download_db_argv` (operator fix, same
+    increment as TBD-091's own Docker-image-pull action: an operator who only has the
+    Trivy *image* pulled, with no native `trivy` binary installed at all, had no way to
+    ever download the vulnerability database, since the download route only ever checked
+    for a native executable). Confirmed directly against the real pinned image: the cache
+    mount here is writable (unlike the scan-time `:ro` mount in `build_trivy_docker_argv`)
+    because this is the one operation that is actually supposed to write into it."""
+    return [
+        docker_executable,
+        "run",
+        "--rm",
+        "-v",
+        f"{cache_dir}:{CONTAINER_CACHE_PATH}",
+        image,
+        "fs",
+        ".",
+        "--download-db-only",
+        "--cache-dir",
+        CONTAINER_CACHE_PATH,
+        "--disable-telemetry",
+        "--no-progress",
+        "--skip-version-check",
+    ]

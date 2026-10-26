@@ -17,6 +17,7 @@ from app.scanners.repo_scan.docker_argv import (
     DockerArgvError,
     build_gitleaks_docker_argv,
     build_semgrep_docker_argv,
+    build_trivy_db_download_docker_argv,
     build_trivy_docker_argv,
 )
 from app.scanners.repo_scan.gitleaks_adapter import parse_gitleaks_json
@@ -204,3 +205,34 @@ def test_trivy_parser_accepts_real_docker_mode_output_with_a_relative_target() -
     findings = parse_trivy_json(data)
     assert len(findings) == 1
     assert findings[0].target == "requirements.txt"
+
+
+def test_build_trivy_db_download_docker_argv_matches_the_confirmed_working_invocation(
+    tmp_path: Path,
+) -> None:
+    """Operator-reported gap, fixed in TBD-095: an operator who only pulled Trivy's Docker
+    image (no native install at all) had no way to trigger the vulnerability-database
+    download, since the download route only ever looked for a native executable. Confirmed
+    directly against a second real Docker invocation that this exact argv downloads the
+    database into the mounted cache directory -- note the cache mount here is writable
+    (unlike `build_trivy_docker_argv`'s own `:ro` scan-time mount), since this is the one
+    operation that is actually supposed to write into it."""
+    cache_dir = tmp_path / "cache"
+    argv = build_trivy_db_download_docker_argv("docker", "aquasec/trivy:0.76.1", cache_dir)
+    assert argv == [
+        "docker",
+        "run",
+        "--rm",
+        "-v",
+        f"{cache_dir}:/cache",
+        "aquasec/trivy:0.76.1",
+        "fs",
+        ".",
+        "--download-db-only",
+        "--cache-dir",
+        "/cache",
+        "--disable-telemetry",
+        "--no-progress",
+        "--skip-version-check",
+    ]
+    assert ":ro" not in argv[4]  # writable, unlike the scan-time cache mount

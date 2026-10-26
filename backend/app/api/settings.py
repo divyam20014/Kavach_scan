@@ -25,6 +25,7 @@ from app.models.docker_image import DockerImageStatusRecord
 from app.models.settings import AppSettings
 from app.models.trivy_db import TrivyDbStatusRecord
 from app.scanners.repo_scan.availability import find_tool
+from app.scanners.repo_scan.docker_argv import build_trivy_db_download_docker_argv
 from app.scanners.repo_scan.docker_images import (
     ENGINES as DOCKER_ENGINES,
 )
@@ -216,16 +217,36 @@ def download_trivy_db(repo: Repository) -> TrivyDbStatusResponse:
     1.6 GB on a fast connection in TBD-087's own verification; a slow connection needs real
     minutes) -- an explicit, occasional, operator-watched action, not a request this
     application's ordinary traffic would ever trigger, so a long-held HTTP connection was
-    judged acceptable rather than adding background-job infrastructure for a one-time cost."""
-    executable = find_tool(repo.get_settings().integrations.trivy_path, ["trivy"])
-    if not executable:
-        raise ValidationFailedError("Trivy is not installed or configured; set its path first")
+    judged acceptable rather than adding background-job infrastructure for a one-time cost.
+
+    Falls back to the pulled Trivy Docker image (TBD-091) when no native `trivy` is
+    configured -- a real, reported gap (not caught by TBD-091/093's own tests, which all
+    exercised scanning, not this route): an operator who only ever pulled the Docker image
+    and never installed `trivy` natively had no way to trigger this download at all, since
+    the route previously only ever looked for a native executable. The database itself is
+    identical either way -- it is read from the same `repo.trivy_db_dir()` cache by both the
+    native and Docker-mode scan paths (TBD-093)."""
     cache_dir = repo.trivy_db_dir()
-    argv = build_download_db_argv(executable, cache_dir)
+    native_executable = find_tool(repo.get_settings().integrations.trivy_path, ["trivy"])
+    if native_executable:
+        argv = build_download_db_argv(native_executable, cache_dir)
+        allowed = [native_executable]
+        version_argv = [native_executable, "--version"]
+    else:
+        docker_executable = find_tool(repo.get_settings().integrations.docker_path, ["docker"])
+        if not docker_executable or repo.get_docker_image_status("trivy") is None:
+            raise ValidationFailedError(
+                "Trivy is not installed or configured, and no Docker image has been pulled "
+                "for it -- either set a native path or pull the image first"
+            )
+        image = image_for("trivy")
+        argv = build_trivy_db_download_docker_argv(docker_executable, image, cache_dir)
+        allowed = [docker_executable]
+        version_argv = build_verify_argv(docker_executable, "trivy")
     try:
         result = run_process(
             argv,
-            allowed_executables=[executable],
+            allowed_executables=allowed,
             cwd=repo.diagnostics_temp_dir(),
             timeout=TRIVY_DOWNLOAD_TIMEOUT_SECONDS,
             temp_dir=repo.diagnostics_temp_dir(),
@@ -239,10 +260,10 @@ def download_trivy_db(repo: Repository) -> TrivyDbStatusResponse:
     if result.exit_code != 0:
         raise ValidationFailedError(f"trivy exited with status {result.exit_code}")
     version_result = run_process(
-        [executable, "--version"],
-        allowed_executables=[executable],
+        version_argv,
+        allowed_executables=allowed,
         cwd=repo.diagnostics_temp_dir(),
-        timeout=20.0,
+        timeout=DOCKER_VERIFY_TIMEOUT_SECONDS,
         temp_dir=repo.diagnostics_temp_dir(),
     )
     version_text = version_result.stdout.decode("utf-8", "replace").strip()

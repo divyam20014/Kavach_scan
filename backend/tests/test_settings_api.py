@@ -168,6 +168,45 @@ def test_download_trivy_db_cleanly_errors_when_trivy_is_not_available(
     assert client.get("/api/integrations/trivy/db-status").json() is None
 
 
+def test_download_trivy_db_falls_back_to_the_pulled_docker_image_when_no_native_trivy(
+    client: TestClient, repo: StorageRepository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Regression: an operator who only ever pulled Trivy's Docker image (never installed
+    it natively) previously had no way to trigger this download at all -- the route only
+    ever looked for a native `trivy` executable. Confirmed directly against a second real
+    Docker invocation (TBD-095) that `fs . --download-db-only --cache-dir <dir>` genuinely
+    downloads the database into the mounted cache; the real network fetch itself is mocked
+    here to a no-op for the automated suite."""
+    import app.api.settings as settings_api
+    from app.models.docker_image import DockerImageStatusRecord
+
+    client.patch("/api/settings", json={"integrations": {"docker_path": sys.executable}})
+    # No native trivy_path set, no docker image pulled yet: still cleanly rejected.
+    resp = client.post("/api/integrations/trivy/download-db")
+    assert resp.status_code == 422
+
+    repo.save_docker_image_status(
+        "trivy", DockerImageStatusRecord(image="aquasec/trivy:0.76.1", verified_version="0.76.1")
+    )
+    monkeypatch.setattr(
+        settings_api,
+        "build_trivy_db_download_docker_argv",
+        lambda executable, image, cache_dir: [executable, "-c", "pass"],
+    )
+    monkeypatch.setattr(
+        settings_api,
+        "build_verify_argv",
+        lambda executable, engine: [executable, "-c", "print('0.76.1')"],
+    )
+    resp = client.post("/api/integrations/trivy/download-db")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["trivy_version"] == "0.76.1"
+
+    status = client.get("/api/integrations/trivy/db-status").json()
+    assert status["trivy_version"] == "0.76.1"
+
+
 def test_download_trivy_db_runs_the_real_argv_and_saves_status(
     client: TestClient, monkeypatch: pytest.MonkeyPatch
 ) -> None:
