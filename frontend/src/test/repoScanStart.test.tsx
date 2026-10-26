@@ -119,7 +119,7 @@ describe("Repository scan start dialog", () => {
     expect(within(card).queryByRole("checkbox", { name: /Run via Docker/i })).not.toBeChecked();
   });
 
-  it("disables starting a repository scan when the project has no repository path", async () => {
+  it("disables starting a repository scan when the project has no repository path or URL", async () => {
     mockApi({
       ...base,
       [`GET /api/projects/${PID}`]: { body: overview({ repository_path: "" }) },
@@ -131,7 +131,28 @@ describe("Repository scan start dialog", () => {
     const card = await screen.findByRole("region", { name: "Start a job" });
     await u.click(await within(card).findByRole("radio", { name: /Repository scanner/ }));
 
-    expect(await within(card).findByText(/no repository path configured/i)).toBeInTheDocument();
+    expect(await within(card).findByText(/no repository path or url configured/i)).toBeInTheDocument();
     expect(within(card).getByRole("button", { name: /Review & confirm/ })).toBeDisabled();
+  });
+
+  it("shows the configured repository URL and enables starting a repository scan", async () => {
+    const withRepoUrl = overview({
+      repository_path: "",
+      repository_url: "https://github.com/octocat/Hello-World.git",
+    });
+    mockApi({
+      ...base,
+      [`GET /api/projects/${PID}`]: { body: withRepoUrl },
+      [`GET /api/projects/${PID}/scope/policy`]: { body: policy() },
+      "GET /api/jobs/modules": { body: [{ module: "repo_scan", label: "Repository scanner (Semgrep / Gitleaks / Trivy)", available: true, reason: "" }] },
+    });
+    renderAt(`/projects/${PID}`);
+    const u = userEvent.setup();
+    const card = await screen.findByRole("region", { name: "Start a job" });
+    await u.click(await within(card).findByRole("radio", { name: /Repository scanner/ }));
+
+    expect(await within(card).findByText(/Cloning from:/)).toBeInTheDocument();
+    expect(within(card).getByText("https://github.com/octocat/Hello-World.git")).toBeInTheDocument();
+    expect(within(card).getByRole("button", { name: /Review & confirm/ })).not.toBeDisabled();
   });
 });

@@ -103,6 +103,27 @@ Locator = Annotated[
 # Secrets are never stored; only references such as `env:VAPT_TEST_USER_TOKEN` (TBD-010).
 SecretRef = Annotated[str, StringConstraints(pattern=r"^env:[A-Z][A-Z0-9_]{1,127}$")]
 
+_CREDENTIAL_ALIAS_RE = re.compile(r"^(env|keychain):[A-Za-z0-9_.-]{1,100}$")
+
+
+def _validate_credential_alias(value: str) -> str:
+    """Never a raw secret: only a reference to where the real value lives (TBD-058 pattern).
+    This is what makes 'write-only, never returned by a read API' true by construction --
+    the app never stores (or could echo back) the secret itself, only this alias. Shared by
+    `IntegrationsSettings.online_lookup_credential_alias` and
+    `Project.repository_credential_alias` (TBD-100) -- moved here rather than duplicated so
+    both fields are validated by exactly one regex."""
+    if value == "":
+        return value
+    if not _CREDENTIAL_ALIAS_RE.fullmatch(value):
+        raise ValueError(
+            "credential must be a reference, not a raw secret: 'env:NAME' or 'keychain:NAME'"
+        )
+    return value
+
+
+CredentialAlias = Annotated[str, AfterValidator(_validate_credential_alias)]
+
 # --------------------------------------------------------------------------- enums
 
 

@@ -53,18 +53,22 @@ export function RepoScanOptionsPanel({
   value,
   onChange,
   repositoryPath,
+  repositoryUrl,
 }: {
   value: RepoScanOptions;
   onChange: (v: RepoScanOptions) => void;
   repositoryPath: string;
+  repositoryUrl?: string;
 }) {
   const set = <K extends keyof RepoScanOptions>(k: K, v: RepoScanOptions[K]) => onChange({ ...value, [k]: v });
   return (
     <Stack gap="xs" aria-label="Repository scan options" role="group">
-      {!repositoryPath ? (
+      {!repositoryPath && !repositoryUrl ? (
         <Alert color="red" variant="light" role="alert">
-          This project has no repository path configured. Set one via "Edit project" before starting a repository scan.
+          This project has no repository path or URL configured. Set one via "Edit project" before starting a repository scan.
         </Alert>
+      ) : repositoryUrl ? (
+        <Text size="sm" c="dimmed">Cloning from: <strong>{repositoryUrl}</strong></Text>
       ) : (
         <Text size="sm" c="dimmed">Scanning: <strong>{repositoryPath}</strong></Text>
       )}

@@ -162,6 +162,37 @@ describe("project wizard submission", () => {
     expect(body.scan_policy.allowed_modules).toEqual(["repo_scan"]);
   });
 
+  it("creates a project with a repository URL and credential alias when repo_scan is selected", async () => {
+    const { calls } = apiFor();
+    const u = user();
+    renderAt("/projects/new");
+    await fillProjectStep(u);
+    await fillAuthorizationStep(u);
+    await u.type(await screen.findByRole("textbox", { name: /in-scope targets/i }), "app.example.com");
+    await u.click(screen.getByRole("button", { name: "Preview scope" }));
+    expect(await screen.findByText("✓ Scope is valid")).toBeInTheDocument();
+    await u.click(screen.getByRole("button", { name: "Next" }));
+    await u.click(await screen.findByRole("checkbox", { name: /repository scanner/i }));
+    await u.click(screen.getByRole("radio", { name: "Clone from a URL" }));
+    await u.type(screen.getByRole("textbox", { name: /repository url/i }), "https://github.com/octocat/Hello-World.git");
+    await u.type(screen.getByRole("textbox", { name: /credential alias/i }), "env:MY_REPO_TOKEN");
+    await u.click(screen.getByRole("button", { name: "Next" }));
+    expect(await screen.findByText(/Repository URL: https:\/\/github.com\/octocat\/Hello-World.git/)).toBeInTheDocument();
+    expect(screen.getByText(/credential: env:MY_REPO_TOKEN/)).toBeInTheDocument();
+    await u.click(screen.getByRole("button", { name: "Create project" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/api/projects")).toBe(true));
+    const body = calls.find((c) => c.method === "POST" && c.path === "/api/projects")!.body as {
+      repository_path: string;
+      repository_url: string;
+      repository_credential_alias: string;
+      scan_policy: { allowed_modules: string[] };
+    };
+    expect(body.repository_path).toBe(""); // mutually exclusive with repository_url
+    expect(body.repository_url).toBe("https://github.com/octocat/Hello-World.git");
+    expect(body.repository_credential_alias).toBe("env:MY_REPO_TOKEN");
+    expect(body.scan_policy.allowed_modules).toEqual(["repo_scan"]);
+  });
+
   it("blocks leaving the modules step without a repository path when repo_scan is checked", async () => {
     apiFor();
     const u = user();

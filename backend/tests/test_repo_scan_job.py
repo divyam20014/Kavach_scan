@@ -8,6 +8,7 @@ and finding creation -- is real.
 from __future__ import annotations
 
 import json
+import shutil
 import sys
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
@@ -17,7 +18,7 @@ import pytest
 from app.core.settings import RuntimeSettings
 from app.jobs.manager import JobManager, StartScanRequest
 from app.models.common import ScanModule, ScanState, new_id
-from app.models.project import AuthorizationRecord, ScanPolicy
+from app.models.project import AuthorizationRecord, Project, ScanPolicy
 from app.scanners.repo_scan.runner import RepoScanRunner
 from app.storage.repository import StorageRepository
 from tests.conftest import make_project
@@ -436,3 +437,215 @@ def test_repo_scan_fails_cleanly_when_no_repository_path_is_configured(
         jm.stop()
     assert done.state != ScanState.COMPLETED
     assert any("repository path" in e for e in done.errors)
+
+
+# ---------------------------------------------------------------------------------------
+# Git-clone-from-URL roadmap, phase 5 of 6 (TBD-100): job-system wiring for
+# `repository_url`. The SSRF-guard and unresolved-credential cases need no real git binary
+# or network access (both fail before any clone is attempted); the successful-clone case
+# needs a real `git` binary and real network access to GitHub's own tiny public demo repo
+# (`octocat/Hello-World`, never a scan target -- the same repo phases 2/3 verified against).
+
+
+def _repo_url_project(repo: StorageRepository, **overrides: object) -> Project:
+    now = datetime.now(UTC)
+    auth = AuthorizationRecord(
+        organization="o",
+        target_owner="t",
+        authorized_by="a",
+        window_start=now - timedelta(days=1),
+        window_end=now + timedelta(days=5),
+        attestation_event_id=new_id("event"),
+    )
+    policy = ScanPolicy(allowed_modules=[ScanModule.REPO_SCAN])
+    return repo.create_project(
+        make_project(authorization=auth, scan_policy=policy, **overrides)  # type: ignore[arg-type]
+    )
+
+
+def test_repo_scan_fails_cleanly_when_the_repository_url_resolves_to_a_blocked_host(
+    repo: StorageRepository, settings: RuntimeSettings
+) -> None:
+    project = _repo_url_project(repo, repository_url="https://localhost/x/y.git")
+    runner = RepoScanRunner(
+        semgrep_availability=lambda: sys.executable, git_availability=lambda: sys.executable
+    )
+    jm = _manager(repo, settings, runner)
+    scan, _created = jm.submit(
+        project.project_id,
+        StartScanRequest(
+            module=ScanModule.REPO_SCAN,
+            targets=["repo-scan"],
+            parameters={"engines": ["semgrep"]},
+            confirmed=True,
+        ),
+    )
+    jm.start()
+    try:
+        done = wait_for(repo, project.project_id, scan.scan_id, terminal, timeout=30)
+    finally:
+        jm.stop()
+    assert done.state != ScanState.COMPLETED
+    assert any("blocked" in e for e in done.errors)
+
+
+def test_repo_scan_fails_cleanly_when_git_is_not_available(
+    repo: StorageRepository, settings: RuntimeSettings
+) -> None:
+    project = _repo_url_project(repo, repository_url="https://github.com/octocat/Hello-World.git")
+    runner = RepoScanRunner(
+        semgrep_availability=lambda: sys.executable, git_availability=lambda: ""
+    )
+    jm = _manager(repo, settings, runner)
+    scan, _created = jm.submit(
+        project.project_id,
+        StartScanRequest(
+            module=ScanModule.REPO_SCAN,
+            targets=["repo-scan"],
+            parameters={"engines": ["semgrep"]},
+            confirmed=True,
+        ),
+    )
+    jm.start()
+    try:
+        done = wait_for(repo, project.project_id, scan.scan_id, terminal, timeout=30)
+    finally:
+        jm.stop()
+    assert done.state != ScanState.COMPLETED
+    assert any("git is not available" in e for e in done.errors)
+
+
+def test_repo_scan_fails_cleanly_when_the_credential_alias_cannot_be_resolved(
+    repo: StorageRepository, settings: RuntimeSettings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("KAVACH_TEST_PHASE5_MISSING_TOKEN", raising=False)
+    project = _repo_url_project(
+        repo,
+        repository_url="https://github.com/octocat/Hello-World.git",
+        repository_credential_alias="env:KAVACH_TEST_PHASE5_MISSING_TOKEN",
+    )
+    runner = RepoScanRunner(
+        semgrep_availability=lambda: sys.executable, git_availability=lambda: sys.executable
+    )
+    jm = _manager(repo, settings, runner)
+    scan, _created = jm.submit(
+        project.project_id,
+        StartScanRequest(
+            module=ScanModule.REPO_SCAN,
+            targets=["repo-scan"],
+            parameters={"engines": ["semgrep"]},
+            confirmed=True,
+        ),
+    )
+    jm.start()
+    try:
+        done = wait_for(repo, project.project_id, scan.scan_id, terminal, timeout=30)
+    finally:
+        jm.stop()
+    assert done.state != ScanState.COMPLETED
+    assert any("could not resolve credential alias" in e for e in done.errors)
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git binary not available")
+def test_repo_scan_clones_a_real_public_repository_and_scans_it(
+    repo: StorageRepository, settings: RuntimeSettings
+) -> None:
+    """The one real, network-touching test in this phase: proves the SSRF guard, the
+    (absent-credential) env wiring, and `build_clone_argv` all work together against a
+    real `git clone` of GitHub's own tiny public demo repo, with the result actually
+    readable by the (mocked) next stage -- not merely that `git clone` exits 0 in
+    isolation."""
+    project = _repo_url_project(repo, repository_url="https://github.com/octocat/Hello-World.git")
+    runner = RepoScanRunner(
+        semgrep_availability=lambda: sys.executable, git_availability=lambda: shutil.which("git")
+    )
+    jm = _manager(repo, settings, runner)
+    scan, _created = jm.submit(
+        project.project_id,
+        StartScanRequest(
+            module=ScanModule.REPO_SCAN,
+            targets=["repo-scan"],
+            parameters={"engines": ["semgrep"]},
+            confirmed=True,
+        ),
+    )
+
+    import app.scanners.repo_scan.runner as runner_mod
+
+    def fake_semgrep_argv(executable, repo_path, **kw):  # noqa: ANN001, ANN201
+        code = 'import sys; sys.stdout.write(\'{"results": [], "errors": []}\')'
+        return [sys.executable, "-c", code]
+
+    mp = pytest.MonkeyPatch()
+    mp.setattr(runner_mod, "semgrep_argv", fake_semgrep_argv)
+    try:
+        jm.start()
+        try:
+            done = wait_for(repo, project.project_id, scan.scan_id, terminal, timeout=60)
+        finally:
+            jm.stop()
+    finally:
+        mp.undo()
+
+    assert done.state == ScanState.COMPLETED, (done.state, done.errors, done.warnings)
+    cloned = repo.scan_work_subdir(project.project_id, scan.scan_id, "git_clone_repo")
+    assert (cloned / "README").is_file() or (cloned / "README.md").is_file()
+
+
+@pytest.mark.skipif(shutil.which("git") is None, reason="git binary not available")
+def test_repo_scan_writes_the_askpass_helper_when_a_credential_alias_is_configured(
+    repo: StorageRepository, settings: RuntimeSettings, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The actual mechanics of Git invoking the askpass helper for a real authentication
+    challenge were already proven for real in TBD-098 (phase 3); this test proves phase 5's
+    own new risk surface -- that the production code path actually writes the helper (and,
+    on Windows, its launcher) into the scan's own work directory with the expected content,
+    through the storage layer, before the clone attempt -- rather than assuming the wiring
+    that connects the two phases is correct."""
+    monkeypatch.setenv("KAVACH_TEST_PHASE5_REAL_TOKEN", "does-not-need-to-be-a-real-secret")
+    project = _repo_url_project(
+        repo,
+        repository_url="https://github.com/octocat/Hello-World.git",
+        repository_credential_alias="env:KAVACH_TEST_PHASE5_REAL_TOKEN",
+    )
+    runner = RepoScanRunner(
+        semgrep_availability=lambda: sys.executable, git_availability=lambda: shutil.which("git")
+    )
+    jm = _manager(repo, settings, runner)
+    scan, _created = jm.submit(
+        project.project_id,
+        StartScanRequest(
+            module=ScanModule.REPO_SCAN,
+            targets=["repo-scan"],
+            parameters={"engines": ["semgrep"]},
+            confirmed=True,
+        ),
+    )
+
+    import app.scanners.repo_scan.runner as runner_mod
+
+    def fake_semgrep_argv(executable, repo_path, **kw):  # noqa: ANN001, ANN201
+        code = 'import sys; sys.stdout.write(\'{"results": [], "errors": []}\')'
+        return [sys.executable, "-c", code]
+
+    mp = pytest.MonkeyPatch()
+    mp.setattr(runner_mod, "semgrep_argv", fake_semgrep_argv)
+    try:
+        jm.start()
+        try:
+            done = wait_for(repo, project.project_id, scan.scan_id, terminal, timeout=60)
+        finally:
+            jm.stop()
+    finally:
+        mp.undo()
+
+    assert done.state == ScanState.COMPLETED, (done.state, done.errors, done.warnings)
+    work_dir = repo.scan_work_dir(project.project_id, scan.scan_id)
+    helper = (work_dir / "git_askpass_helper.py").read_text("utf-8")
+    assert "KAVACH_GIT_CREDENTIAL" in helper
+    # the real secret is never written into the helper's own (fixed) source text
+    assert "does-not-need-to-be-a-real-secret" not in helper
+    if sys.platform.startswith("win"):
+        launcher = (work_dir / "git_askpass_helper.cmd").read_text("utf-8")
+        assert "git_askpass_helper.py" in launcher
+        assert "does-not-need-to-be-a-real-secret" not in launcher

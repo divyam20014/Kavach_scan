@@ -10,6 +10,7 @@ from pydantic import Field, model_validator
 from app.core.errors import ValidationFailedError
 from app.models.audit import AuditAction
 from app.models.common import (
+    CredentialAlias,
     LongText,
     Name,
     Page,
@@ -27,6 +28,7 @@ from app.models.project import (
     Network,
     Project,
     RepositoryPath,
+    RepositoryUrl,
     ScanPolicy,
     ScopeDefinition,
 )
@@ -71,6 +73,11 @@ class ProjectCreate(StrictModel):
     # Not part of `scope` (roadmap Phase 2, TBD-087/088): a local filesystem path for the
     # repo_scan module, structurally unrelated to the network-target fields `scope` holds.
     repository_path: RepositoryPath = ""
+    # Additive to, and mutually exclusive with, `repository_path` (git-clone-from-URL
+    # roadmap, phase 5, TBD-100): `Project`'s own model validator enforces exclusivity and
+    # that an alias requires a URL -- this DTO does not duplicate that check.
+    repository_url: RepositoryUrl = ""
+    repository_credential_alias: CredentialAlias = ""
     scan_policy: ScanPolicy = Field(default_factory=ScanPolicy)
 
 
@@ -86,6 +93,8 @@ class ProjectUpdate(StrictModel):
     scope: ScopeDefinition | None = None
     scope_preview_hash: str | None = None
     repository_path: RepositoryPath | None = None
+    repository_url: RepositoryUrl | None = None
+    repository_credential_alias: CredentialAlias | None = None
     scan_policy: ScanPolicy | None = None
 
 
@@ -244,6 +253,8 @@ class ProjectService:
             authorization=authorization,
             scope=req.scope,
             repository_path=req.repository_path,
+            repository_url=req.repository_url,
+            repository_credential_alias=req.repository_credential_alias,
             scan_policy=req.scan_policy,
         )
         created = self.repo.create_project(project)
@@ -266,6 +277,8 @@ class ProjectService:
             "notes",
             "status",
             "repository_path",
+            "repository_url",
+            "repository_credential_alias",
             "scan_policy",
         ):
             value = getattr(req, field)

@@ -48,7 +48,7 @@ export function StartJobCard({ project }: { project: Project }) {
     (isWeb && (profile.data?.problems.length ?? 0) > 0) ||
     (isSurface && ((surfaceProfile.data?.problems.length ?? 0) > 0 || (surfaceProfile.data?.target_problems.length ?? 0) > 0)) ||
     (isApi && (!apiOptions.import_id || (apiPlan.data?.problems.length ?? 0) > 0 || (!apiOptions.inventory_only && !apiPlan.data?.server_in_scope))) ||
-    (isRepoScan && !project.repository_path);
+    (isRepoScan && !project.repository_path && !project.repository_url);
 
   const submit = () =>
     start.mutate(
@@ -127,7 +127,7 @@ export function StartJobCard({ project }: { project: Project }) {
             {isRepoScan && (
               <Card withBorder padding="sm" component="section" aria-labelledby="repo-scan-profile-h">
                 <Title order={3} size="h5" id="repo-scan-profile-h" mb="xs">Repository scan</Title>
-                <RepoScanOptionsPanel value={repoScanOptions} onChange={setRepoScanOptions} repositoryPath={project.repository_path} />
+                <RepoScanOptionsPanel value={repoScanOptions} onChange={setRepoScanOptions} repositoryPath={project.repository_path} repositoryUrl={project.repository_url} />
               </Card>
             )}
             {isSurface && (
@@ -158,7 +158,7 @@ export function StartJobCard({ project }: { project: Project }) {
           <Text size="sm">Module: <strong>{module ? humanize(module) : ""}</strong></Text>
           <div>
             <Text size="sm">Targets:</Text>
-            {isRepoScan ? <Code>{project.repository_path}</Code> : splitLines(targets).map((t) => <Code key={t} mr={4}>{t}</Code>)}
+            {isRepoScan ? <Code>{project.repository_url || project.repository_path}</Code> : splitLines(targets).map((t) => <Code key={t} mr={4}>{t}</Code>)}
           </div>
           <Text size="sm">
             Limits: {p.requests_per_second} req/s per host · concurrency {p.max_concurrency} · max {p.max_requests_per_target} requests per target ·

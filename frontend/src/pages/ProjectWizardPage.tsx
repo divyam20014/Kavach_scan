@@ -6,6 +6,7 @@ import {
   Checkbox,
   Group,
   NumberInput,
+  SegmentedControl,
   Stack,
   Stepper,
   Table,
@@ -57,7 +58,10 @@ export interface WizardValues {
   exclude_ports: string;
   exclude_paths: string;
   api_server_urls: string;
+  repository_source: "path" | "url";
   repository_path: string;
+  repository_url: string;
+  repository_credential_alias: string;
   allowed_modules: ScanModule[];
   max_concurrency: number;
   requests_per_second: number;
@@ -92,7 +96,10 @@ const EMPTY: WizardValues = {
   exclude_ports: "",
   exclude_paths: "",
   api_server_urls: "",
+  repository_source: "path",
   repository_path: "",
+  repository_url: "",
+  repository_credential_alias: "",
   allowed_modules: [],
   max_concurrency: 2,
   requests_per_second: 2,
@@ -131,7 +138,10 @@ function fromProject(p: Project): WizardValues {
     exclude_ports: s.exclusions.ports.join(", "),
     exclude_paths: s.exclusions.path_prefixes.join("\n"),
     api_server_urls: s.api_server_urls.join("\n"),
+    repository_source: p.repository_url ? "url" : "path",
     repository_path: p.repository_path,
+    repository_url: p.repository_url,
+    repository_credential_alias: p.repository_credential_alias,
     allowed_modules: p.scan_policy.allowed_modules,
     max_concurrency: p.scan_policy.max_concurrency,
     requests_per_second: p.scan_policy.requests_per_second,
@@ -163,8 +173,14 @@ export function validateStep(step: number, v: WizardValues): Errors {
       e.window_end = "End must be after start";
     if (!v.attestation) e.attestation = "You must attest that you hold this authorization";
   }
-  if (step === 3 && v.allowed_modules.includes("repo_scan") && !v.repository_path.trim()) {
-    e.repository_path = "A repository path is required when the repository scanner is allowed";
+  if (step === 3 && v.allowed_modules.includes("repo_scan")) {
+    if (v.repository_source === "url") {
+      if (!v.repository_url.trim()) {
+        e.repository_url = "A repository URL is required when the repository scanner is allowed";
+      }
+    } else if (!v.repository_path.trim()) {
+      e.repository_path = "A repository path is required when the repository scanner is allowed";
+    }
   }
   return e;
 }
@@ -273,7 +289,12 @@ export function ProjectWizard({ existing }: { existing?: Project }) {
       notes: values.notes,
       scope,
       scope_preview_hash: preview?.scope_hash ?? null, // proves this exact scope was previewed
-      repository_path: values.repository_path.trim(),
+      // Mutually exclusive on the backend (`Project`'s own model validator): only the
+      // fields for the selected source are ever sent, never both at once.
+      repository_path: values.repository_source === "path" ? values.repository_path.trim() : "",
+      repository_url: values.repository_source === "url" ? values.repository_url.trim() : "",
+      repository_credential_alias:
+        values.repository_source === "url" ? values.repository_credential_alias.trim() : "",
       scan_policy: buildPolicy(values),
     };
     const onError = () => setActive((a) => a); // errors render inline below
@@ -446,14 +467,45 @@ export function ProjectWizard({ existing }: { existing?: Project }) {
                 </Stack>
               </Checkbox.Group>
               {values.allowed_modules.includes("repo_scan") && (
-                <TextInput
-                  label="Repository path"
-                  description="Absolute local filesystem path the repository scanner (Semgrep/Gitleaks/Trivy) will scan. Not fetched over the network — the application must already have read access to it."
-                  placeholder="C:\path\to\repository"
-                  value={values.repository_path}
-                  onChange={(e) => set("repository_path", e.currentTarget.value)}
-                  error={fieldError("repository_path", "repository_path")}
-                />
+                <Stack gap={6}>
+                  <SegmentedControl
+                    value={values.repository_source}
+                    onChange={(v) => set("repository_source", v as "path" | "url")}
+                    data={[
+                      { label: "Local path", value: "path" },
+                      { label: "Clone from a URL", value: "url" },
+                    ]}
+                  />
+                  {values.repository_source === "path" ? (
+                    <TextInput
+                      label="Repository path"
+                      description="Absolute local filesystem path the repository scanner (Semgrep/Gitleaks/Trivy) will scan. Not fetched over the network — the application must already have read access to it."
+                      placeholder="C:\path\to\repository"
+                      value={values.repository_path}
+                      onChange={(e) => set("repository_path", e.currentTarget.value)}
+                      error={fieldError("repository_path", "repository_path")}
+                    />
+                  ) : (
+                    <>
+                      <TextInput
+                        label="Repository URL"
+                        description="A plain https:// URL (no embedded credentials). Cloned into a bounded, ephemeral per-scan directory and cleaned up with the rest of the scan's own data — never cached between scans."
+                        placeholder="https://github.com/owner/repo.git"
+                        value={values.repository_url}
+                        onChange={(e) => set("repository_url", e.currentTarget.value)}
+                        error={fieldError("repository_url", "repository_url")}
+                      />
+                      <TextInput
+                        label="Credential alias (optional)"
+                        description="For a private repository: a reference to where the real credential lives, never the credential itself — only 'env:NAME' aliases are supported today."
+                        placeholder="env:MY_REPO_TOKEN"
+                        value={values.repository_credential_alias}
+                        onChange={(e) => set("repository_credential_alias", e.currentTarget.value)}
+                        error={fieldError("repository_credential_alias", "repository_credential_alias")}
+                      />
+                    </>
+                  )}
+                </Stack>
               )}
               <Group grow align="flex-start">
                 <NumberInput label="Requests per second (per host)" min={0.1} max={10} step={0.5} decimalScale={1} value={values.requests_per_second}
@@ -491,8 +543,14 @@ export function ProjectWizard({ existing }: { existing?: Project }) {
               <Text size="sm">
                 Limits: {values.requests_per_second} req/s · concurrency {values.max_concurrency} · {values.max_pages} pages · {values.max_duration_minutes} min
               </Text>
-              {values.repository_path && (
+              {values.repository_source === "path" && values.repository_path && (
                 <Text size="sm">Repository path: {values.repository_path}</Text>
+              )}
+              {values.repository_source === "url" && values.repository_url && (
+                <Text size="sm">
+                  Repository URL: {values.repository_url}
+                  {values.repository_credential_alias ? ` (credential: ${values.repository_credential_alias})` : ""}
+                </Text>
               )}
             </Stack>
           )}

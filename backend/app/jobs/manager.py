@@ -785,6 +785,11 @@ def default_runners(
             return find_tool("", ["docker"])
         return find_tool(repo.get_settings().integrations.docker_path, ["docker"])
 
+    def git_availability() -> str:
+        if repo is None:
+            return find_tool("", ["git"])
+        return find_tool(repo.get_settings().integrations.git_path, ["git"])
+
     def docker_image_ready(engine: str) -> bool:
         if repo is None:
             return False
@@ -803,6 +808,7 @@ def default_runners(
             trivy_db_ready=trivy_db_ready,
             docker_availability=docker_availability,
             docker_image_ready=docker_image_ready,
+            git_availability=git_availability,
         ),
     }
     if settings.enable_selftest_jobs:

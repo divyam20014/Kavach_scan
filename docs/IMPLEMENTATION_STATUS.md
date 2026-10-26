@@ -416,3 +416,69 @@ Found using the real application after TBD-094: an operator who pulled Trivy's D
 - Tests: `tests/test_repo_scan_docker_argv.py` (+1), `tests/test_settings_api.py` (+1). Full backend suite re-run clean; `ruff check`/`ruff format --check`/`mypy` all clean.
 - No frontend change needed — the improved error message surfaces automatically through the existing error-display handling.
 
+## Git-clone-from-URL roadmap, phase 1 of 6: Git detection and self-test (2026-10-26, TBD-096)
+
+Operator-requested, explicitly-reviewed-before-building 6-phase roadmap to let the repository scanner clone a remote URL instead of requiring a pre-existing local checkout — additive to, and mutually exclusive with, the existing `repository_path`. Operator-confirmed design: shell out to the real `git` binary; ephemeral per-scan clone (no persistent cache); HTTPS + credential-alias only for v1 (no SSH); reuse the existing blocked-IP-range policy rather than a hosting-provider allowlist; shallow/bounded clone. This entry covers phase 1 only — detection/self-test, no clone, no network fetch to any operator-supplied URL, no credential resolution.
+
+- Git added as a 9th integration tool (`git_path` setting, plain PATH detection, same pattern as every other tool). Self-test uses the generic `--version`-flag pattern — confirmed directly (`git --version` → clean single line, exit 0) — no special parser needed, unlike ZAP's JVM-log-noise case or Docker's own daemon-reachability distinction.
+- The `IntegrationsSettingsUpdate` checklist was followed immediately again (the fourth consecutive tool to get this right from the start).
+- Tests: `tests/test_integrations.py` (+2), `tests/test_support_bundle.py`/`tests/test_settings_api.py` updated for the 9th tool. Full backend suite re-run clean; `ruff check`/`ruff format --check`/`mypy` all clean. Frontend: a "Git path" field added to Integrations; `tsc -b --noEmit`/`eslint .` clean; full suite re-ran clean (89 passed); `npm run build` clean.
+- **Not yet built**: phase 2 (clone-argv builder with bounds) through phase 6 (frontend `repository_url` fields) — actually cloning a repository has not been built in any form yet. The two most safety-sensitive phases are still ahead: phase 3 (credential-alias resolution) and phase 4 (the SSRF guard).
+- Full rationale in TBD-096.
+
+## Git-clone-from-URL roadmap, phase 2 of 6: clone-argv builder with bounds (2026-10-26, TBD-097)
+
+A pure, file-I/O-free clone-argv builder (`app/scanners/repo_scan/git_clone.py`) — shallow depth, timeout, a partial-clone blob-size filter, and strict URL-scheme validation — verified against real `git clone` invocations against a tiny public test repo. No credentials, no job-system wiring yet.
+
+- **Real discovery**: Git supports transport schemes beyond `https://` that are a real risk — `ext::<command>` can execute an arbitrary shell command (confirmed the installed Git already blocks this by its own default, but that default is never relied on alone); `file://` is still accepted by a current Git install, confirmed directly, which could let a "clone" copy an arbitrary local directory. Only plain `https://` is ever accepted.
+- **Real discovery**: a repository requiring credentials Git doesn't have would otherwise hang on an interactive prompt — confirmed `GIT_TERMINAL_PROMPT=0` fixes this (fails cleanly in seconds instead). This is an environment variable, never an argv flag, since argv is written verbatim into the job's own event log — the same reason phase 3's future credential will never go into the argv either.
+- **Real discovery**: `--depth 1 --single-branch --no-tags --filter=blob:limit=<n>` genuinely produces a shallow, bounded clone over real GitHub HTTPS — confirmed directly.
+- Tests: `tests/test_repo_scan_git_clone.py` (15, new). Full backend suite re-run clean; `ruff check`/`ruff format --check`/`mypy` all clean; static guards confirm no file I/O or process execution.
+- **Not yet built**: phase 3 (credential-alias resolution) through phase 6 (frontend fields); phase 4 (the SSRF guard) is also still ahead. Actually cloning a repository has not been built in any form yet.
+- Full rationale in TBD-097.
+
+## Git-clone-from-URL roadmap, phase 3 of 6: credential-alias resolution (2026-10-26, TBD-098)
+
+Credential-alias resolution at clone time (`app/scanners/repo_scan/git_credentials.py`) — flagged in advance as the most safety-sensitive phase remaining in this roadmap, since a mistake here would be a real credential leak, not a correctness bug. No model fields or job-system wiring yet.
+
+- **No resolver existed anywhere in this codebase before this phase**, confirmed by inspection: `online_lookup_credential_alias` (TBD-058) has only a shape validator, never consumed by any runtime code. The only actual precedent, `app.scanners.apisec.runner._resolve_secret`, also only ever resolves `env:NAME`; `resolve_credential_alias` follows that exact existing convention.
+- `keychain:NAME` deliberately resolves to `None` (same as an unset `env:` variable) rather than being built now — a real resolver needs a new dependency, and even then Windows has no stdlib/CLI-only way to retrieve a stored secret, unlike macOS/Linux. Building it only for some platforms would ship an inconsistent feature.
+- **Real end-to-end verification**: a local HTTP server built for this verification challenges every request with `401` + `WWW-Authenticate: Basic` until it sees the exact expected header, then serves a real git smart-HTTP advertisement. `git ls-remote` against it, with `GIT_ASKPASS` pointed at the shipped helper and the secret supplied only via `GIT_CREDENTIAL_ENV_VAR`, was confirmed to send exactly that header on retry — proving Git invokes the helper (receiving only the prompt text, never the credential, as its own argv) and that the secret never appears in any argv this application builds or logs.
+- **Real discovery (Windows-specific)**: `GIT_ASKPASS` set to a bare `"<python> <script.py>"` string with a space was confirmed NOT to be split into program+argument by this machine's Git for Windows — a thin `.cmd` launcher pointing at the real interpreter path resolves this. Writing that launcher file is deferred to phase 5's own per-job ephemeral work directory, keeping this phase's module free of file I/O (confirmed by the static file-I/O-confinement guard).
+- Tests: `tests/test_repo_scan_git_credentials.py` (8, new), including the real local-server authentication proof above. Full backend suite re-run clean; `ruff check`/`ruff format --check`/`mypy` all clean.
+- **Not yet built**: phase 4 (the SSRF guard) through phase 6 (frontend fields). The `Project` model has no `repository_url`/`repository_credential_alias` field yet, and no job-system wiring calls this module during a real scan — both are phase 5's job.
+- Full rationale in TBD-098.
+
+## Git-clone-from-URL roadmap, phase 4 of 6: SSRF guard (2026-10-26, TBD-099)
+
+Resolves the clone URL's host and refuses it before any clone attempt if any resolved address falls in a blocked range (`app/scanners/repo_scan/git_ssrf_guard.py`) — flagged "security-critical" in the original roadmap. No job-system wiring yet.
+
+- Reuses the existing policy object directly: `ScopePolicy(project).validate_resolved_ip(host, address)` for every resolved address — the same class/method `ScopeGuard` uses for every other guarded network action, so exclusions, the non-overridable cloud-metadata block, and the project's internal-target override all apply for free.
+- Deliberately skips the project's in-scope allowlist — a repository legitimately lives outside the network target a scan's scope describes (e.g. cloning from `github.com` for a project scoped to an unrelated internal web app); only the blocklist half of the existing policy is reused, matching the roadmap's own wording.
+- **Disclosed residual risk**: unlike `nmap`/`sslyze`/`testssl.sh` (handed the already-validated IP literal directly, closing the DNS-rebinding window completely), Git's own HTTPS client must resolve and connect to the real hostname itself (TLS SNI + Host header need it) — Git exposes no `--resolve`-style pin-to-IP mechanism (confirmed by checking `git-config(1)`'s `http.*` options). A DNS answer changing between this check and Git's own connection would not be caught here; phase 5 narrows the window by re-running this check immediately before the clone subprocess starts.
+- Tests: `tests/test_repo_scan_git_ssrf_guard.py` (10, new), including a real, unmocked end-to-end test resolving `localhost` through the actual OS resolver. Full backend suite re-run clean; `ruff check`/`ruff format --check`/`mypy` all clean.
+- **Not yet built**: phase 5 (job-system wiring — `repository_url`/`repository_credential_alias` model fields, ephemeral clone directory, the askpass `.cmd`-launcher write, calling this guard immediately before every real clone) and phase 6 (frontend fields). Actually cloning a repository has still not been built in any form.
+- Full rationale in TBD-099.
+
+## Git-clone-from-URL roadmap, phase 5 of 6: job-system wiring (2026-10-26, TBD-100)
+
+`Project.repository_url`/`repository_credential_alias` model fields (additive to, mutually exclusive with, `repository_path`), and `RepoScanRunner` actually cloning before scanning — a repository can now genuinely be scanned from an operator-supplied URL for the first time in this roadmap. Phase 6 (frontend fields) remains.
+
+- `CredentialAlias` moved from `app.models.settings` to `app.models.common` (shared by `online_lookup_credential_alias` and the new `repository_credential_alias`) to avoid a circular import; `ProjectCreate`/`ProjectUpdate` and their field-copy lists got the new fields in the same step as the model (the `IntegrationsSettingsUpdate` checklist's own lesson, applied to the project DTOs).
+- `JobContext.run_process` gained an `extra_env` parameter (the underlying adapter already supported it; nothing above it ever threaded it through) — without this, phase 3's credential and `GIT_ASKPASS` could never reach the subprocess. Confirmed only `argv` is ever logged, never `extra_env`.
+- **Real, newly-discovered Windows defect**: `git clone` into this application's own real (long, nested, UUID-bearing) data-directory shape failed with `error: unable to open loose object ...: Filename too long`, even though the destination path itself was well under 260 characters — a git *object's own internal path* exceeded it. Fixed in phase 2's `build_clone_argv` with `-c core.longpaths=true` (confirmed directly), included unconditionally rather than branched on OS.
+- The clone destination is `ctx.repo.scan_work_subdir(..., "git_clone_repo")` — ephemeral, scoped to the scan's own work directory exactly like Trivy's report subdirectory, no new caching or cross-scan reuse.
+- Tests: `tests/test_models.py` (+3), `tests/test_repo_scan_git_clone.py` (updated for the new argv element), `tests/test_repo_scan_job.py` (+5, new: SSRF-blocked host fails cleanly; git-unavailable fails cleanly; unresolvable credential alias fails cleanly; a real network-touching clone of `octocat/Hello-World` feeding a mocked Semgrep stage end-to-end; the askpass helper/launcher are written with the expected, secret-free content). Full backend suite re-run clean; `ruff check`/`ruff format --check`/`mypy` all clean.
+- **Not yet built**: phase 6 (frontend fields). A fully live authenticated private-repository clone has not been exercised end-to-end in one single test (phase 3 already proved the authentication mechanics in isolation against a controlled local server).
+- Full rationale in TBD-100.
+
+## Git-clone-from-URL roadmap, phase 6 of 6 (final phase): frontend fields (2026-10-26, TBD-101)
+
+`repository_url`/`repository_credential_alias` fields in the project wizard and the start-a-job panel, mirroring `repository_path`'s own existing fields. **The git-clone-from-URL feature is now complete end-to-end** — from detection through a real cloned-and-scanned job to the operator-facing UI.
+
+- A `SegmentedControl` toggle ("Local path" / "Clone from a URL") keeps the two sources mutually exclusive in the UI, matching the backend's own model validator; the field not in use is always sent as `""`.
+- `StartJobCard`'s disabled-start condition and `RepoScanOptionsPanel`'s "not configured" alert were both updated to require *either* `repository_path` or `repository_url` — found by re-reading every existing frontend consumer of `repository_path`, not assumed to need no changes.
+- Tests: `tests/wizard.test.tsx` (+1: creates a project with a repository URL and credential alias, asserting `repository_path` is sent empty), `tests/repoScanStart.test.tsx` (+1 new, 1 updated). Full frontend suite re-run clean (91 passed); `tsc -b --noEmit`/`eslint .` clean; `npm run build` clean.
+- **Roadmap complete** (TBD-096 through TBD-101). Possible future work, not requested: SSH transport, `keychain:` credential-alias resolution, and a fully live authenticated private-repository clone exercised end-to-end in one single test.
+- Full rationale in TBD-101.
+

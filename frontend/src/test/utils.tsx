@@ -130,6 +130,8 @@ export function overview(overrides: Partial<ProjectOverview["project"]> = {}, ex
         internal_override: null,
       },
       repository_path: "",
+      repository_url: "",
+      repository_credential_alias: "",
       scan_policy: {
         max_concurrency: 2,
         requests_per_second: 2,

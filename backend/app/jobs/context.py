@@ -286,7 +286,12 @@ class JobContext:
         allowed_executables: Sequence[str],
         timeout: float,
         max_output_bytes: int = 4 * 1024 * 1024,
+        extra_env: dict[str, str] | None = None,
     ) -> ProcessResult:
+        """`extra_env` is never logged (only `argv` is, in the `process_started` event below)
+        -- this is the only way a caller may hand the subprocess a value (e.g. a resolved
+        credential, see `app.scanners.repo_scan.git_credentials`) that must never appear in
+        this job's own event stream."""
         self.checkpoint()
         remaining = max(1.0, (self.deadline - self.clock()).total_seconds())
         effective = min(timeout, remaining)
@@ -302,6 +307,7 @@ class JobContext:
             correlation_id=self.scan.correlation_id,
             max_output_bytes=max_output_bytes,
             temp_dir=self.repo.scan_temp_dir(self.project_id, self.scan_id),
+            extra_env=extra_env,
         )
         level: Level = "info" if result.ok else "warning"
         self.emit(

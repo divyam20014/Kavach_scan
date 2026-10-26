@@ -129,6 +129,11 @@ export interface Project {
   authorization: AuthorizationRecord | null;
   scope: ScopeDefinition;
   repository_path: string;
+  // Additive to, and mutually exclusive with, `repository_path` (git-clone-from-URL
+  // roadmap, phase 6): an operator-supplied remote URL the repository scanner clones into
+  // an ephemeral per-scan directory instead of scanning a pre-existing local checkout.
+  repository_url: string;
+  repository_credential_alias: string;
   scan_policy: ScanPolicy;
   labels: string[];
   notes: string;
@@ -169,6 +174,8 @@ export interface ProjectCreate {
   scope: ScopeDefinition;
   scope_preview_hash: string | null;
   repository_path: string;
+  repository_url: string;
+  repository_credential_alias: string;
   scan_policy: Partial<ScanPolicy>;
 }
 
@@ -982,6 +989,7 @@ export interface IntegrationsSettings {
   gitleaks_path: string;
   trivy_path: string;
   docker_path: string;
+  git_path: string;
   online_lookup_credential_alias: string;
 }
 
@@ -1005,6 +1013,7 @@ export interface IntegrationsSettingsUpdate {
   gitleaks_path?: string;
   trivy_path?: string;
   docker_path?: string;
+  git_path?: string;
   online_lookup_credential_alias?: string;
 }
 

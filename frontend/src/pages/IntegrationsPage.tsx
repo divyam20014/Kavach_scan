@@ -269,6 +269,7 @@ function ToolPathSettingsCard() {
   const [gitleaksPath, setGitleaksPath] = useState("");
   const [trivyPath, setTrivyPath] = useState("");
   const [dockerPath, setDockerPath] = useState("");
+  const [gitPath, setGitPath] = useState("");
   const [credentialAlias, setCredentialAlias] = useState("");
   const [loadedRevision, setLoadedRevision] = useState<number | null>(null);
 
@@ -284,6 +285,7 @@ function ToolPathSettingsCard() {
       setGitleaksPath(settings.data.integrations.gitleaks_path);
       setTrivyPath(settings.data.integrations.trivy_path);
       setDockerPath(settings.data.integrations.docker_path);
+      setGitPath(settings.data.integrations.git_path);
       setLoadedRevision(settings.data.revision);
     }
   }, [settings.data, loadedRevision]);
@@ -301,6 +303,7 @@ function ToolPathSettingsCard() {
           gitleaks_path: gitleaksPath,
           trivy_path: trivyPath,
           docker_path: dockerPath,
+          git_path: gitPath,
           ...(credentialAlias ? { online_lookup_credential_alias: credentialAlias } : {}),
         },
       },
@@ -364,6 +367,12 @@ function ToolPathSettingsCard() {
               description="A specific docker CLI executable. Leave blank to use the one on PATH."
               placeholder="auto-detect"
               value={dockerPath} onChange={(e) => setDockerPath(e.currentTarget.value)}
+            />
+            <TextInput
+              label="Git path"
+              description="A specific git executable. Leave blank to use the one on PATH."
+              placeholder="auto-detect"
+              value={gitPath} onChange={(e) => setGitPath(e.currentTarget.value)}
             />
             <TextInput
               type="password"

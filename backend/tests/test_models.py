@@ -49,6 +49,37 @@ def test_repository_path_accepts_an_absolute_path_and_rejects_a_relative_one() -
         make_project(repository_path="relative/path")
 
 
+def test_repository_url_accepts_a_plain_https_url_and_rejects_other_schemes() -> None:
+    """Git-clone-from-URL roadmap, phase 5 (TBD-100): mirrors
+    `app.scanners.repo_scan.git_clone.validate_https_url`'s own restriction, independently."""
+    project = make_project(repository_url="https://github.com/octocat/Hello-World.git")
+    assert project.repository_url == "https://github.com/octocat/Hello-World.git"
+    assert make_project().repository_url == ""
+    with pytest.raises(ValidationError):
+        make_project(repository_url="http://github.com/octocat/Hello-World.git")
+    with pytest.raises(ValidationError):
+        make_project(repository_url="https://user:pass@github.com/x.git")
+
+
+def test_repository_path_and_repository_url_are_mutually_exclusive() -> None:
+    abs_path = str(Path("srv", "some-repo").absolute())
+    with pytest.raises(ValidationError, match="mutually exclusive"):
+        make_project(
+            repository_path=abs_path, repository_url="https://github.com/octocat/Hello-World.git"
+        )
+
+
+def test_repository_credential_alias_requires_a_repository_url() -> None:
+    with pytest.raises(ValidationError, match="requires repository_url"):
+        make_project(repository_credential_alias="env:SOME_TOKEN")
+    # with a URL, a valid alias is accepted
+    project = make_project(
+        repository_url="https://github.com/octocat/Hello-World.git",
+        repository_credential_alias="env:SOME_TOKEN",
+    )
+    assert project.repository_credential_alias == "env:SOME_TOKEN"
+
+
 def test_allowed_modules_permits_all_four_modules_including_repo_scan() -> None:
     policy = ScanPolicy(allowed_modules=["web_app", "attack_surface", "api_security", "repo_scan"])
     assert len(policy.allowed_modules) == 4

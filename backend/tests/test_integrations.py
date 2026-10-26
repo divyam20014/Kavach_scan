@@ -28,6 +28,7 @@ def _set_tool_path(repo: StorageRepository, tool_id: str, path: str) -> None:
         "gitleaks": "gitleaks_path",
         "trivy": "trivy_path",
         "docker": "docker_path",
+        "git": "git_path",
     }[tool_id]
     settings = repo.get_settings()
     settings.integrations = IntegrationsSettings(**{field: path})
@@ -229,6 +230,28 @@ def test_docker_selftest_fails_cleanly_when_the_daemon_is_unreachable(
     assert result.status == "error"
     assert result.version == ""
     assert "exited with status 1" in result.last_error
+
+
+def test_git_detected_via_plain_path_lookup_not_candidate_directories(
+    repo: StorageRepository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Git is a normal PATH executable -- detection is a plain `find_executable` call, same
+    as Semgrep/Gitleaks/Trivy/Docker's own."""
+    monkeypatch.setattr(integrations_mod, "find_executable", lambda names: "/usr/bin/git")
+    statuses = {s.id: s for s in list_integration_statuses(repo)}
+    assert statuses["git"].status == "detected"
+    assert statuses["git"].detected_path == "/usr/bin/git"
+
+
+def test_git_selftest_succeeds_against_a_real_executable(repo: StorageRepository) -> None:
+    """Confirmed directly: `git --version` prints a clean single line (e.g.
+    "git version 2.50.1.windows.1") and exits 0 -- no daemon-reachability nuance like
+    Docker's own self-test, so the generic `--version`-flag pattern applies unchanged."""
+    _set_tool_path(repo, "git", sys.executable)
+    result = run_selftest(repo, "git")
+    assert result.status == "verified"
+    assert result.version  # python's own --version banner, used as a generic smoke test
+    assert result.last_error == ""
 
 
 def test_selftest_reports_an_error_for_a_tool_that_produces_no_version_output(

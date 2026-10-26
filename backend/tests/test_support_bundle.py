@@ -144,6 +144,7 @@ def test_bundle_carries_version_storage_and_integration_info(
         "gitleaks",
         "trivy",
         "docker",
+        "git",
     }
     assert json.loads(files["cve_catalog.json"]) is None  # none imported
 

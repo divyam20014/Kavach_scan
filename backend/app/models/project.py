@@ -14,6 +14,7 @@ from typing import Annotated, Literal
 from pydantic import AfterValidator, Field, StringConstraints, model_validator
 
 from app.models.common import (
+    CredentialAlias,
     EventId,
     LongText,
     Name,
@@ -87,6 +88,26 @@ def _repository_path(value: str) -> str:
     return value
 
 
+def _repository_url(value: str) -> str:
+    """An operator-supplied remote repository URL to clone (git-clone-from-URL roadmap,
+    phase 5: repo_scan). Mirrors `app.scanners.repo_scan.git_clone.validate_https_url`'s own
+    restriction -- plain `https://`, no embedded credentials, no whitespace -- but is
+    intentionally a separate, independent check: that module re-validates again,
+    immediately before building a clone argv, as defense in depth, never trusting this model
+    validator alone (the same posture `ToolPath`/`RepositoryPath` already take relative to
+    each other in this codebase)."""
+    if value == "":
+        return value
+    if not re.match(r"^https://[^\s/@]+(/[^\s]*)?$", value, re.IGNORECASE):
+        raise ValueError(
+            "repository URL must be a plain https:// URL, without embedded credentials or "
+            "whitespace"
+        )
+    if len(value) > 2048:
+        raise ValueError("repository URL is too long")
+    return value
+
+
 Hostname = Annotated[str, StringConstraints(max_length=253), AfterValidator(_hostname)]
 WildcardDomain = Annotated[str, StringConstraints(max_length=255), AfterValidator(_wildcard)]
 PathPrefix = Annotated[
@@ -94,6 +115,7 @@ PathPrefix = Annotated[
 ]
 HttpUrlStr = Annotated[str, StringConstraints(max_length=2048), AfterValidator(_http_url)]
 RepositoryPath = Annotated[str, AfterValidator(_repository_path)]
+RepositoryUrl = Annotated[str, AfterValidator(_repository_url)]
 Port = Annotated[int, Field(ge=1, le=65535)]
 Network = IPv4Network | IPv6Network
 
@@ -193,6 +215,20 @@ class Project(Record):
     # schemes), while this is a local filesystem path for the repo_scan module -- a
     # structurally different kind of "where this project's subject lives" (roadmap Phase 2).
     repository_path: RepositoryPath = ""
+    # Additive to, and mutually exclusive with, `repository_path` (git-clone-from-URL
+    # roadmap, phase 5, TBD-100): an operator-supplied remote URL the repo_scan module
+    # clones into an ephemeral per-scan work directory instead of scanning a pre-existing
+    # local checkout. `repository_credential_alias` is meaningless without it.
+    repository_url: RepositoryUrl = ""
+    repository_credential_alias: CredentialAlias = ""
     scan_policy: ScanPolicy = Field(default_factory=ScanPolicy)
     labels: list[Tag] = Field(default_factory=list, max_length=50)
     notes: LongText = ""
+
+    @model_validator(mode="after")
+    def _repository_source_is_unambiguous(self) -> Project:
+        if self.repository_path and self.repository_url:
+            raise ValueError("repository_path and repository_url are mutually exclusive")
+        if self.repository_credential_alias and not self.repository_url:
+            raise ValueError("repository_credential_alias requires repository_url")
+        return self

@@ -58,6 +58,7 @@ class IntegrationsSettingsUpdate(StrictModel):
     gitleaks_path: str | None = None
     trivy_path: str | None = None
     docker_path: str | None = None
+    git_path: str | None = None
     online_lookup_credential_alias: str | None = None
 
 
@@ -92,6 +93,7 @@ def update_settings(body: SettingsUpdateRequest, repo: Repository) -> AppSetting
             "gitleaks_path",
             "trivy_path",
             "docker_path",
+            "git_path",
             "online_lookup_credential_alias",
         ):
             value = getattr(body.integrations, field_name)

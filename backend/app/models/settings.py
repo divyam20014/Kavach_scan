@@ -2,17 +2,14 @@
 
 from __future__ import annotations
 
-import re
 from typing import Annotated, Literal
 
 from pydantic import AfterValidator, Field
 
-from app.models.common import Name, StrictModel, UtcDatetime, utc_now
+from app.models.common import CredentialAlias, Name, StrictModel, UtcDatetime, utc_now
 from app.models.project import ScanPolicy
 
 SETTINGS_SCHEMA_VERSION: Literal[1] = 1
-
-_CREDENTIAL_ALIAS_RE = re.compile(r"^(env|keychain):[A-Za-z0-9_.-]{1,100}$")
 
 
 def _validate_tool_path(value: str) -> str:
@@ -32,21 +29,7 @@ def _validate_tool_path(value: str) -> str:
     return value
 
 
-def _validate_credential_alias(value: str) -> str:
-    """Never a raw secret: only a reference to where the real value lives (TBD-058 pattern).
-    This is what makes 'write-only, never returned by settings-read API' true by construction
-    — the app never stores (or could echo back) the secret itself, only this alias."""
-    if value == "":
-        return value
-    if not _CREDENTIAL_ALIAS_RE.fullmatch(value):
-        raise ValueError(
-            "credential must be a reference, not a raw secret: 'env:NAME' or 'keychain:NAME'"
-        )
-    return value
-
-
 ToolPath = Annotated[str, AfterValidator(_validate_tool_path)]
-CredentialAlias = Annotated[str, AfterValidator(_validate_credential_alias)]
 
 
 class IntegrationsSettings(StrictModel):
@@ -65,6 +48,7 @@ class IntegrationsSettings(StrictModel):
     gitleaks_path: ToolPath = ""  # the gitleaks executable; auto-detected from PATH otherwise
     trivy_path: ToolPath = ""  # the trivy executable; auto-detected from PATH otherwise
     docker_path: ToolPath = ""  # the docker CLI executable; auto-detected from PATH otherwise
+    git_path: ToolPath = ""  # the git executable; auto-detected from PATH otherwise
     online_lookup_credential_alias: CredentialAlias = ""
 
 

@@ -42,6 +42,7 @@ TOOL_IDS: tuple[str, ...] = (
     "gitleaks",
     "trivy",
     "docker",
+    "git",
 )
 
 _CAPABILITIES: dict[str, str] = {
@@ -67,6 +68,9 @@ _CAPABILITIES: dict[str, str] = {
     "Semgrep/Gitleaks/Trivy (roadmap Phase 2, TBD-090) — detection/self-test only in this "
     "release; running a scan via a container is a separate, later increment. Self-test "
     "requires the Docker daemon to actually be reachable, not just the CLI installed.",
+    "git": "Git, for cloning a repository from an operator-supplied URL as an alternative "
+    "to a local filesystem path for the repository scanner (TBD-096) — detection/self-test "
+    "only in this release; actually cloning a repository is a separate, later increment.",
 }
 _TROUBLESHOOTING: dict[str, str] = {
     "nmap": "Install Nmap and ensure it is on PATH, or set an explicit path in Settings. "
@@ -87,6 +91,8 @@ _TROUBLESHOOTING: dict[str, str] = {
     "docker": "Install Docker (https://www.docker.com/) and ensure the daemon is running. "
     "A 'detected' Docker CLI with a self-test error usually means the daemon is not "
     "reachable (Docker Desktop not started).",
+    "git": "Install Git (https://git-scm.com/) and ensure it is on PATH, or set an explicit "
+    "path in Settings.",
 }
 
 _SELFTEST_TIMEOUT_SECONDS = 20.0
@@ -125,6 +131,7 @@ def _configured_path(settings: IntegrationsSettings, tool_id: str) -> str:
         "gitleaks": settings.gitleaks_path,
         "trivy": settings.trivy_path,
         "docker": settings.docker_path,
+        "git": settings.git_path,
     }[tool_id]
 
 
@@ -158,6 +165,9 @@ def _detect_path(tool_id: str, configured: str) -> str:
         # others. Detection alone never confirms the daemon is reachable: that is what
         # the self-test's own version_args check (below) exists to do.
         return find_executable(["docker"]) or ""
+    if tool_id == "git":
+        # Git is a normal PATH executable -- plain PATH lookup, same as the others.
+        return find_executable(["git"]) or ""
     found = detect_tls_tools()
     match = next((t for t in found if t.name == tool_id), None)
     return match.executable if match else ""
@@ -237,6 +247,8 @@ def _version_args(tool_id: str, executable: str) -> list[str]:
         # round trip, so a stopped Docker Desktop fails this cleanly (non-zero exit),
         # never a false "verified" from the client binary alone.
         return ["version", "--format", "{{.Server.Version}}"]
+    if tool_id == "git":
+        return ["--version"]
     return TlsToolSpec(tool_id, executable).version_args()
 
 

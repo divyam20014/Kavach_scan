@@ -28,6 +28,8 @@ is data the host manages, not something tied to which binary runs the scan.
 from __future__ import annotations
 
 import json
+import os
+import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -35,7 +37,7 @@ from typing import Any
 
 from app.core.redaction import redact
 from app.jobs.context import JobContext, JobStop, RunResult
-from app.models.project import ScanPolicy
+from app.models.project import Project, ScanPolicy
 from app.scanners.repo_scan.docker_argv import (
     build_gitleaks_docker_argv,
     build_semgrep_docker_argv,
@@ -43,6 +45,16 @@ from app.scanners.repo_scan.docker_argv import (
 )
 from app.scanners.repo_scan.docker_images import image_for
 from app.scanners.repo_scan.findings import RepoScanFindingWriter
+from app.scanners.repo_scan.git_clone import GIT_CLONE_ENV, GitCloneArgvError, build_clone_argv
+from app.scanners.repo_scan.git_credentials import (
+    ASKPASS_HELPER_SOURCE,
+    build_credential_env,
+    resolve_credential_alias,
+)
+from app.scanners.repo_scan.git_ssrf_guard import (
+    CloneHostBlockedError,
+    check_clone_host_not_blocked,
+)
 from app.scanners.repo_scan.gitleaks_adapter import (
     GitleaksReportError,
     parse_gitleaks_json,
@@ -72,6 +84,9 @@ from app.scope.engine import ScopePolicy
 
 OUTPUT_MAX_ITEMS = 2000
 MAX_PROCESS_OUTPUT_BYTES = 16 * 1024 * 1024
+CLONE_TIMEOUT_SECONDS = 300
+ASKPASS_HELPER_NAME = "git_askpass_helper.py"
+ASKPASS_LAUNCHER_NAME = "git_askpass_helper.cmd"  # Windows only -- see git_credentials.py
 
 
 def _json(data: Any) -> bytes:
@@ -88,6 +103,7 @@ class RepoScanRunner:
     trivy_db_ready: Callable[[], bool] = field(default=lambda: False)
     docker_availability: Callable[[], str] = field(default=lambda: "")
     docker_image_ready: Callable[[str], bool] = field(default=lambda engine: False)
+    git_availability: Callable[[], str] = field(default=lambda: "")
 
     def check_targets(
         self, targets: list[str], policy: ScopePolicy
@@ -128,13 +144,20 @@ class RepoScanRunner:
 
     def run(self, ctx: JobContext) -> RunResult:
         project = ctx.repo.get_project(ctx.project_id)
-        if not project.repository_path:
-            ctx.error("no repository path is configured for this project")
-            return RunResult(failed=True, errors=["no repository path configured"])
-        repo_path = Path(project.repository_path)
-        if not repo_path.is_dir():
-            ctx.error(f"configured repository path is not a directory: {project.repository_path}")
-            return RunResult(failed=True, errors=["repository path not found"])
+        if project.repository_url:
+            repo_path = self._clone_repository(ctx, project)
+            if repo_path is None:
+                return RunResult(failed=True, errors=["repository clone failed"])
+        elif project.repository_path:
+            repo_path = Path(project.repository_path)
+            if not repo_path.is_dir():
+                ctx.error(
+                    f"configured repository path is not a directory: {project.repository_path}"
+                )
+                return RunResult(failed=True, errors=["repository path not found"])
+        else:
+            ctx.error("no repository path or repository URL is configured for this project")
+            return RunResult(failed=True, errors=["no repository configured"])
 
         profile = build_profile(dict(ctx.scan.parameters))
         ctx.write_output("profile.json", _json(profile.model_dump(mode="json")))
@@ -185,6 +208,82 @@ class RepoScanRunner:
         if stop is not None:
             raise stop
         return RunResult()
+
+    def _clone_repository(self, ctx: JobContext, project: Project) -> Path | None:
+        """Clone `project.repository_url` into an ephemeral, per-scan work directory
+        (git-clone-from-URL roadmap, phase 5 of 6, TBD-100). The SSRF guard (phase 4) is
+        re-run here, immediately before the clone attempt, never once at project-
+        configuration time -- narrowing the DNS-rebinding window `git_ssrf_guard`'s own
+        docstring discloses as far as this application can."""
+        ctx.stage("cloning repository")
+        try:
+            check_clone_host_not_blocked(project.repository_url, project, ctx.resolver)
+        except CloneHostBlockedError as exc:
+            ctx.error(f"repository URL is blocked: {exc}")
+            return None
+        git_executable = self.git_availability()
+        if not git_executable:
+            ctx.error("git is not available (not installed or not configured)")
+            return None
+
+        secret: str | None = None
+        if project.repository_credential_alias:
+            secret = resolve_credential_alias(project.repository_credential_alias)
+            if secret is None:
+                ctx.error(
+                    f"could not resolve credential alias "
+                    f"'{project.repository_credential_alias}' (only 'env:NAME' aliases are "
+                    "supported; ensure the environment variable is set)"
+                )
+                return None
+
+        env: dict[str, str] = {**GIT_CLONE_ENV, **build_credential_env(secret)}
+        if secret is not None:
+            # Phase 3's helper source is a fixed string this module ships; only its on-disk
+            # location is decided here, at clone time, through the storage layer -- never a
+            # direct file write (see tests/test_static_guards.py's file-I/O confinement).
+            ctx.repo.write_scan_output(
+                ctx.project_id, ctx.scan_id, ASKPASS_HELPER_NAME, ASKPASS_HELPER_SOURCE.encode()
+            )
+            work_dir = ctx.repo.scan_work_dir(ctx.project_id, ctx.scan_id)
+            helper_path = work_dir / ASKPASS_HELPER_NAME
+            if os.name == "nt":
+                # Confirmed directly (TBD-098): a bare "<python> <script.py>" GIT_ASKPASS
+                # value is not split into program+argument by Git for Windows.
+                launcher = f'@"{sys.executable}" "{helper_path}" %*\r\n'
+                ctx.repo.write_scan_output(
+                    ctx.project_id, ctx.scan_id, ASKPASS_LAUNCHER_NAME, launcher.encode()
+                )
+                env["GIT_ASKPASS"] = str(work_dir / ASKPASS_LAUNCHER_NAME)
+            else:
+                env["GIT_ASKPASS"] = f"{sys.executable} {helper_path}"
+
+        dest_dir = ctx.repo.scan_work_subdir(ctx.project_id, ctx.scan_id, "git_clone_repo")
+        try:
+            argv = build_clone_argv(
+                git_executable,
+                project.repository_url,
+                dest_dir,
+                timeout_seconds=CLONE_TIMEOUT_SECONDS,
+            )
+        except GitCloneArgvError as exc:
+            ctx.error(f"could not build the clone command: {exc}")
+            return None
+        result = ctx.run_process(
+            argv,
+            allowed_executables=[git_executable],
+            timeout=CLONE_TIMEOUT_SECONDS + 30,
+            max_output_bytes=MAX_PROCESS_OUTPUT_BYTES,
+            extra_env=env,
+        )
+        ctx.checkpoint()
+        if result.timed_out:
+            ctx.error(f"git clone did not finish within {CLONE_TIMEOUT_SECONDS}s")
+            return None
+        if result.exit_code != 0:
+            ctx.error(f"git clone exited with status {result.exit_code}")
+            return None
+        return dest_dir
 
     def _run_semgrep(
         self,

@@ -23,6 +23,7 @@ def test_get_settings_returns_defaults(client: TestClient) -> None:
         "gitleaks_path": "",
         "trivy_path": "",
         "docker_path": "",
+        "git_path": "",
         "online_lookup_credential_alias": "",
     }
 
@@ -55,6 +56,7 @@ def test_patch_settings_accepts_every_tool_path_field_the_integrations_page_send
                 "gitleaks_path": sys.executable,
                 "trivy_path": sys.executable,
                 "docker_path": sys.executable,
+                "git_path": sys.executable,
             }
         },
     )
@@ -65,6 +67,7 @@ def test_patch_settings_accepts_every_tool_path_field_the_integrations_page_send
     assert integ["gitleaks_path"] == sys.executable
     assert integ["trivy_path"] == sys.executable
     assert integ["docker_path"] == sys.executable
+    assert integ["git_path"] == sys.executable
 
 
 def test_patch_settings_rejects_a_relative_tool_path(client: TestClient) -> None:
