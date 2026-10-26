@@ -26,6 +26,7 @@ def _set_tool_path(repo: StorageRepository, tool_id: str, path: str) -> None:
         "zap": "zap_path",
         "semgrep": "semgrep_path",
         "gitleaks": "gitleaks_path",
+        "trivy": "trivy_path",
     }[tool_id]
     settings = repo.get_settings()
     settings.integrations = IntegrationsSettings(**{field: path})
@@ -153,6 +154,26 @@ def test_gitleaks_selftest_succeeds_against_a_real_executable(
     result = run_selftest(repo, "gitleaks")
     assert result.status == "verified"
     assert result.version
+    assert result.last_error == ""
+
+
+def test_trivy_detected_via_plain_path_lookup_not_candidate_directories(
+    repo: StorageRepository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Trivy ships as a single static binary an operator places on PATH themselves (no
+    pip console-script, no ZAP-style jar-hunting) -- detection is a plain `find_executable`
+    call, same as Semgrep's and Gitleaks'."""
+    monkeypatch.setattr(integrations_mod, "find_executable", lambda names: "/usr/bin/trivy")
+    statuses = {s.id: s for s in list_integration_statuses(repo)}
+    assert statuses["trivy"].status == "detected"
+    assert statuses["trivy"].detected_path == "/usr/bin/trivy"
+
+
+def test_trivy_selftest_succeeds_against_a_real_executable(repo: StorageRepository) -> None:
+    _set_tool_path(repo, "trivy", sys.executable)
+    result = run_selftest(repo, "trivy")
+    assert result.status == "verified"
+    assert result.version  # python's own --version banner, used as a generic smoke test
     assert result.last_error == ""
 
 

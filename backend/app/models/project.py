@@ -68,12 +68,32 @@ def _http_url(value: str) -> str:
     return value
 
 
+def _repository_path(value: str) -> str:
+    """An operator-supplied local filesystem path to scan (roadmap Phase 2: repo_scan).
+    Mirrors `ToolPath`'s own posture (TBD-domain for integrations settings): must be an
+    absolute path, never required to exist *yet* -- the directory may not exist at the
+    moment the project is configured, or may be moved/deleted later. Existence and
+    "is actually a directory" are runtime checks at scan-start time
+    (`RepoScanRunner.validate_parameters`/`run`), never a model-validation-time concern,
+    since the filesystem can change between configuration and execution."""
+    if value == "":
+        return value
+    from pathlib import Path
+
+    if not Path(value).is_absolute():
+        raise ValueError("repository path must be an absolute path, or empty")
+    if len(value) > 2048:
+        raise ValueError("repository path is too long")
+    return value
+
+
 Hostname = Annotated[str, StringConstraints(max_length=253), AfterValidator(_hostname)]
 WildcardDomain = Annotated[str, StringConstraints(max_length=255), AfterValidator(_wildcard)]
 PathPrefix = Annotated[
     str, StringConstraints(min_length=1, max_length=1024), AfterValidator(_path_prefix)
 ]
 HttpUrlStr = Annotated[str, StringConstraints(max_length=2048), AfterValidator(_http_url)]
+RepositoryPath = Annotated[str, AfterValidator(_repository_path)]
 Port = Annotated[int, Field(ge=1, le=65535)]
 Network = IPv4Network | IPv6Network
 
@@ -155,7 +175,7 @@ class ScanPolicy(StrictModel):
     max_response_bytes: int = Field(default=1024 * 1024, ge=1024, le=10 * 1024 * 1024)
     max_duration_seconds: int = Field(default=1800, ge=60, le=8 * 3600)
     max_requests_per_target: int = Field(default=2000, ge=1, le=20_000)
-    allowed_modules: list[ScanModule] = Field(default_factory=list, max_length=3)
+    allowed_modules: list[ScanModule] = Field(default_factory=list, max_length=4)
     active_probes: ActiveProbeToggles = Field(default_factory=ActiveProbeToggles)
     evidence_retention_days: int | None = Field(default=None, ge=1, le=3650)
 
@@ -169,6 +189,10 @@ class Project(Record):
     status: ProjectStatus = ProjectStatus.ACTIVE
     authorization: AuthorizationRecord | None = None
     scope: ScopeDefinition = Field(default_factory=ScopeDefinition)
+    # Not part of `scope`: that model is strictly network-target-shaped (hosts/ports/
+    # schemes), while this is a local filesystem path for the repo_scan module -- a
+    # structurally different kind of "where this project's subject lives" (roadmap Phase 2).
+    repository_path: RepositoryPath = ""
     scan_policy: ScanPolicy = Field(default_factory=ScanPolicy)
     labels: list[Tag] = Field(default_factory=list, max_length=50)
     notes: LongText = ""

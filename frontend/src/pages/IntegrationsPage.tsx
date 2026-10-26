@@ -5,10 +5,12 @@ import { ApiError } from "../api/client";
 import {
   useCveCatalog,
   useDeleteCveCatalog,
+  useDownloadTrivyDb,
   useImportCveCatalog,
   useIntegrationSelftest,
   useIntegrations,
   useSettings,
+  useTrivyDbStatus,
   useUpdateSettings,
 } from "../api/hooks";
 import type { IntegrationStatus } from "../api/types";
@@ -38,6 +40,7 @@ export function IntegrationsPage() {
         </QueryState>
 
         <CveCatalogCard />
+        <TrivyDbCard />
         <ToolPathSettingsCard />
       </Stack>
     </>
@@ -153,6 +156,45 @@ function CveCatalogCard() {
   );
 }
 
+function TrivyDbCard() {
+  const status = useTrivyDbStatus();
+  const downloadMutation = useDownloadTrivyDb();
+
+  const onDownload = () =>
+    downloadMutation.mutate(undefined, {
+      onSuccess: () => notifications.show({ color: "green", message: "Trivy vulnerability database downloaded" }),
+      onError: (e) => notifications.show({ color: "red", title: "Download failed", message: e instanceof ApiError ? e.describe() : "Unexpected error" }),
+    });
+
+  return (
+    <Card withBorder component="section" aria-labelledby="trivy-db-h">
+      <Title order={2} size="h4" id="trivy-db-h" mb="sm">Trivy vulnerability database</Title>
+      <Text size="sm" c="dimmed" mb="sm">
+        Never downloaded automatically by a scan. This is an explicit, one-time action (about
+        1.6 GB) — a repository scan using the Trivy engine is rejected until this has been done.
+      </Text>
+      {status.isPending ? (
+        <Loading label="Checking database status…" />
+      ) : status.isError ? (
+        <ErrorAlert error={status.error} />
+      ) : !status.data ? (
+        <Text size="sm" c="dimmed" mb="sm">Not downloaded yet.</Text>
+      ) : (
+        <Stack gap="xs" mb="sm">
+          <Group gap="xs">
+            <Badge variant="outline">Trivy {status.data.trivy_version}</Badge>
+            <Badge variant="outline">{(status.data.size_bytes / (1024 * 1024 * 1024)).toFixed(2)} GB</Badge>
+          </Group>
+          <Text size="xs" c="dimmed">Downloaded {formatDateTime(status.data.downloaded_at)}</Text>
+        </Stack>
+      )}
+      <Button variant="default" onClick={onDownload} loading={downloadMutation.isPending}>
+        {status.data ? "Re-download database" : "Download database…"}
+      </Button>
+    </Card>
+  );
+}
+
 function ToolPathSettingsCard() {
   const settings = useSettings();
   const update = useUpdateSettings();
@@ -162,6 +204,7 @@ function ToolPathSettingsCard() {
   const [zapPath, setZapPath] = useState("");
   const [semgrepPath, setSemgrepPath] = useState("");
   const [gitleaksPath, setGitleaksPath] = useState("");
+  const [trivyPath, setTrivyPath] = useState("");
   const [credentialAlias, setCredentialAlias] = useState("");
   const [loadedRevision, setLoadedRevision] = useState<number | null>(null);
 
@@ -175,6 +218,7 @@ function ToolPathSettingsCard() {
       setZapPath(settings.data.integrations.zap_path);
       setSemgrepPath(settings.data.integrations.semgrep_path);
       setGitleaksPath(settings.data.integrations.gitleaks_path);
+      setTrivyPath(settings.data.integrations.trivy_path);
       setLoadedRevision(settings.data.revision);
     }
   }, [settings.data, loadedRevision]);
@@ -190,6 +234,7 @@ function ToolPathSettingsCard() {
           zap_path: zapPath,
           semgrep_path: semgrepPath,
           gitleaks_path: gitleaksPath,
+          trivy_path: trivyPath,
           ...(credentialAlias ? { online_lookup_credential_alias: credentialAlias } : {}),
         },
       },
@@ -241,6 +286,12 @@ function ToolPathSettingsCard() {
               description="A specific gitleaks executable. Leave blank to use the one on PATH."
               placeholder="auto-detect"
               value={gitleaksPath} onChange={(e) => setGitleaksPath(e.currentTarget.value)}
+            />
+            <TextInput
+              label="Trivy path"
+              description="A specific trivy executable. Leave blank to use the one on PATH."
+              placeholder="auto-detect"
+              value={trivyPath} onChange={(e) => setTrivyPath(e.currentTarget.value)}
             />
             <TextInput
               type="password"

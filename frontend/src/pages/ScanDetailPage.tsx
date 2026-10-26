@@ -9,7 +9,7 @@ import { PageHeader } from "../components/PageHeader";
 import { ErrorAlert, QueryState } from "../components/QueryState";
 import { ScanStateLabel } from "../components/StatusLabel";
 import { formatDateTime, humanize } from "../lib/format";
-import { WebCoverageTab, WebFindingsTab, WebPagesTab, WebSummaryPanel, WebWarningsPanel, ZapSummaryPanel } from "./ScanResultTabs";
+import { RepoScanSummaryPanel, WebCoverageTab, WebFindingsTab, WebPagesTab, WebSummaryPanel, WebWarningsPanel, ZapSummaryPanel } from "./ScanResultTabs";
 import { SurfaceChangesTab, SurfaceCoverageTab, SurfaceFindingsTab, SurfaceHostsTab, SurfaceOriginsTab, SurfaceSummaryPanel } from "./SurfaceResultTabs";
 import { ApiCoverageTab, ApiFindingsTab, ApiSummaryPanel } from "./ApiResultTabs";
 
@@ -37,12 +37,20 @@ function ScanDetailView({ detail }: { detail: ScanDetail }) {
   const isZapEngine = isWeb && scan.parameters.engine === "zap";
   const isSurface = scan.module === "attack_surface";
   const isApi = scan.module === "api_security";
-  const hasResults = isWeb || isSurface || isApi;
+  const isRepoScan = scan.module === "repo_scan";
+  const hasResults = isWeb || isSurface || isApi || isRepoScan;
   // Outputs are written at the end of the run (also on cancellation/limits). A ZAP-engine
-  // scan writes a distinct `zap_summary.json`, not the native engine's `summary.json`.
+  // scan writes a distinct `zap_summary.json`, not the native engine's `summary.json`; a
+  // repo_scan writes its own `repo_scan_summary.json` (roadmap Phase 2, TBD-088).
   const resultsReady =
     detail.terminal &&
-    scan.output_refs.includes(isZapEngine ? "work/zap_summary.json" : "work/summary.json");
+    scan.output_refs.includes(
+      isZapEngine
+        ? "work/zap_summary.json"
+        : isRepoScan
+          ? "work/repo_scan_summary.json"
+          : "work/summary.json",
+    );
 
   const doRetry = () =>
     retry.mutate(undefined, {
@@ -127,13 +135,14 @@ function ScanDetailView({ detail }: { detail: ScanDetail }) {
             {isSurface && <Tabs.Tab value="changes">Changes</Tabs.Tab>}
             <Tabs.Tab value="logs">Logs</Tabs.Tab>
             <Tabs.Tab value="warnings">Warnings ({scan.warnings.length + scan.errors.length})</Tabs.Tab>
-            {hasResults && !isZapEngine && <Tabs.Tab value="coverage">Coverage</Tabs.Tab>}
+            {hasResults && !isZapEngine && !isRepoScan && <Tabs.Tab value="coverage">Coverage</Tabs.Tab>}
           </Tabs.List>
           <Tabs.Panel value="summary" pt="md">
             <Stack gap="md">
               {isWeb && (isZapEngine ? <ZapSummaryPanel scan={scan} ready={resultsReady} /> : <WebSummaryPanel scan={scan} ready={resultsReady} />)}
               {isSurface && <SurfaceSummaryPanel scan={scan} ready={resultsReady} />}
               {isApi && <ApiSummaryPanel scan={scan} ready={resultsReady} />}
+              {isRepoScan && <RepoScanSummaryPanel scan={scan} ready={resultsReady} />}
         <SimpleGrid cols={{ base: 1, md: 2 }}>
           <Card withBorder component="section" aria-labelledby="targets-h">
             <Title order={2} size="h4" id="targets-h" mb="sm">Targets (scope-checked)</Title>
@@ -202,7 +211,7 @@ function ScanDetailView({ detail }: { detail: ScanDetail }) {
               {isWeb && !isZapEngine && <WebWarningsPanel scan={scan} ready={resultsReady} />}
             </Stack>
           </Tabs.Panel>
-          {hasResults && !isZapEngine && (
+          {hasResults && !isZapEngine && !isRepoScan && (
             <Tabs.Panel value="coverage" pt="md">
               {isWeb ? <WebCoverageTab scan={scan} ready={resultsReady} /> : isSurface ? <SurfaceCoverageTab scan={scan} ready={resultsReady} /> : <ApiCoverageTab scan={scan} ready={resultsReady} />}
             </Tabs.Panel>

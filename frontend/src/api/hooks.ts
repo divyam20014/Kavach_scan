@@ -28,6 +28,7 @@ import type {
   CatalogView,
   CveCatalogMetadata,
   IntegrationStatus,
+  TrivyDbStatus,
   DashboardSummary,
   DeletionImpact,
   FindingDetailView,
@@ -323,7 +324,7 @@ export function useWebScanProfile(projectId: string, params: ScanParams, enabled
 }
 
 /** Web scanner outputs (summary / coverage / pages); available once the job wrote them. */
-export function useScanResult<T>(projectId: string, scanId: string, kind: "summary" | "zap_summary" | "coverage" | "pages" | "changes", enabled: boolean) {
+export function useScanResult<T>(projectId: string, scanId: string, kind: "summary" | "zap_summary" | "repo_scan_summary" | "coverage" | "pages" | "changes", enabled: boolean) {
   return useQuery({
     queryKey: ["scan-result", projectId, scanId, kind],
     queryFn: () => api.get<T>(`/api/projects/${enc(projectId)}/scans/${enc(scanId)}/results/${kind}`),
@@ -549,6 +550,21 @@ export function useIntegrationSelftest() {
   return useMutation({
     mutationFn: (toolId: string) =>
       api.post<IntegrationStatus>(`/api/integrations/${enc(toolId)}/selftest`),
+    onSuccess: invalidate,
+  });
+}
+
+export function useTrivyDbStatus() {
+  return useQuery({
+    queryKey: ["trivy-db-status"],
+    queryFn: () => api.get<TrivyDbStatus | null>("/api/integrations/trivy/db-status"),
+  });
+}
+
+export function useDownloadTrivyDb() {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: () => api.post<TrivyDbStatus>("/api/integrations/trivy/download-db"),
     onSuccess: invalidate,
   });
 }

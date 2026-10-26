@@ -22,7 +22,7 @@ export type ScanState =
   | "interrupted"
   | "blocked_scope"
   | "expired_authorization";
-export type ScanModule = "web_app" | "attack_surface" | "api_security" | "self_test";
+export type ScanModule = "web_app" | "attack_surface" | "api_security" | "repo_scan" | "self_test";
 export type ProjectStatus = "active" | "archived";
 export type AuthorizationStatus = "missing" | "not_started" | "active" | "expiring_soon" | "expired";
 export type AssetType = "domain" | "hostname" | "ip" | "port" | "service" | "url" | "api_operation";
@@ -42,6 +42,7 @@ export const SCAN_MODULES: { value: ScanModule; label: string }[] = [
   { value: "web_app", label: "Web application scanner (Option A)" },
   { value: "attack_surface", label: "Attack surface mapper (Option B)" },
   { value: "api_security", label: "API security testing (Option C)" },
+  { value: "repo_scan", label: "Repository scanner (Semgrep / Gitleaks / Trivy)" },
 ];
 
 export interface RecordError {
@@ -127,6 +128,7 @@ export interface Project {
   status: ProjectStatus;
   authorization: AuthorizationRecord | null;
   scope: ScopeDefinition;
+  repository_path: string;
   scan_policy: ScanPolicy;
   labels: string[];
   notes: string;
@@ -166,6 +168,7 @@ export interface ProjectCreate {
   authorization: AuthorizationInput | null;
   scope: ScopeDefinition;
   scope_preview_hash: string | null;
+  repository_path: string;
   scan_policy: Partial<ScanPolicy>;
 }
 
@@ -492,7 +495,7 @@ export interface ScanJob {
   finished_at: string | null;
   targets: string[];
   authorized_targets: string[];
-  parameters: Record<string, string | number | boolean | null>;
+  parameters: ScanParams;
   progress: { stage: string; percent: number | null; counters: Record<string, number> };
   cancel_requested: boolean;
   warnings: string[];
@@ -559,7 +562,7 @@ export interface StartScanRequest {
   module: ScanModule;
   targets: string[];
   profile?: string;
-  parameters?: Record<string, string | number | boolean | null>;
+  parameters?: ScanParams;
   idempotency_key?: string;
   confirmed: boolean;
 }
@@ -600,7 +603,7 @@ export interface ErrorDetail {
 
 // ---------------------------------------------------------------- web scanner (Phase 05)
 
-export type ScanParams = Record<string, string | number | boolean | null>;
+export type ScanParams = Record<string, string | number | boolean | null | string[]>;
 
 export interface ProfileCheck {
   group: string;
@@ -689,6 +692,19 @@ export interface ZapScanSummary {
   zap_version: string;
   targets: string[];
   alerts_found: number;
+  findings_created: number;
+  findings_reobserved: number;
+  limitations: string[];
+}
+
+export interface RepoScanEngineResult {
+  status: "completed" | "failed";
+  findings?: number;
+  error?: string;
+}
+
+export interface RepoScanSummary {
+  engines: Record<string, RepoScanEngineResult>;
   findings_created: number;
   findings_reobserved: number;
   limitations: string[];
@@ -963,6 +979,7 @@ export interface IntegrationsSettings {
   zap_path: string;
   semgrep_path: string;
   gitleaks_path: string;
+  trivy_path: string;
   online_lookup_credential_alias: string;
 }
 
@@ -984,6 +1001,7 @@ export interface IntegrationsSettingsUpdate {
   zap_path?: string;
   semgrep_path?: string;
   gitleaks_path?: string;
+  trivy_path?: string;
   online_lookup_credential_alias?: string;
 }
 
@@ -1026,4 +1044,10 @@ export interface CveCatalogMetadata {
   stale_after_days: number;
   is_stale: boolean;
   warnings: string[];
+}
+
+export interface TrivyDbStatus {
+  downloaded_at: string;
+  trivy_version: string;
+  size_bytes: number;
 }

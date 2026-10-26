@@ -9,16 +9,22 @@ echo back in the first place.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import APIRouter, UploadFile
 from pydantic import ValidationError
 
 from app.api.deps import Repository
 from app.core.errors import NotFoundError, ValidationFailedError
 from app.cve.parser import MAX_CATALOG_BYTES, CveCatalogParseError, parse_catalog_file
+from app.integrations.process import ProcessPolicyError, run_process
 from app.models.audit import AuditAction
 from app.models.common import StrictModel, utc_now
 from app.models.cve_catalog import CveCatalogRecord
 from app.models.settings import AppSettings
+from app.models.trivy_db import TrivyDbStatusRecord
+from app.scanners.repo_scan.availability import find_tool
+from app.scanners.repo_scan.trivy_adapter import build_download_db_argv
 from app.services.integrations import (
     TOOL_IDS,
     IntegrationStatus,
@@ -37,6 +43,10 @@ class IntegrationsSettingsUpdate(StrictModel):
     nmap_path: str | None = None
     sslyze_path: str | None = None
     testssl_path: str | None = None
+    zap_path: str | None = None
+    semgrep_path: str | None = None
+    gitleaks_path: str | None = None
+    trivy_path: str | None = None
     online_lookup_credential_alias: str | None = None
 
 
@@ -66,6 +76,10 @@ def update_settings(body: SettingsUpdateRequest, repo: Repository) -> AppSetting
             "nmap_path",
             "sslyze_path",
             "testssl_path",
+            "zap_path",
+            "semgrep_path",
+            "gitleaks_path",
+            "trivy_path",
             "online_lookup_credential_alias",
         ):
             value = getattr(body.integrations, field_name)
@@ -148,6 +162,104 @@ def integration_selftest(tool_id: str, repo: Repository) -> IntegrationStatusRes
         metadata={"tool": tool_id, "status": result.status},
     )
     return _to_response(result)
+
+
+# ------------------------------------------------------------------ Trivy vulnerability database
+
+TRIVY_DOWNLOAD_TIMEOUT_SECONDS = 600.0  # the real download took ~26s/1.6GB in TBD-087's
+# verification on a fast connection; a slow one needs real headroom, not a tight timeout.
+
+
+class TrivyDbStatusResponse(StrictModel):
+    downloaded_at: str
+    trivy_version: str
+    size_bytes: int
+
+
+def _db_dir_size(path: Path) -> int:
+    return sum(f.stat().st_size for f in path.rglob("*") if f.is_file())
+
+
+@router.get("/integrations/trivy/db-status", response_model=TrivyDbStatusResponse | None)
+def trivy_db_status(repo: Repository) -> TrivyDbStatusResponse | None:
+    """`None` means the operator has never explicitly triggered the download -- see
+    `app/models/trivy_db.py`. This never checks the filesystem directly: the status record
+    is the single source of truth for "was this explicitly triggered," independent of
+    whatever Trivy's own cache directory happens to currently contain."""
+    record = repo.get_trivy_db_status()
+    if record is None:
+        return None
+    return TrivyDbStatusResponse(
+        downloaded_at=record.downloaded_at.isoformat(),
+        trivy_version=record.trivy_version,
+        size_bytes=record.size_bytes,
+    )
+
+
+@router.post("/integrations/trivy/download-db", response_model=TrivyDbStatusResponse)
+def download_trivy_db(repo: Repository) -> TrivyDbStatusResponse:
+    """The one explicit, operator-initiated action that is ever allowed to download Trivy's
+    vulnerability database (roadmap Phase 2, TBD-087) -- a `repo_scan` job with `trivy`
+    selected never downloads it itself (see `app/scanners/repo_scan/trivy_adapter.py`'s own
+    module docstring). This blocks for the duration of the real download (observed ~26s for
+    1.6 GB on a fast connection in TBD-087's own verification; a slow connection needs real
+    minutes) -- an explicit, occasional, operator-watched action, not a request this
+    application's ordinary traffic would ever trigger, so a long-held HTTP connection was
+    judged acceptable rather than adding background-job infrastructure for a one-time cost."""
+    executable = find_tool(repo.get_settings().integrations.trivy_path, ["trivy"])
+    if not executable:
+        raise ValidationFailedError("Trivy is not installed or configured; set its path first")
+    cache_dir = repo.trivy_db_dir()
+    argv = build_download_db_argv(executable, cache_dir)
+    try:
+        result = run_process(
+            argv,
+            allowed_executables=[executable],
+            cwd=repo.diagnostics_temp_dir(),
+            timeout=TRIVY_DOWNLOAD_TIMEOUT_SECONDS,
+            temp_dir=repo.diagnostics_temp_dir(),
+        )
+    except ProcessPolicyError as exc:
+        raise ValidationFailedError(f"could not run trivy: {exc}") from exc
+    if result.timed_out:
+        raise ValidationFailedError(
+            f"the download did not finish within {TRIVY_DOWNLOAD_TIMEOUT_SECONDS:.0f}s"
+        )
+    if result.exit_code != 0:
+        raise ValidationFailedError(f"trivy exited with status {result.exit_code}")
+    version_result = run_process(
+        [executable, "--version"],
+        allowed_executables=[executable],
+        cwd=repo.diagnostics_temp_dir(),
+        timeout=20.0,
+        temp_dir=repo.diagnostics_temp_dir(),
+    )
+    version_text = version_result.stdout.decode("utf-8", "replace").strip()
+    record = repo.save_trivy_db_status(
+        TrivyDbStatusRecord(
+            downloaded_at=utc_now(),
+            trivy_version=version_text[:200],
+            size_bytes=_db_dir_size(cache_dir),
+        )
+    )
+    repo.audit.record(
+        AuditAction.TRIVY_DB_DOWNLOADED,
+        metadata={"trivy_version": record.trivy_version, "size_bytes": record.size_bytes},
+    )
+    return TrivyDbStatusResponse(
+        downloaded_at=record.downloaded_at.isoformat(),
+        trivy_version=record.trivy_version,
+        size_bytes=record.size_bytes,
+    )
+
+
+@router.delete("/integrations/trivy/db-status", status_code=204)
+def remove_trivy_db_status(repo: Repository) -> None:
+    """Clears only this application's own *record* that the download happened -- never
+    deletes the cache directory's contents (an operator who wants that back deletes the
+    data directory's `diagnostics/trivy_db` folder directly, same as any other cache)."""
+    repo.delete_trivy_db_status()
+    repo.audit.record(AuditAction.TRIVY_DB_DOWNLOADED, metadata={"action": "status_cleared"})
 
 
 # ------------------------------------------------------------------ CVE catalog

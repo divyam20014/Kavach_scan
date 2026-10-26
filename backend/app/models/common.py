@@ -135,6 +135,7 @@ class ScanModule(StrEnum):
     WEB_APP = "web_app"  # Option A
     ATTACK_SURFACE = "attack_surface"  # Option B
     API_SECURITY = "api_security"  # Option C
+    REPO_SCAN = "repo_scan"  # roadmap Phase 2: repository scanning (Semgrep/Gitleaks/Trivy)
     SELF_TEST = "self_test"  # job-system self-test; no network activity; dev/test only
 
 

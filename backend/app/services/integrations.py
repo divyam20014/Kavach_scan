@@ -33,7 +33,15 @@ from app.storage.atomic import ensure_dir
 from app.storage.repository import StorageRepository
 
 IntegrationStatusValue = Literal["not_configured", "not_found", "detected", "verified", "error"]
-TOOL_IDS: tuple[str, ...] = ("nmap", "sslyze", "testssl.sh", "zap", "semgrep", "gitleaks")
+TOOL_IDS: tuple[str, ...] = (
+    "nmap",
+    "sslyze",
+    "testssl.sh",
+    "zap",
+    "semgrep",
+    "gitleaks",
+    "trivy",
+)
 
 _CAPABILITIES: dict[str, str] = {
     "nmap": "Bounded TCP connect port/service mapping for the attack surface mapper "
@@ -50,6 +58,10 @@ _CAPABILITIES: dict[str, str] = {
     "gitleaks": "Gitleaks for repository secret scanning (roadmap Phase 2, detection/"
     "self-test only in this release — repository-scan job wiring is a separate, later "
     "increment).",
+    "trivy": "Trivy for dependency/supply-chain vulnerability scanning (roadmap Phase 2, "
+    "detection/self-test only in this release — repository-scan job wiring, including "
+    "explicit operator consent to the vulnerability database's own first-time download, "
+    "is a separate, later increment).",
 }
 _TROUBLESHOOTING: dict[str, str] = {
     "nmap": "Install Nmap and ensure it is on PATH, or set an explicit path in Settings. "
@@ -64,6 +76,8 @@ _TROUBLESHOOTING: dict[str, str] = {
     "semgrep": "Install Semgrep (`pip install semgrep`) and ensure it is on PATH, or set an "
     "explicit path in Settings.",
     "gitleaks": "Install Gitleaks (https://github.com/gitleaks/gitleaks) and ensure it is on "
+    "PATH, or set an explicit path in Settings.",
+    "trivy": "Install Trivy (https://github.com/aquasecurity/trivy) and ensure it is on "
     "PATH, or set an explicit path in Settings.",
 }
 
@@ -101,6 +115,7 @@ def _configured_path(settings: IntegrationsSettings, tool_id: str) -> str:
         "zap": settings.zap_path,
         "semgrep": settings.semgrep_path,
         "gitleaks": settings.gitleaks_path,
+        "trivy": settings.trivy_path,
     }[tool_id]
 
 
@@ -125,6 +140,10 @@ def _detect_path(tool_id: str, configured: str) -> str:
         # Gitleaks ships as a single static binary an operator places on PATH themselves
         # (no package-manager console-script, no ZAP-style jar-hunting) -- plain PATH lookup.
         return find_executable(["gitleaks"]) or ""
+    if tool_id == "trivy":
+        # Trivy ships as a single static binary an operator places on PATH themselves,
+        # same as Gitleaks -- plain PATH lookup.
+        return find_executable(["trivy"]) or ""
     found = detect_tls_tools()
     match = next((t for t in found if t.name == tool_id), None)
     return match.executable if match else ""
@@ -196,6 +215,8 @@ def _version_args(tool_id: str, executable: str) -> list[str]:
     if tool_id == "gitleaks":
         # Gitleaks has no `--version` flag; version is printed by its own `version` subcommand.
         return ["version"]
+    if tool_id == "trivy":
+        return ["--version"]
     return TlsToolSpec(tool_id, executable).version_args()
 
 

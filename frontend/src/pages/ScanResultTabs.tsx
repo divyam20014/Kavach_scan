@@ -2,7 +2,7 @@ import { Anchor, Badge, Card, Code, Group, List, SegmentedControl, SimpleGrid, S
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useFindings, useScanResult } from "../api/hooks";
-import type { CheckOutcome, CoverageRow, PagesInventory, ScanJob, WebScanSummary, ZapScanSummary } from "../api/types";
+import type { CheckOutcome, CoverageRow, PagesInventory, RepoScanSummary, ScanJob, WebScanSummary, ZapScanSummary } from "../api/types";
 import { EmptyState, QueryState } from "../components/QueryState";
 import { SeverityLabel } from "../components/StatusLabel";
 import { humanize } from "../lib/format";
@@ -143,6 +143,46 @@ export function ZapSummaryPanel({ scan, ready }: { scan: ScanJob; ready: boolean
           {s.limitations.length > 0 && (
             <Card withBorder component="section" aria-labelledby="zap-limits-h">
               <Title order={2} size="h4" id="zap-limits-h" mb="sm">Limitations of this scan</Title>
+              <List size="sm">{s.limitations.map((l) => <List.Item key={l}>{l}</List.Item>)}</List>
+            </Card>
+          )}
+        </Stack>
+      )}
+    </QueryState>
+  );
+}
+
+export function RepoScanSummaryPanel({ scan, ready }: { scan: ScanJob; ready: boolean }) {
+  const summary = useScanResult<RepoScanSummary>(scan.project_id, scan.scan_id, "repo_scan_summary", ready);
+  if (!ready) return <NotReady scan={scan} />;
+  return (
+    <QueryState query={summary} loadingLabel="Loading scan summary…">
+      {(s) => (
+        <Stack gap="md">
+          <SimpleGrid cols={{ base: 2, sm: 4 }}>
+            <Stat label="New findings" value={s.findings_created} />
+            <Stat label="Re-observed" value={s.findings_reobserved} />
+          </SimpleGrid>
+          <Card withBorder component="section" aria-labelledby="repo-scan-engines-h">
+            <Title order={2} size="h4" id="repo-scan-engines-h" mb="sm">Engines</Title>
+            <Table>
+              <Table.Thead><Table.Tr><Table.Th scope="col">Engine</Table.Th><Table.Th scope="col">Status</Table.Th><Table.Th scope="col">Detail</Table.Th></Table.Tr></Table.Thead>
+              <Table.Tbody>
+                {Object.entries(s.engines).map(([name, result]) => (
+                  <Table.Tr key={name}>
+                    <Table.Th scope="row">{humanize(name)}</Table.Th>
+                    <Table.Td>
+                      <Badge color={result.status === "completed" ? "green" : "red"} variant="light">{result.status}</Badge>
+                    </Table.Td>
+                    <Table.Td>{result.status === "completed" ? `${result.findings ?? 0} finding(s)` : result.error}</Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody>
+            </Table>
+          </Card>
+          {s.limitations.length > 0 && (
+            <Card withBorder component="section" aria-labelledby="repo-scan-limits-h">
+              <Title order={2} size="h4" id="repo-scan-limits-h" mb="sm">Limitations of this scan</Title>
               <List size="sm">{s.limitations.map((l) => <List.Item key={l}>{l}</List.Item>)}</List>
             </Card>
           )}

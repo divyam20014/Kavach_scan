@@ -251,6 +251,38 @@ describe("web scan detail tabs", () => {
     expect(screen.getByRole("tab", { name: "Findings" })).toBeInTheDocument();
   });
 
+  it("shows the repo_scan summary panel and hides web-only tabs for module=repo_scan", async () => {
+    const repoScanSummary = {
+      engines: {
+        semgrep: { status: "completed", findings: 2 },
+        gitleaks: { status: "completed", findings: 1 },
+        trivy: { status: "failed", error: "trivy exited with status 1" },
+      },
+      findings_created: 3,
+      findings_reobserved: 0,
+      limitations: ["Static analysis only: a pattern match is never confirmed as exploitable."],
+    };
+    detailApi(
+      job({
+        module: "repo_scan",
+        targets: ["repo-scan"],
+        authorized_targets: ["repo-scan"],
+        parameters: { engines: ["semgrep", "gitleaks", "trivy"] },
+        output_refs: ["work/profile.json", "work/repo_scan_summary.json"],
+      }),
+      { [`GET /api/projects/${PID}/scans/${SID}/results/repo_scan_summary`]: { body: repoScanSummary } },
+    );
+    renderAt(`/projects/${PID}/scans/${SID}`);
+    expect(await screen.findByText(/Static analysis only/)).toBeInTheDocument();
+    expect(screen.getByText("Semgrep")).toBeInTheDocument();
+    expect(screen.getByText("trivy exited with status 1")).toBeInTheDocument();
+    // web-only and surface-only tabs never appear for a repo_scan job
+    expect(screen.queryByRole("tab", { name: "Pages / endpoints" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("tab", { name: "Coverage" })).not.toBeInTheDocument();
+    // findings still work: they are queried by scan_id, independent of module
+    expect(screen.getByRole("tab", { name: "Findings" })).toBeInTheDocument();
+  });
+
   it("filters the global findings view by scan", async () => {
     const { calls } = detailApi(job());
     renderAt(`/findings?project_id=${PID}&scan_id=${SID}`);

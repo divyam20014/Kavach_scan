@@ -57,6 +57,7 @@ export interface WizardValues {
   exclude_ports: string;
   exclude_paths: string;
   api_server_urls: string;
+  repository_path: string;
   allowed_modules: ScanModule[];
   max_concurrency: number;
   requests_per_second: number;
@@ -91,6 +92,7 @@ const EMPTY: WizardValues = {
   exclude_ports: "",
   exclude_paths: "",
   api_server_urls: "",
+  repository_path: "",
   allowed_modules: [],
   max_concurrency: 2,
   requests_per_second: 2,
@@ -129,6 +131,7 @@ function fromProject(p: Project): WizardValues {
     exclude_ports: s.exclusions.ports.join(", "),
     exclude_paths: s.exclusions.path_prefixes.join("\n"),
     api_server_urls: s.api_server_urls.join("\n"),
+    repository_path: p.repository_path,
     allowed_modules: p.scan_policy.allowed_modules,
     max_concurrency: p.scan_policy.max_concurrency,
     requests_per_second: p.scan_policy.requests_per_second,
@@ -159,6 +162,9 @@ export function validateStep(step: number, v: WizardValues): Errors {
     if (v.window_start && v.window_end && new Date(v.window_end) <= new Date(v.window_start))
       e.window_end = "End must be after start";
     if (!v.attestation) e.attestation = "You must attest that you hold this authorization";
+  }
+  if (step === 3 && v.allowed_modules.includes("repo_scan") && !v.repository_path.trim()) {
+    e.repository_path = "A repository path is required when the repository scanner is allowed";
   }
   return e;
 }
@@ -267,6 +273,7 @@ export function ProjectWizard({ existing }: { existing?: Project }) {
       notes: values.notes,
       scope,
       scope_preview_hash: preview?.scope_hash ?? null, // proves this exact scope was previewed
+      repository_path: values.repository_path.trim(),
       scan_policy: buildPolicy(values),
     };
     const onError = () => setActive((a) => a); // errors render inline below
@@ -430,7 +437,7 @@ export function ProjectWizard({ existing }: { existing?: Project }) {
           {active === 3 && (
             <Stack>
               <Title order={2} size="h4">Allowed modules & request limits</Title>
-              <Checkbox.Group label="Modules this project may use later" description="Selecting a module does not start anything. Web, attack-surface and API scanners are available."
+              <Checkbox.Group label="Modules this project may use later" description="Selecting a module does not start anything. Web, attack-surface, API and repository scanners are available."
                 value={values.allowed_modules} onChange={(v) => set("allowed_modules", v as ScanModule[])}>
                 <Stack mt={4} gap={6}>
                   {SCAN_MODULES.map((m) => (
@@ -438,6 +445,16 @@ export function ProjectWizard({ existing }: { existing?: Project }) {
                   ))}
                 </Stack>
               </Checkbox.Group>
+              {values.allowed_modules.includes("repo_scan") && (
+                <TextInput
+                  label="Repository path"
+                  description="Absolute local filesystem path the repository scanner (Semgrep/Gitleaks/Trivy) will scan. Not fetched over the network — the application must already have read access to it."
+                  placeholder="C:\path\to\repository"
+                  value={values.repository_path}
+                  onChange={(e) => set("repository_path", e.currentTarget.value)}
+                  error={fieldError("repository_path", "repository_path")}
+                />
+              )}
               <Group grow align="flex-start">
                 <NumberInput label="Requests per second (per host)" min={0.1} max={10} step={0.5} decimalScale={1} value={values.requests_per_second}
                   onChange={(v) => set("requests_per_second", Number(v) || 0.1)} error={serverFieldErrors["scan_policy.requests_per_second"]} />
@@ -474,6 +491,9 @@ export function ProjectWizard({ existing }: { existing?: Project }) {
               <Text size="sm">
                 Limits: {values.requests_per_second} req/s · concurrency {values.max_concurrency} · {values.max_pages} pages · {values.max_duration_minutes} min
               </Text>
+              {values.repository_path && (
+                <Text size="sm">Repository path: {values.repository_path}</Text>
+              )}
             </Stack>
           )}
 

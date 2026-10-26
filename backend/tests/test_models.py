@@ -1,4 +1,6 @@
+import os
 from datetime import UTC, datetime, timedelta, timezone
+from pathlib import Path
 
 import pytest
 from pydantic import ValidationError
@@ -31,6 +33,35 @@ def test_project_round_trip_and_defaults() -> None:
     assert project.scope.schemes == ["https"]
     assert project.scan_policy.active_probes.sqli_error_differential is False
     assert project.scan_policy.max_concurrency == 2
+
+
+def test_repository_path_accepts_an_absolute_path_and_rejects_a_relative_one() -> None:
+    """Roadmap Phase 2 (TBD-087): mirrors `ToolPath`'s own posture -- never required to
+    exist at model-validation time (that's a runtime check, see `RepoScanRunner`), but
+    always absolute, never a bare relative path."""
+    abs_path = str(Path("srv", "some-repo").absolute())
+    assert os.path.isabs(abs_path)
+    project = make_project(repository_path=abs_path)
+    assert project.repository_path == abs_path
+    project_empty = make_project()
+    assert project_empty.repository_path == ""
+    with pytest.raises(ValidationError):
+        make_project(repository_path="relative/path")
+
+
+def test_allowed_modules_permits_all_four_modules_including_repo_scan() -> None:
+    policy = ScanPolicy(allowed_modules=["web_app", "attack_surface", "api_security", "repo_scan"])
+    assert len(policy.allowed_modules) == 4
+    with pytest.raises(ValidationError):
+        ScanPolicy(
+            allowed_modules=[
+                "web_app",
+                "attack_surface",
+                "api_security",
+                "repo_scan",
+                "self_test",
+            ]
+        )
 
 
 def test_unknown_keys_rejected_everywhere() -> None:

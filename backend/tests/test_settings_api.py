@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 
+import pytest
 from fastapi.testclient import TestClient
 
 from app.storage.repository import StorageRepository
@@ -20,6 +21,7 @@ def test_get_settings_returns_defaults(client: TestClient) -> None:
         "zap_path": "",
         "semgrep_path": "",
         "gitleaks_path": "",
+        "trivy_path": "",
         "online_lookup_credential_alias": "",
     }
 
@@ -32,6 +34,34 @@ def test_patch_settings_updates_a_tool_path_and_audits_tool_config_changed(
     assert resp.json()["integrations"]["nmap_path"] == sys.executable
     audit = client.get("/api/audit").json()
     assert any(e["action"] == "tool_config_changed" for e in audit["items"])
+
+
+def test_patch_settings_accepts_every_tool_path_field_the_integrations_page_sends(
+    client: TestClient,
+) -> None:
+    """Regression (TBD-087): `IntegrationsSettingsUpdate` had never been extended with
+    `zap_path`/`semgrep_path`/`gitleaks_path` after they were added to the settings model
+    (TBD-079/084/085) -- since the DTO is `extra='forbid'`, sending any of them (exactly
+    what the Integrations page's own Save button always does, TBD-081/082) made the WHOLE
+    settings PATCH fail with 422, not just that one field being silently ignored."""
+    resp = client.patch(
+        "/api/settings",
+        json={
+            "integrations": {
+                "nmap_path": sys.executable,
+                "zap_path": sys.executable,
+                "semgrep_path": sys.executable,
+                "gitleaks_path": sys.executable,
+                "trivy_path": sys.executable,
+            }
+        },
+    )
+    assert resp.status_code == 200
+    integ = resp.json()["integrations"]
+    assert integ["zap_path"] == sys.executable
+    assert integ["semgrep_path"] == sys.executable
+    assert integ["gitleaks_path"] == sys.executable
+    assert integ["trivy_path"] == sys.executable
 
 
 def test_patch_settings_rejects_a_relative_tool_path(client: TestClient) -> None:
@@ -113,6 +143,88 @@ def test_integration_selftest_missing_binary_is_not_a_false_pass(client: TestCli
     body = resp.json()
     assert body["status"] in ("not_configured", "not_found")
     assert body["version"] == ""
+
+
+# ---------------------------------------------------------------- Trivy vulnerability database
+
+
+def test_trivy_db_status_is_none_before_any_download(client: TestClient) -> None:
+    resp = client.get("/api/integrations/trivy/db-status")
+    assert resp.status_code == 200
+    assert resp.json() is None
+
+
+def test_download_trivy_db_cleanly_errors_when_trivy_is_not_available(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import app.api.settings as settings_api
+
+    monkeypatch.setattr(settings_api, "find_tool", lambda configured, names: "")
+    resp = client.post("/api/integrations/trivy/download-db")
+    assert resp.status_code == 422
+    assert client.get("/api/integrations/trivy/db-status").json() is None
+
+
+def test_download_trivy_db_runs_the_real_argv_and_saves_status(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The *download* argv is mocked to a true no-op (no real 1.6 GB fetch in the automated
+    suite, see TBD-086/087's own live verification for the real invocation); the follow-up
+    `--version` call is real (`python --version`, harmless) to prove the real version-
+    parsing/status-saving path end to end."""
+    import app.api.settings as settings_api
+
+    client.patch("/api/settings", json={"integrations": {"trivy_path": sys.executable}})
+    monkeypatch.setattr(
+        settings_api,
+        "build_download_db_argv",
+        lambda executable, cache_dir: [executable, "-c", "pass"],
+    )
+    resp = client.post("/api/integrations/trivy/download-db")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["trivy_version"]
+    assert body["downloaded_at"]
+
+    status = client.get("/api/integrations/trivy/db-status").json()
+    assert status["trivy_version"] == body["trivy_version"]
+
+    audit = client.get("/api/audit").json()
+    assert any(e["action"] == "trivy_db_downloaded" for e in audit["items"])
+
+
+def test_download_trivy_db_reports_a_clean_error_on_nonzero_exit(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import app.api.settings as settings_api
+
+    client.patch("/api/settings", json={"integrations": {"trivy_path": sys.executable}})
+    monkeypatch.setattr(
+        settings_api,
+        "build_download_db_argv",
+        lambda executable, cache_dir: [executable, "-c", "import sys; sys.exit(1)"],
+    )
+    resp = client.post("/api/integrations/trivy/download-db")
+    assert resp.status_code == 422
+    assert client.get("/api/integrations/trivy/db-status").json() is None
+
+
+def test_remove_trivy_db_status_clears_it(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import app.api.settings as settings_api
+
+    client.patch("/api/settings", json={"integrations": {"trivy_path": sys.executable}})
+    monkeypatch.setattr(
+        settings_api,
+        "build_download_db_argv",
+        lambda executable, cache_dir: [executable, "-c", "pass"],
+    )
+    client.post("/api/integrations/trivy/download-db")
+    assert client.get("/api/integrations/trivy/db-status").json() is not None
+    resp = client.delete("/api/integrations/trivy/db-status")
+    assert resp.status_code == 204
+    assert client.get("/api/integrations/trivy/db-status").json() is None
 
 
 # ---------------------------------------------------------------- CVE catalog

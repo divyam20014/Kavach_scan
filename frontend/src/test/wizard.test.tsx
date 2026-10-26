@@ -57,6 +57,13 @@ describe("project wizard validation", () => {
     expect(validateStep(1, { ...base, includeAuthorization: false })).toEqual({});
   });
 
+  it("unit: requires a repository path when repo_scan is an allowed module", () => {
+    const base = { allowed_modules: ["repo_scan"], repository_path: "" } as WizardValues;
+    expect(validateStep(3, base)).toMatchObject({ repository_path: expect.any(String) });
+    expect(validateStep(3, { ...base, repository_path: "/srv/repo" })).toEqual({});
+    expect(validateStep(3, { allowed_modules: ["web_app"], repository_path: "" } as WizardValues)).toEqual({});
+  });
+
   it("shows inline errors with accessible labels on the first step", async () => {
     apiFor();
     const u = user();
@@ -129,6 +136,45 @@ describe("project wizard submission", () => {
     expect(body.scan_policy.allowed_modules).toEqual(["web_app"]);
     expect((body as unknown as { scope_preview_hash: string }).scope_preview_hash).toBe("f".repeat(64));
     expect(calls.find((c) => c.path === "/api/scope/preview")!.body).toMatchObject({ targets: ["App.Example.com"] });
+  });
+
+  it("creates a project with a repository path when repo_scan is selected", async () => {
+    const { calls } = apiFor();
+    const u = user();
+    renderAt("/projects/new");
+    await fillProjectStep(u);
+    await fillAuthorizationStep(u);
+    await u.type(await screen.findByRole("textbox", { name: /in-scope targets/i }), "app.example.com");
+    await u.click(screen.getByRole("button", { name: "Preview scope" }));
+    expect(await screen.findByText("✓ Scope is valid")).toBeInTheDocument();
+    await u.click(screen.getByRole("button", { name: "Next" }));
+    await u.click(await screen.findByRole("checkbox", { name: /repository scanner/i }));
+    await u.type(screen.getByRole("textbox", { name: /repository path/i }), "/srv/some-repo");
+    await u.click(screen.getByRole("button", { name: "Next" }));
+    expect(await screen.findByText(/Repository path: \/srv\/some-repo/)).toBeInTheDocument();
+    await u.click(screen.getByRole("button", { name: "Create project" }));
+    await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path === "/api/projects")).toBe(true));
+    const body = calls.find((c) => c.method === "POST" && c.path === "/api/projects")!.body as {
+      repository_path: string;
+      scan_policy: { allowed_modules: string[] };
+    };
+    expect(body.repository_path).toBe("/srv/some-repo");
+    expect(body.scan_policy.allowed_modules).toEqual(["repo_scan"]);
+  });
+
+  it("blocks leaving the modules step without a repository path when repo_scan is checked", async () => {
+    apiFor();
+    const u = user();
+    renderAt("/projects/new");
+    await fillProjectStep(u);
+    await fillAuthorizationStep(u);
+    await u.type(await screen.findByRole("textbox", { name: /in-scope targets/i }), "app.example.com");
+    await u.click(screen.getByRole("button", { name: "Preview scope" }));
+    expect(await screen.findByText("✓ Scope is valid")).toBeInTheDocument();
+    await u.click(screen.getByRole("button", { name: "Next" }));
+    await u.click(await screen.findByRole("checkbox", { name: /repository scanner/i }));
+    await u.click(screen.getByRole("button", { name: "Next" }));
+    expect(await screen.findByText(/repository path is required/i)).toBeInTheDocument();
   });
 
   it("shows backend validation errors in a useful way", async () => {

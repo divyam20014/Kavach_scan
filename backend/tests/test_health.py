@@ -85,6 +85,9 @@ SYSTEM_ROUTES = {
     "/api/integrations/{tool_id}/selftest",
     "/api/cve-catalog",
     "/api/cve-catalog/import",
+    # Roadmap Phase 2 (TBD-087)
+    "/api/integrations/trivy/db-status",
+    "/api/integrations/trivy/download-db",
 }
 
 # No lifespan: these endpoints must work without storage.

@@ -86,6 +86,33 @@ def test_create_without_authorization_is_allowed_but_flagged(client: TestClient)
     assert client.get(f"/api/projects/{pid}").json()["authorization_status"] == "missing"
 
 
+def test_create_and_update_repository_path(client: TestClient, tmp_path: Path) -> None:
+    """Roadmap Phase 2 (TBD-087/088): `repository_path` is a plain field on the project,
+    not part of `scope` (which is strictly network-target-shaped)."""
+    project = _create(client, repository_path=str(tmp_path))
+    pid = project["project_id"]
+    assert project["repository_path"] == str(tmp_path)
+
+    other = tmp_path.parent
+    resp = client.patch(
+        f"/api/projects/{pid}",
+        json={"expected_revision": project["revision"], "repository_path": str(other)},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["repository_path"] == str(other)
+
+
+def test_repository_path_rejects_a_relative_path(client: TestClient) -> None:
+    body = {
+        "name": "Repo assessment",
+        "client_name": "Acme Corp",
+        "authorization": None,
+        "repository_path": "relative/path",
+    }
+    resp = client.post("/api/projects", json=body)
+    assert resp.status_code == 422
+
+
 @pytest.mark.parametrize(
     ("auth", "fragment"),
     [

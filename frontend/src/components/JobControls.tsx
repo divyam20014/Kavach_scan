@@ -10,6 +10,7 @@ import { ErrorAlert, QueryState } from "./QueryState";
 import { DEFAULT_WEB_OPTIONS, WebProfileSummary, WebScanOptions, webParams, type WebOptions } from "./WebScanProfile";
 import { DEFAULT_SURFACE_OPTIONS, SurfaceProfileSummary, SurfaceScanOptions, surfaceParams, type SurfaceOptions } from "./SurfaceScanProfile";
 import { DEFAULT_API_OPTIONS, ApiScanOptions, apiParams, type ApiOptions } from "./ApiScanProfile";
+import { DEFAULT_REPO_SCAN_OPTIONS, RepoScanOptionsPanel, repoScanParams, type RepoScanOptions } from "./RepoScanProfile";
 
 /** Start-a-job panel with an explicit confirmation step (MASTER_SPEC §4.1). */
 export function StartJobCard({ project }: { project: Project }) {
@@ -29,11 +30,13 @@ export function StartJobCard({ project }: { project: Project }) {
   const [webOptions, setWebOptions] = useState<WebOptions>(DEFAULT_WEB_OPTIONS);
   const [surfaceOptions, setSurfaceOptions] = useState<SurfaceOptions>(DEFAULT_SURFACE_OPTIONS);
   const [apiOptions, setApiOptions] = useState<ApiOptions>(DEFAULT_API_OPTIONS);
+  const [repoScanOptions, setRepoScanOptions] = useState<RepoScanOptions>(DEFAULT_REPO_SCAN_OPTIONS);
   const isWeb = module === "web_app";
   const isSurface = module === "attack_surface";
   const isApi = module === "api_security";
+  const isRepoScan = module === "repo_scan";
   const targetList = splitLines(targets);
-  const parameters = isWeb ? webParams(webOptions) : isSurface ? surfaceParams(surfaceOptions) : isApi ? apiParams(apiOptions) : {};
+  const parameters = isWeb ? webParams(webOptions) : isSurface ? surfaceParams(surfaceOptions) : isApi ? apiParams(apiOptions) : isRepoScan ? repoScanParams(repoScanOptions) : {};
   const profile = useWebScanProfile(project.project_id, parameters, isWeb);
   const surfaceProfile = useSurfaceProfile(
     project.project_id,
@@ -44,11 +47,18 @@ export function StartJobCard({ project }: { project: Project }) {
   const profileInvalid =
     (isWeb && (profile.data?.problems.length ?? 0) > 0) ||
     (isSurface && ((surfaceProfile.data?.problems.length ?? 0) > 0 || (surfaceProfile.data?.target_problems.length ?? 0) > 0)) ||
-    (isApi && (!apiOptions.import_id || (apiPlan.data?.problems.length ?? 0) > 0 || (!apiOptions.inventory_only && !apiPlan.data?.server_in_scope)));
+    (isApi && (!apiOptions.import_id || (apiPlan.data?.problems.length ?? 0) > 0 || (!apiOptions.inventory_only && !apiPlan.data?.server_in_scope))) ||
+    (isRepoScan && !project.repository_path);
 
   const submit = () =>
     start.mutate(
-      { module: module as ScanModule, targets: isApi ? ["api-spec"] : splitLines(targets), parameters, confirmed, idempotency_key: idempotencyKey },
+      {
+        module: module as ScanModule,
+        targets: isApi ? ["api-spec"] : isRepoScan ? ["repo-scan"] : splitLines(targets),
+        parameters,
+        confirmed,
+        idempotency_key: idempotencyKey,
+      },
       {
         onSuccess: (scan) => {
           setReviewing(false);
@@ -79,6 +89,8 @@ export function StartJobCard({ project }: { project: Project }) {
             </Radio.Group>
             {isApi ? (
               <Text size="sm" c="dimmed">Targets come from the selected API spec's in-scope server; no target list is needed.</Text>
+            ) : isRepoScan ? (
+              <Text size="sm" c="dimmed">The target is this project's own configured repository path; no target list is needed.</Text>
             ) : (
               <Textarea label={isSurface ? "Targets (one in-scope host or authorized root domain per line)" : "Targets (one URL per line, must be in scope)"}
                 value={targets} onChange={(e) => setTargets(e.currentTarget.value)}
@@ -112,6 +124,12 @@ export function StartJobCard({ project }: { project: Project }) {
                 </Stack>
               </Card>
             )}
+            {isRepoScan && (
+              <Card withBorder padding="sm" component="section" aria-labelledby="repo-scan-profile-h">
+                <Title order={3} size="h5" id="repo-scan-profile-h" mb="xs">Repository scan</Title>
+                <RepoScanOptionsPanel value={repoScanOptions} onChange={setRepoScanOptions} repositoryPath={project.repository_path} />
+              </Card>
+            )}
             {isSurface && (
               <Card withBorder padding="sm" component="section" aria-labelledby="surface-profile-h">
                 <Title order={3} size="h5" id="surface-profile-h" mb="xs">Attack surface profile</Title>
@@ -127,7 +145,7 @@ export function StartJobCard({ project }: { project: Project }) {
                 </Stack>
               </Card>
             )}
-            <Button w="fit-content" disabled={!module || (!isApi && !splitLines(targets).length) || !gateOpen || profileInvalid}
+            <Button w="fit-content" disabled={!module || (!isApi && !isRepoScan && !splitLines(targets).length) || !gateOpen || profileInvalid}
               onClick={() => { setConfirmed(false); start.reset(); setIdempotencyKey(`ui-${crypto.randomUUID()}`); setReviewing(true); }}>
               Review &amp; confirm…
             </Button>
@@ -140,7 +158,7 @@ export function StartJobCard({ project }: { project: Project }) {
           <Text size="sm">Module: <strong>{module ? humanize(module) : ""}</strong></Text>
           <div>
             <Text size="sm">Targets:</Text>
-            {splitLines(targets).map((t) => <Code key={t} mr={4}>{t}</Code>)}
+            {isRepoScan ? <Code>{project.repository_path}</Code> : splitLines(targets).map((t) => <Code key={t} mr={4}>{t}</Code>)}
           </div>
           <Text size="sm">
             Limits: {p.requests_per_second} req/s per host · concurrency {p.max_concurrency} · max {p.max_requests_per_target} requests per target ·
@@ -165,7 +183,11 @@ export function StartJobCard({ project }: { project: Project }) {
               )}
             </>
           )}
-          <Text size="sm">Every request, redirect and resolved address is checked against the project scope; blocked targets receive no traffic.</Text>
+          <Text size="sm">
+            {isRepoScan
+              ? "This scan reads local files only; it makes no network requests to any target."
+              : "Every request, redirect and resolved address is checked against the project scope; blocked targets receive no traffic."}
+          </Text>
           <Checkbox label="I confirm these targets are in my authorized scope and I want to start this job." checked={confirmed}
             onChange={(e) => setConfirmed(e.currentTarget.checked)} />
           {start.isError && <ErrorAlert error={start.error} title="The job was not started" />}

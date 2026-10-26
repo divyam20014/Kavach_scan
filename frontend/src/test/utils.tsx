@@ -129,6 +129,7 @@ export function overview(overrides: Partial<ProjectOverview["project"]> = {}, ex
         redirect_policy: "same_scope_only",
         internal_override: null,
       },
+      repository_path: "",
       scan_policy: {
         max_concurrency: 2,
         requests_per_second: 2,

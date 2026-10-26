@@ -45,6 +45,7 @@ from app.models.project import Project
 from app.models.report import ReportMetadata
 from app.models.scan import ScanJob
 from app.models.settings import AppSettings
+from app.models.trivy_db import TrivyDbStatusRecord
 from app.storage.atomic import (
     atomic_write_bytes,
     cleanup_temp_files,
@@ -1014,6 +1015,41 @@ class StorageRepository:
         ensure_dir(directory)
         return directory
 
+    def trivy_db_dir(self) -> Path:
+        """Trivy's own vulnerability database cache (roadmap Phase 2, TBD-087) -- shared
+        across every project/scan, never per-project, since it is reference data about
+        known vulnerabilities, not scan output. Always passed as Trivy's own `--cache-dir`
+        so it is never written to Trivy's machine-wide default location outside the data
+        root (confirmed directly during TBD-086's live verification)."""
+        directory = self.paths.path("diagnostics", "trivy_db")
+        ensure_dir(directory)
+        return directory
+
+    def _trivy_db_status_path(self) -> Path:
+        return self.paths.path("diagnostics", "trivy_db_status.json")
+
+    def get_trivy_db_status(self) -> TrivyDbStatusRecord | None:
+        """`None` means the operator has never explicitly triggered the download -- the
+        same "absence is the honest signal" shape `get_cve_catalog()` already uses."""
+        path = self._trivy_db_status_path()
+        if not path.exists():
+            return None
+        return self._read_model(path, "trivy_db_status", TrivyDbStatusRecord)  # type: ignore[no-any-return]
+
+    def save_trivy_db_status(self, record: TrivyDbStatusRecord) -> TrivyDbStatusRecord:
+        path = self._trivy_db_status_path()
+        with self._lock(path):
+            current = self.get_trivy_db_status()
+            if current is not None:
+                record = record.model_copy(update={"revision": current.revision + 1})
+            self._write_model(path, record)
+        return record
+
+    def delete_trivy_db_status(self) -> None:
+        path = self._trivy_db_status_path()
+        with self._lock(path):
+            path.unlink(missing_ok=True)
+
     def read_scan_output(
         self, project_id: str, scan_id: str, name: str, *, max_bytes: int = 8 * 1024 * 1024
     ) -> bytes:
@@ -1570,6 +1606,7 @@ _MODELS: dict[str, type[BaseModel]] = {
     "report": ReportMetadata,
     "settings": AppSettings,
     "cve_catalog": CveCatalogRecord,
+    "trivy_db_status": TrivyDbStatusRecord,
 }
 assert set(_MODELS) | {"audit"} == set(CURRENT_VERSIONS)  # noqa: S101 - import-time consistency check
 ID_PATTERN = ANY_ID_RE

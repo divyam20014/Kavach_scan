@@ -130,12 +130,14 @@ MODULE_LABELS = {
     ScanModule.WEB_APP: "Web application scanner (Option A)",
     ScanModule.ATTACK_SURFACE: "Attack surface mapper (Option B)",
     ScanModule.API_SECURITY: "API security testing (Option C)",
+    ScanModule.REPO_SCAN: "Repository scanner (Semgrep / Gitleaks / Trivy)",
     ScanModule.SELF_TEST: "Job system self-test (no network traffic)",
 }
 MODULE_PHASE = {
     ScanModule.WEB_APP: "05",
     ScanModule.ATTACK_SURFACE: "06",
     ScanModule.API_SECURITY: "07",
+    ScanModule.REPO_SCAN: "roadmap-phase-2",
 }
 
 
@@ -744,6 +746,8 @@ def default_runners(
     from app.integrations.zap import ZapAvailability, check_availability
     from app.jobs.selftest import SelfTestRunner
     from app.scanners.apisec.runner import ApiSecRunner
+    from app.scanners.repo_scan.availability import find_tool
+    from app.scanners.repo_scan.runner import RepoScanRunner
     from app.scanners.surface.runner import SurfaceRunner
     from app.scanners.webapp.runner import WebAppRunner
 
@@ -756,12 +760,38 @@ def default_runners(
             return check_availability("")
         return check_availability(repo.get_settings().integrations.zap_path)
 
+    def semgrep_availability() -> str:
+        if repo is None:
+            return find_tool("", ["semgrep"])
+        return find_tool(repo.get_settings().integrations.semgrep_path, ["semgrep"])
+
+    def gitleaks_availability() -> str:
+        if repo is None:
+            return find_tool("", ["gitleaks"])
+        return find_tool(repo.get_settings().integrations.gitleaks_path, ["gitleaks"])
+
+    def trivy_availability() -> str:
+        if repo is None:
+            return find_tool("", ["trivy"])
+        return find_tool(repo.get_settings().integrations.trivy_path, ["trivy"])
+
+    def trivy_db_ready() -> bool:
+        if repo is None:
+            return False
+        return repo.get_trivy_db_status() is not None
+
     runners: dict[ScanModule, Runner] = {
         ScanModule.WEB_APP: WebAppRunner(
             cve_catalog=cve_catalog, zap_availability=zap_availability
         ),
         ScanModule.ATTACK_SURFACE: SurfaceRunner(),
         ScanModule.API_SECURITY: ApiSecRunner(),
+        ScanModule.REPO_SCAN: RepoScanRunner(
+            semgrep_availability=semgrep_availability,
+            gitleaks_availability=gitleaks_availability,
+            trivy_availability=trivy_availability,
+            trivy_db_ready=trivy_db_ready,
+        ),
     }
     if settings.enable_selftest_jobs:
         runners[ScanModule.SELF_TEST] = SelfTestRunner()

@@ -26,6 +26,7 @@ CURRENT_VERSIONS: dict[str, int] = {
     "settings": 1,
     "audit": 1,
     "cve_catalog": 1,
+    "trivy_db_status": 1,
 }
 
 Migration = Callable[[dict[str, Any]], dict[str, Any]]

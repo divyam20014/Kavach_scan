@@ -26,6 +26,7 @@ from app.models.project import (
     InternalTargetOverride,
     Network,
     Project,
+    RepositoryPath,
     ScanPolicy,
     ScopeDefinition,
 )
@@ -67,6 +68,9 @@ class ProjectCreate(StrictModel):
     scope_preview_hash: str | None = Field(
         default=None, description="scope_hash returned by /api/scope/preview for exactly this scope"
     )
+    # Not part of `scope` (roadmap Phase 2, TBD-087/088): a local filesystem path for the
+    # repo_scan module, structurally unrelated to the network-target fields `scope` holds.
+    repository_path: RepositoryPath = ""
     scan_policy: ScanPolicy = Field(default_factory=ScanPolicy)
 
 
@@ -81,6 +85,7 @@ class ProjectUpdate(StrictModel):
     authorization: AuthorizationInput | None = None
     scope: ScopeDefinition | None = None
     scope_preview_hash: str | None = None
+    repository_path: RepositoryPath | None = None
     scan_policy: ScanPolicy | None = None
 
 
@@ -238,6 +243,7 @@ class ProjectService:
             notes=req.notes,
             authorization=authorization,
             scope=req.scope,
+            repository_path=req.repository_path,
             scan_policy=req.scan_policy,
         )
         created = self.repo.create_project(project)
@@ -259,6 +265,7 @@ class ProjectService:
             "labels",
             "notes",
             "status",
+            "repository_path",
             "scan_policy",
         ):
             value = getattr(req, field)

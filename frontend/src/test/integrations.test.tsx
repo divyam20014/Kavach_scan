@@ -15,7 +15,7 @@ function settings(overrides: Partial<AppSettings["integrations"]> = {}): AppSett
   return {
     schema_version: 1, product_name: "VAPT Workbench", disk_space_warning_bytes: 0,
     evidence_quota_bytes: null, report_timezone_label: "UTC",
-    integrations: { nmap_path: "", sslyze_path: "", testssl_path: "", zap_path: "", semgrep_path: "", gitleaks_path: "", online_lookup_credential_alias: "", ...overrides },
+    integrations: { nmap_path: "", sslyze_path: "", testssl_path: "", zap_path: "", semgrep_path: "", gitleaks_path: "", trivy_path: "", online_lookup_credential_alias: "", ...overrides },
     revision: 1, updated_at: "2026-10-25T00:00:00Z",
   };
 }
@@ -101,6 +101,39 @@ describe("Integrations page", () => {
     );
     expect(await screen.findByText("Internal curated export")).toBeInTheDocument();
     expect(screen.getByText("2 entries")).toBeInTheDocument();
+  });
+
+  it("shows Trivy's database as not downloaded, then downloads it on click", async () => {
+    let downloaded = false;
+    const { calls } = mockApi({
+      ...base,
+      "GET /api/integrations": { body: [] },
+      "GET /api/settings": { body: settings() },
+      "GET /api/cve-catalog": { body: null },
+      "GET /api/integrations/trivy/db-status": () => ({
+        body: downloaded
+          ? { downloaded_at: "2026-10-26T00:00:00Z", trivy_version: "0.76.1", size_bytes: 1_717_986_918 }
+          : null,
+      }),
+      "POST /api/integrations/trivy/download-db": () => {
+        downloaded = true;
+        return { body: { downloaded_at: "2026-10-26T00:00:00Z", trivy_version: "0.76.1", size_bytes: 1_717_986_918 } };
+      },
+    });
+    renderAt("/integrations");
+
+    expect(await screen.findByText("Not downloaded yet.")).toBeInTheDocument();
+
+    const u = userEvent.setup();
+    await u.click(screen.getByRole("button", { name: /Download database/i }));
+
+    await waitFor(() =>
+      expect(
+        calls.some((c) => c.method === "POST" && c.path === "/api/integrations/trivy/download-db"),
+      ).toBe(true),
+    );
+    expect(await screen.findByText("Trivy 0.76.1")).toBeInTheDocument();
+    expect(screen.getByText(/1\.6\d GB/)).toBeInTheDocument();
   });
 
   it("flags a stale catalog", async () => {
