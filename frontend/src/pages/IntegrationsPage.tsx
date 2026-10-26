@@ -161,6 +161,7 @@ function ToolPathSettingsCard() {
   const [testsslPath, setTestsslPath] = useState("");
   const [zapPath, setZapPath] = useState("");
   const [semgrepPath, setSemgrepPath] = useState("");
+  const [gitleaksPath, setGitleaksPath] = useState("");
   const [credentialAlias, setCredentialAlias] = useState("");
   const [loadedRevision, setLoadedRevision] = useState<number | null>(null);
 
@@ -173,6 +174,7 @@ function ToolPathSettingsCard() {
       setTestsslPath(settings.data.integrations.testssl_path);
       setZapPath(settings.data.integrations.zap_path);
       setSemgrepPath(settings.data.integrations.semgrep_path);
+      setGitleaksPath(settings.data.integrations.gitleaks_path);
       setLoadedRevision(settings.data.revision);
     }
   }, [settings.data, loadedRevision]);
@@ -187,6 +189,7 @@ function ToolPathSettingsCard() {
           testssl_path: testsslPath,
           zap_path: zapPath,
           semgrep_path: semgrepPath,
+          gitleaks_path: gitleaksPath,
           ...(credentialAlias ? { online_lookup_credential_alias: credentialAlias } : {}),
         },
       },
@@ -232,6 +235,12 @@ function ToolPathSettingsCard() {
               description="A specific semgrep executable. Leave blank to use the one on PATH."
               placeholder="auto-detect"
               value={semgrepPath} onChange={(e) => setSemgrepPath(e.currentTarget.value)}
+            />
+            <TextInput
+              label="Gitleaks path"
+              description="A specific gitleaks executable. Leave blank to use the one on PATH."
+              placeholder="auto-detect"
+              value={gitleaksPath} onChange={(e) => setGitleaksPath(e.currentTarget.value)}
             />
             <TextInput
               type="password"

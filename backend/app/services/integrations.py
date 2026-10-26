@@ -33,7 +33,7 @@ from app.storage.atomic import ensure_dir
 from app.storage.repository import StorageRepository
 
 IntegrationStatusValue = Literal["not_configured", "not_found", "detected", "verified", "error"]
-TOOL_IDS: tuple[str, ...] = ("nmap", "sslyze", "testssl.sh", "zap", "semgrep")
+TOOL_IDS: tuple[str, ...] = ("nmap", "sslyze", "testssl.sh", "zap", "semgrep", "gitleaks")
 
 _CAPABILITIES: dict[str, str] = {
     "nmap": "Bounded TCP connect port/service mapping for the attack surface mapper "
@@ -47,6 +47,9 @@ _CAPABILITIES: dict[str, str] = {
     "semgrep": "Semgrep Community Edition for static source-code security analysis "
     "(roadmap Phase 2, detection/self-test only in this release — repository-scan job "
     "wiring is a separate, later increment).",
+    "gitleaks": "Gitleaks for repository secret scanning (roadmap Phase 2, detection/"
+    "self-test only in this release — repository-scan job wiring is a separate, later "
+    "increment).",
 }
 _TROUBLESHOOTING: dict[str, str] = {
     "nmap": "Install Nmap and ensure it is on PATH, or set an explicit path in Settings. "
@@ -60,6 +63,8 @@ _TROUBLESHOOTING: dict[str, str] = {
     "the common install locations already checked.",
     "semgrep": "Install Semgrep (`pip install semgrep`) and ensure it is on PATH, or set an "
     "explicit path in Settings.",
+    "gitleaks": "Install Gitleaks (https://github.com/gitleaks/gitleaks) and ensure it is on "
+    "PATH, or set an explicit path in Settings.",
 }
 
 _SELFTEST_TIMEOUT_SECONDS = 20.0
@@ -95,6 +100,7 @@ def _configured_path(settings: IntegrationsSettings, tool_id: str) -> str:
         "testssl.sh": settings.testssl_path,
         "zap": settings.zap_path,
         "semgrep": settings.semgrep_path,
+        "gitleaks": settings.gitleaks_path,
     }[tool_id]
 
 
@@ -115,6 +121,10 @@ def _detect_path(tool_id: str, configured: str) -> str:
         # Semgrep registers a normal PATH executable (a pip console-script entry point),
         # unlike ZAP -- plain PATH lookup, same as nmap.
         return find_executable(["semgrep"]) or ""
+    if tool_id == "gitleaks":
+        # Gitleaks ships as a single static binary an operator places on PATH themselves
+        # (no package-manager console-script, no ZAP-style jar-hunting) -- plain PATH lookup.
+        return find_executable(["gitleaks"]) or ""
     found = detect_tls_tools()
     match = next((t for t in found if t.name == tool_id), None)
     return match.executable if match else ""
@@ -183,6 +193,9 @@ def _version_args(tool_id: str, executable: str) -> list[str]:
         return NmapSpec(executable).version_argv()[1:]
     if tool_id == "semgrep":
         return ["--version"]
+    if tool_id == "gitleaks":
+        # Gitleaks has no `--version` flag; version is printed by its own `version` subcommand.
+        return ["version"]
     return TlsToolSpec(tool_id, executable).version_args()
 
 

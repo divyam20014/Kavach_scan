@@ -62,6 +62,7 @@ class IntegrationsSettings(StrictModel):
     testssl_path: ToolPath = ""
     zap_path: ToolPath = ""  # the ZAP install directory, or a specific zap-*.jar file
     semgrep_path: ToolPath = ""  # the semgrep executable; auto-detected from PATH otherwise
+    gitleaks_path: ToolPath = ""  # the gitleaks executable; auto-detected from PATH otherwise
     online_lookup_credential_alias: CredentialAlias = ""
 
 

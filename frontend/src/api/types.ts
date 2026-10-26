@@ -962,6 +962,7 @@ export interface IntegrationsSettings {
   testssl_path: string;
   zap_path: string;
   semgrep_path: string;
+  gitleaks_path: string;
   online_lookup_credential_alias: string;
 }
 
@@ -982,6 +983,7 @@ export interface IntegrationsSettingsUpdate {
   testssl_path?: string;
   zap_path?: string;
   semgrep_path?: string;
+  gitleaks_path?: string;
   online_lookup_credential_alias?: string;
 }
 

@@ -19,6 +19,7 @@ def test_get_settings_returns_defaults(client: TestClient) -> None:
         "testssl_path": "",
         "zap_path": "",
         "semgrep_path": "",
+        "gitleaks_path": "",
         "online_lookup_credential_alias": "",
     }
 

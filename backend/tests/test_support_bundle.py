@@ -135,7 +135,14 @@ def test_bundle_carries_version_storage_and_integration_info(
     diag = json.loads(files["storage_diagnostics.json"])
     assert diag["ready"] is True
     integrations = json.loads(files["integrations.json"])
-    assert {i["id"] for i in integrations} == {"nmap", "sslyze", "testssl.sh", "zap", "semgrep"}
+    assert {i["id"] for i in integrations} == {
+        "nmap",
+        "sslyze",
+        "testssl.sh",
+        "zap",
+        "semgrep",
+        "gitleaks",
+    }
     assert json.loads(files["cve_catalog.json"]) is None  # none imported
 
 

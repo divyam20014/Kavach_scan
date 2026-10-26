@@ -25,6 +25,7 @@ def _set_tool_path(repo: StorageRepository, tool_id: str, path: str) -> None:
         "testssl.sh": "testssl_path",
         "zap": "zap_path",
         "semgrep": "semgrep_path",
+        "gitleaks": "gitleaks_path",
     }[tool_id]
     settings = repo.get_settings()
     settings.integrations = IntegrationsSettings(**{field: path})
@@ -124,6 +125,34 @@ def test_semgrep_selftest_succeeds_against_a_real_executable(repo: StorageReposi
     result = run_selftest(repo, "semgrep")
     assert result.status == "verified"
     assert result.version  # python's own --version banner, used as a generic smoke test
+    assert result.last_error == ""
+
+
+def test_gitleaks_detected_via_plain_path_lookup_not_candidate_directories(
+    repo: StorageRepository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Gitleaks ships as a single static binary an operator places on PATH themselves (no
+    pip console-script, no ZAP-style jar-hunting) -- detection is a plain `find_executable`
+    call, same as Semgrep's."""
+    monkeypatch.setattr(integrations_mod, "find_executable", lambda names: "/usr/bin/gitleaks")
+    statuses = {s.id: s for s in list_integration_statuses(repo)}
+    assert statuses["gitleaks"].status == "detected"
+    assert statuses["gitleaks"].detected_path == "/usr/bin/gitleaks"
+
+
+def test_gitleaks_selftest_succeeds_against_a_real_executable(
+    repo: StorageRepository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Gitleaks has no `--version` flag -- it prints a bare version string (confirmed
+    directly: `gitleaks version` -> "8.30.1") via its own `version` subcommand, not a flag."""
+    script = _write_script(tmp_path, "print('8.30.1')\n")
+    _set_tool_path(repo, "gitleaks", sys.executable)
+    monkeypatch.setattr(
+        integrations_mod, "_version_args", lambda tool_id, executable: [str(script)]
+    )
+    result = run_selftest(repo, "gitleaks")
+    assert result.status == "verified"
+    assert result.version
     assert result.last_error == ""
 
 
