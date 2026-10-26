@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Literal
 
 from app.integrations.nmap import NmapSpec, detect_nmap
-from app.integrations.process import ProcessPolicyError, run_process
+from app.integrations.process import ProcessPolicyError, find_executable, run_process
 from app.integrations.tls_tools import TlsToolSpec, detect_tls_tools
 from app.integrations.zap import (
     SELFTEST_TIMEOUT_SECONDS as _ZAP_SELFTEST_TIMEOUT_SECONDS,
@@ -33,7 +33,7 @@ from app.storage.atomic import ensure_dir
 from app.storage.repository import StorageRepository
 
 IntegrationStatusValue = Literal["not_configured", "not_found", "detected", "verified", "error"]
-TOOL_IDS: tuple[str, ...] = ("nmap", "sslyze", "testssl.sh", "zap")
+TOOL_IDS: tuple[str, ...] = ("nmap", "sslyze", "testssl.sh", "zap", "semgrep")
 
 _CAPABILITIES: dict[str, str] = {
     "nmap": "Bounded TCP connect port/service mapping for the attack surface mapper "
@@ -44,6 +44,9 @@ _CAPABILITIES: dict[str, str] = {
     "(Module 5.3). Used when sslyze is unavailable.",
     "zap": "OWASP ZAP for deep web application DAST (detection/self-test only in this "
     "release — Automation-Framework-driven scanning is a separate, later increment).",
+    "semgrep": "Semgrep Community Edition for static source-code security analysis "
+    "(roadmap Phase 2, detection/self-test only in this release — repository-scan job "
+    "wiring is a separate, later increment).",
 }
 _TROUBLESHOOTING: dict[str, str] = {
     "nmap": "Install Nmap and ensure it is on PATH, or set an explicit path in Settings. "
@@ -55,6 +58,8 @@ _TROUBLESHOOTING: dict[str, str] = {
     "zap": "Install OWASP ZAP (https://www.zaproxy.org/download/) and a Java runtime, then "
     "set the ZAP install directory (or a specific zap-*.jar) in Settings if it is not one of "
     "the common install locations already checked.",
+    "semgrep": "Install Semgrep (`pip install semgrep`) and ensure it is on PATH, or set an "
+    "explicit path in Settings.",
 }
 
 _SELFTEST_TIMEOUT_SECONDS = 20.0
@@ -89,6 +94,7 @@ def _configured_path(settings: IntegrationsSettings, tool_id: str) -> str:
         "sslyze": settings.sslyze_path,
         "testssl.sh": settings.testssl_path,
         "zap": settings.zap_path,
+        "semgrep": settings.semgrep_path,
     }[tool_id]
 
 
@@ -105,6 +111,10 @@ def _detect_path(tool_id: str, configured: str) -> str:
     if tool_id == "nmap":
         spec = detect_nmap()
         return spec.executable if spec else ""
+    if tool_id == "semgrep":
+        # Semgrep registers a normal PATH executable (a pip console-script entry point),
+        # unlike ZAP -- plain PATH lookup, same as nmap.
+        return find_executable(["semgrep"]) or ""
     found = detect_tls_tools()
     match = next((t for t in found if t.name == tool_id), None)
     return match.executable if match else ""
@@ -171,6 +181,8 @@ class UnknownIntegrationError(ValueError):
 def _version_args(tool_id: str, executable: str) -> list[str]:
     if tool_id == "nmap":
         return NmapSpec(executable).version_argv()[1:]
+    if tool_id == "semgrep":
+        return ["--version"]
     return TlsToolSpec(tool_id, executable).version_args()
 
 

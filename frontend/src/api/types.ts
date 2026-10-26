@@ -961,6 +961,7 @@ export interface IntegrationsSettings {
   sslyze_path: string;
   testssl_path: string;
   zap_path: string;
+  semgrep_path: string;
   online_lookup_credential_alias: string;
 }
 
@@ -980,6 +981,7 @@ export interface IntegrationsSettingsUpdate {
   sslyze_path?: string;
   testssl_path?: string;
   zap_path?: string;
+  semgrep_path?: string;
   online_lookup_credential_alias?: string;
 }
 

@@ -18,6 +18,7 @@ def test_get_settings_returns_defaults(client: TestClient) -> None:
         "sslyze_path": "",
         "testssl_path": "",
         "zap_path": "",
+        "semgrep_path": "",
         "online_lookup_credential_alias": "",
     }
 

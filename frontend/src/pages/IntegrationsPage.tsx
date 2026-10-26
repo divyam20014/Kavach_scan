@@ -160,6 +160,7 @@ function ToolPathSettingsCard() {
   const [sslyzePath, setSslyzePath] = useState("");
   const [testsslPath, setTestsslPath] = useState("");
   const [zapPath, setZapPath] = useState("");
+  const [semgrepPath, setSemgrepPath] = useState("");
   const [credentialAlias, setCredentialAlias] = useState("");
   const [loadedRevision, setLoadedRevision] = useState<number | null>(null);
 
@@ -171,6 +172,7 @@ function ToolPathSettingsCard() {
       setSslyzePath(settings.data.integrations.sslyze_path);
       setTestsslPath(settings.data.integrations.testssl_path);
       setZapPath(settings.data.integrations.zap_path);
+      setSemgrepPath(settings.data.integrations.semgrep_path);
       setLoadedRevision(settings.data.revision);
     }
   }, [settings.data, loadedRevision]);
@@ -184,6 +186,7 @@ function ToolPathSettingsCard() {
           sslyze_path: sslyzePath,
           testssl_path: testsslPath,
           zap_path: zapPath,
+          semgrep_path: semgrepPath,
           ...(credentialAlias ? { online_lookup_credential_alias: credentialAlias } : {}),
         },
       },
@@ -223,6 +226,12 @@ function ToolPathSettingsCard() {
               description="The ZAP install directory, or a specific zap-*.jar file. Leave blank to check common install locations (ZAP is not registered on PATH)."
               placeholder="auto-detect"
               value={zapPath} onChange={(e) => setZapPath(e.currentTarget.value)}
+            />
+            <TextInput
+              label="Semgrep path"
+              description="A specific semgrep executable. Leave blank to use the one on PATH."
+              placeholder="auto-detect"
+              value={semgrepPath} onChange={(e) => setSemgrepPath(e.currentTarget.value)}
             />
             <TextInput
               type="password"

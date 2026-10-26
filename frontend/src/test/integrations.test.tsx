@@ -15,7 +15,7 @@ function settings(overrides: Partial<AppSettings["integrations"]> = {}): AppSett
   return {
     schema_version: 1, product_name: "VAPT Workbench", disk_space_warning_bytes: 0,
     evidence_quota_bytes: null, report_timezone_label: "UTC",
-    integrations: { nmap_path: "", sslyze_path: "", testssl_path: "", zap_path: "", online_lookup_credential_alias: "", ...overrides },
+    integrations: { nmap_path: "", sslyze_path: "", testssl_path: "", zap_path: "", semgrep_path: "", online_lookup_credential_alias: "", ...overrides },
     revision: 1, updated_at: "2026-10-25T00:00:00Z",
   };
 }
