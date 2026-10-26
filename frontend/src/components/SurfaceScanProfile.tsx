@@ -1,5 +1,6 @@
 import { Alert, Badge, Group, List, NumberInput, SimpleGrid, Stack, Switch, Table, Text, Textarea, TextInput, Title } from "@mantine/core";
 import type { ScanParams, SurfaceProfilePreview } from "../api/types";
+import { AdvancedOptions } from "./AdvancedOptions";
 
 export interface SurfaceOptions {
   hosts: string;
@@ -40,23 +41,25 @@ export function SurfaceScanOptions({ value, onChange }: { value: SurfaceOptions;
   const set = <K extends keyof SurfaceOptions>(k: K, v: SurfaceOptions[K]) => onChange({ ...value, [k]: v });
   return (
     <Stack gap="xs" aria-label="Attack surface options" role="group">
-      <Textarea label="Additional hosts (manual or imported; newline or comma separated)" value={value.hosts}
-        onChange={(e) => set("hosts", e.currentTarget.value)} autosize minRows={2} placeholder="host.example.com" />
-      <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
-        <TextInput label="Ports (comma separated; blank = conservative default list)" value={value.ports}
-          onChange={(e) => set("ports", e.currentTarget.value)} placeholder="22,80,443,3306" />
-        <NumberInput label="Max in-scope hosts to scan" min={1} max={1000} value={value.max_hosts} allowDecimal={false}
-          onChange={(v) => set("max_hosts", typeof v === "number" ? v : "")} placeholder="50" />
-        <Switch label="Probe discovered web origins" checked={value.probe_web} onChange={(e) => set("probe_web", e.currentTarget.checked)} />
-        <Switch label="Read service banners (passive; nothing sent)" checked={value.read_banners} onChange={(e) => set("read_banners", e.currentTarget.checked)} />
-        <Switch label="Verify TLS on web origins" checked={value.tls_verify} onChange={(e) => set("tls_verify", e.currentTarget.checked)} />
-        <Switch label="Query crt.sh for subdomains (third party)" checked={value.passive_crtsh} onChange={(e) => set("passive_crtsh", e.currentTarget.checked)} />
-      </SimpleGrid>
-      {value.passive_crtsh && (
-        <Alert color="yellow" variant="light" role="note">
-          crt.sh is a third-party Certificate Transparency service. Each authorized root domain is sent to it; no request is sent to the target.
-        </Alert>
-      )}
+      <AdvancedOptions>
+        <Textarea label="Additional hosts (manual or imported; newline or comma separated)" value={value.hosts}
+          onChange={(e) => set("hosts", e.currentTarget.value)} autosize minRows={2} placeholder="host.example.com" />
+        <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
+          <TextInput label="Ports (comma separated; blank = conservative default list)" value={value.ports}
+            onChange={(e) => set("ports", e.currentTarget.value)} placeholder="22,80,443,3306" />
+          <NumberInput label="Max in-scope hosts to scan" min={1} max={1000} value={value.max_hosts} allowDecimal={false}
+            onChange={(v) => set("max_hosts", typeof v === "number" ? v : "")} placeholder="50" />
+          <Switch label="Probe discovered web origins" checked={value.probe_web} onChange={(e) => set("probe_web", e.currentTarget.checked)} />
+          <Switch label="Read service banners (passive; nothing sent)" checked={value.read_banners} onChange={(e) => set("read_banners", e.currentTarget.checked)} />
+          <Switch label="Verify TLS on web origins" checked={value.tls_verify} onChange={(e) => set("tls_verify", e.currentTarget.checked)} />
+          <Switch label="Query crt.sh for subdomains (third party)" checked={value.passive_crtsh} onChange={(e) => set("passive_crtsh", e.currentTarget.checked)} />
+        </SimpleGrid>
+        {value.passive_crtsh && (
+          <Alert color="yellow" variant="light" role="note">
+            crt.sh is a third-party Certificate Transparency service. Each authorized root domain is sent to it; no request is sent to the target.
+          </Alert>
+        )}
+      </AdvancedOptions>
     </Stack>
   );
 }

@@ -41,6 +41,20 @@ export function isoToLocalInput(iso: string | null | undefined): string {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
+/** How long a job ran, from its own `started_at`/`finished_at` timestamps -- never a guess:
+ * "—" when it never started, "running…" while started but not yet finished. */
+export function formatDuration(startedAt: string | null, finishedAt: string | null): string {
+  if (!startedAt) return "—";
+  if (!finishedAt) return "running…";
+  const seconds = Math.max(0, (new Date(finishedAt).getTime() - new Date(startedAt).getTime()) / 1000);
+  if (!Number.isFinite(seconds)) return "—";
+  if (seconds < 60) return `${Math.round(seconds)}s`;
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ${Math.round(seconds % 60)}s`;
+  const hours = Math.floor(minutes / 60);
+  return `${hours}h ${minutes % 60}m`;
+}
+
 export function splitLines(text: string): string[] {
   return text
     .split(/[\n,]/)

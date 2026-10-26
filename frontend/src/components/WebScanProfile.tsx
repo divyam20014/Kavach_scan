@@ -1,5 +1,6 @@
 import { Alert, Badge, Group, List, NumberInput, Select, SimpleGrid, Stack, Switch, Table, Text, TextInput, Title } from "@mantine/core";
 import type { ScanParams, WebProfilePreview, WebScanProfile } from "../api/types";
+import { AdvancedOptions } from "./AdvancedOptions";
 import { humanize } from "../lib/format";
 
 export interface WebOptions {
@@ -61,26 +62,30 @@ export function WebScanOptions({ value, onChange, limits }: { value: WebOptions;
         onChange={(v) => v && set("engine", v as "native" | "zap")}
         allowDeselect={false}
       />
-      {zap ? (
-        <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
-          <NumberInput label="Spider duration (minutes)" min={1} max={60} value={value.zap_spider_max_minutes} allowDecimal={false}
-            onChange={(v) => set("zap_spider_max_minutes", typeof v === "number" ? v : "")} placeholder="2" />
-          <NumberInput label="Passive-scan wait (minutes)" min={1} max={60} value={value.zap_wait_max_minutes} allowDecimal={false}
-            onChange={(v) => set("zap_wait_max_minutes", typeof v === "number" ? v : "")} placeholder="2" />
-        </SimpleGrid>
-      ) : (
-        <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
-          <Switch label="Respect robots.txt while crawling" checked={value.respect_robots} onChange={(e) => set("respect_robots", e.currentTarget.checked)} />
-          <Switch label="Verify TLS certificates while crawling" checked={value.tls_verify} onChange={(e) => set("tls_verify", e.currentTarget.checked)} />
-          <Switch label="CORS check (1 request per origin)" checked={value.check_cors} onChange={(e) => set("check_cors", e.currentTarget.checked)} />
-          <Switch label="Run sslyze/testssl.sh if installed" checked={value.run_tls_tool} onChange={(e) => set("run_tls_tool", e.currentTarget.checked)} />
-          <NumberInput label={`Max pages (project limit ${limits.pages})`} min={1} max={limits.pages} value={value.max_pages} allowDecimal={false}
-            onChange={(v) => set("max_pages", typeof v === "number" ? v : "")} placeholder={String(limits.pages)} />
-          <NumberInput label={`Max depth (project limit ${limits.depth})`} min={0} max={limits.depth} value={value.max_depth} allowDecimal={false}
-            onChange={(v) => set("max_depth", typeof v === "number" ? v : "")} placeholder={String(limits.depth)} />
-        </SimpleGrid>
-      )}
-      {!zap && <TextInput label="Extra start paths (comma separated, e.g. /app/, /docs/)" value={value.seed_paths} onChange={(e) => set("seed_paths", e.currentTarget.value)} />}
+      <AdvancedOptions>
+        {zap ? (
+          <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
+            <NumberInput label="Spider duration (minutes)" min={1} max={60} value={value.zap_spider_max_minutes} allowDecimal={false}
+              onChange={(v) => set("zap_spider_max_minutes", typeof v === "number" ? v : "")} placeholder="2" />
+            <NumberInput label="Passive-scan wait (minutes)" min={1} max={60} value={value.zap_wait_max_minutes} allowDecimal={false}
+              onChange={(v) => set("zap_wait_max_minutes", typeof v === "number" ? v : "")} placeholder="2" />
+          </SimpleGrid>
+        ) : (
+          <>
+            <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
+              <Switch label="Respect robots.txt while crawling" checked={value.respect_robots} onChange={(e) => set("respect_robots", e.currentTarget.checked)} />
+              <Switch label="Verify TLS certificates while crawling" checked={value.tls_verify} onChange={(e) => set("tls_verify", e.currentTarget.checked)} />
+              <Switch label="CORS check (1 request per origin)" checked={value.check_cors} onChange={(e) => set("check_cors", e.currentTarget.checked)} />
+              <Switch label="Run sslyze/testssl.sh if installed" checked={value.run_tls_tool} onChange={(e) => set("run_tls_tool", e.currentTarget.checked)} />
+              <NumberInput label={`Max pages (project limit ${limits.pages})`} min={1} max={limits.pages} value={value.max_pages} allowDecimal={false}
+                onChange={(v) => set("max_pages", typeof v === "number" ? v : "")} placeholder={String(limits.pages)} />
+              <NumberInput label={`Max depth (project limit ${limits.depth})`} min={0} max={limits.depth} value={value.max_depth} allowDecimal={false}
+                onChange={(v) => set("max_depth", typeof v === "number" ? v : "")} placeholder={String(limits.depth)} />
+            </SimpleGrid>
+            <TextInput label="Extra start paths (comma separated, e.g. /app/, /docs/)" value={value.seed_paths} onChange={(e) => set("seed_paths", e.currentTarget.value)} />
+          </>
+        )}
+      </AdvancedOptions>
     </Stack>
   );
 }

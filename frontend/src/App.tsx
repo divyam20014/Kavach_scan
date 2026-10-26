@@ -25,13 +25,25 @@ export const theme = createTheme({
   defaultRadius: "md",
   fontFamily: "system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif",
   focusRing: "always",
-  // Consistent card elevation app-wide instead of each page choosing its own look.
+  // A restrained, consistent heading scale instead of each page picking its own `size`.
+  headings: {
+    sizes: {
+      h1: { fontSize: "1.5rem", fontWeight: "700" },
+      h2: { fontSize: "1.25rem", fontWeight: "600" },
+      h3: { fontSize: "1.1rem", fontWeight: "600" },
+      h4: { fontSize: "1rem", fontWeight: "600" },
+    },
+  },
+  // Consistent card elevation and borders app-wide instead of each page choosing its own look.
   components: {
     Card: {
-      defaultProps: { shadow: "xs" },
+      defaultProps: { shadow: "xs", withBorder: true },
     },
     Table: {
       defaultProps: { verticalSpacing: "xs" },
+    },
+    Tooltip: {
+      defaultProps: { openDelay: 200 },
     },
   },
 });

@@ -482,3 +482,53 @@ Resolves the clone URL's host and refuses it before any clone attempt if any res
 - **Roadmap complete** (TBD-096 through TBD-101). Possible future work, not requested: SSH transport, `keychain:` credential-alias resolution, and a fully live authenticated private-repository clone exercised end-to-end in one single test.
 - Full rationale in TBD-101.
 
+## UI/UX modernization, increment 1 of N: design tokens + app shell/navigation (2026-10-26, TBD-102)
+
+Scoped down from an operator-requested, 15-phase whole-app redesign spec to an explicitly agreed first increment (operator confirmed via question: start here; checkpoint after each phase rather than proceed through all of them autonomously).
+
+- `src/theme/tokens.ts` centralizes header height/sidebar widths/content max-width. The Mantine theme (`App.tsx`) gained a heading scale and consistent `Card`/`Table`/`Tooltip` defaults.
+- `AppLayout.tsx`'s sidebar gained per-item inline-SVG icons (no new icon-library dependency — matching the existing inline-SVG logo and the project's "no new dependency without an established need" posture) and a desktop icon-rail collapse mode (persisted via `useLocalStorage`, with tooltips when collapsed).
+- **Two real defects found by actually driving the built app in a real browser** (Edge via the project's own `playwright-core`, following `e2e/verify.mjs`'s real-backend-plus-real-browser pattern) **at desktop/collapsed/mobile widths — neither caught by `tsc`/`eslint`/the existing test suite**:
+  1. The header's kill-switch control and version text overlapped/clipped at 390px mobile width (pre-existing, fixed here since it's squarely in this phase's own file and acceptance criteria).
+  2. The desktop icon-rail collapse state leaked into the mobile burger-drawer, hiding all labels/section headings there — fixed by deriving a separate `showLabels` that's always true when the mobile drawer is open, and making the navbar width responsive so mobile is never narrowed to rail width.
+- Full frontend suite re-run clean (91 passed, confirmed in an isolated run after an intermediate run showed 2 flaky failures while competing for resources with the concurrent screenshot script); `tsc -b --noEmit`/`eslint .`/`npm run build` all clean. No new dependency, no backend change, no existing functionality altered.
+- Full rationale in TBD-102.
+- **Not yet started**: the remaining ~14 phases of the operator's request (dashboard, scan-creation friction, scan monitoring, findings, tables/forms/modals, reporting UX, accessibility/responsive pass) — each to be checkpointed individually, next phase not yet chosen.
+
+## UI/UX modernization, increment 2 of N: scan-creation friction (2026-10-26, TBD-103)
+
+A shared, reusable `AdvancedOptions` disclosure (`src/components/AdvancedOptions.tsx`) wraps every secondary field across the Web, Attack-Surface and Repository scan-profile panels, collapsed by default — the "Start a job" card's default surface is now module + targets + a one-line engine choice instead of 6-8 always-visible fields per scan type.
+
+- Counted before changing anything: Web (7 native-mode fields), Attack-Surface (8 fields), Repository scan (ruleset + up to 3 timeouts) were all flat/always-visible.
+- **API scan options deliberately left unchanged** — its fields are already gated behind a more meaningful toggle (`inventory_only`), and the field that appears when it's off (`Server`) is required, not optional; wrapping it in a generic "Advanced" disclosure would hide a required field.
+- A real near-duplication was found (Attack-Surface's "Additional hosts" field vs. the already-visible top-level "Targets" field) and deliberately *not* resolved — collapsing it into Advanced reduces the friction without guessing at a backend parameter-contract question (`hosts` vs `targets`) outside this frontend-only phase's scope. Flagged for a future, separately scoped decision.
+- Verified in a real browser: created a real project via the real API (the project's own `playwright-core`/Edge pattern) and screenshotted the Start-a-job card both collapsed and expanded.
+- Tests: `tests/webscan.test.tsx` (2 updated to open "Advanced options" before interacting with a relocated field). Full frontend suite re-run clean (91 passed); `tsc -b --noEmit`/`eslint .`/`npm run build` all clean. No new dependency, no backend change, no field removed.
+- Full rationale in TBD-103.
+- **Not yet started**: 13 more phases remain (dashboard, scan monitoring, findings, tables/forms/modals, reporting UX, accessibility/responsive pass) — each to be checkpointed individually.
+
+## UI/UX modernization, increment 3 of N: dashboard (2026-10-26, TBD-104)
+
+A "Critical & High findings" KPI, a new "Recent scans" widget, and a persistent "New project" header action — no backend changes, every new widget reuses an existing endpoint.
+
+- Audited against the spec's own four dashboard sections: operational summary was missing the single most important VAPT number (Critical/High findings) as a headline figure; "recent activity" existed only as a generic audit feed with none of the scan-specific columns (module/project/status/link) the spec asks for — now a genuine "Recent scans" widget sits alongside the original (unchanged) activity feed, not replacing it.
+- `useRecords<ScanJob>("scans", {limit: 5})` reuses the exact hook/endpoint already powering the Scans record page — confirmed the backend's default sort (`updated_at` desc) already returns most-recent-first before relying on it.
+- "Findings by source engine" was identified as a real gap but not built — it needs a backend aggregation outside this frontend-only phase's scope.
+- A real pre-existing gap: no dashboard test file existed at all before this phase (`dashboard.test.tsx` is new).
+- A real regression was caught before it reached the full suite: the project's own static "every KPI is bound to real API data" guard (`verification.test.tsx`) failed because the new KPI's value went through an untraceable intermediate variable — fixed by inlining the expression directly, restoring the guard's ability to verify it.
+- Tests: `tests/dashboard.test.tsx` (4, new), `tests/verification.test.tsx` (1 updated, KPI count 8→9). Full suite re-run clean (95 passed); `tsc`/`eslint`/`npm run build` clean. Verified in a real browser against a real created project (zero-state and populated-state).
+- Full rationale in TBD-104.
+- **Not yet started**: 12 more phases remain (scan monitoring, findings, tables/forms/modals, reporting UX, accessibility pass).
+
+## UI/UX modernization, increment 4 of N: scan monitoring (2026-10-26, TBD-105)
+
+A real navigation bug fix, a new scan-history link, a Duration column, and a clearly-labelled indeterminate progress indicator — no backend changes.
+
+- **Real bug found and fixed**: the project detail page's "Last scan" summary showed state and date but was never a link, despite `scan_id` already being in the API response and already imported — an operator had no way to click into a finished scan from the project page at all. Fixed with an `Anchor` wrapping the summary.
+- Added "View this project's scan history" link (`/scans?project_id=`) next to the existing findings link.
+- `formatDuration` (new, `src/lib/format.ts`) is purely client-computed from `started_at`/`finished_at`, already present on every `ScanJob` — no backend change. Returns `"running…"` for an unfinished job, `"—"` for one that never started, applied to the global Scans list.
+- A live scan whose current stage has no measurable percentage now shows a clearly-labelled (`aria-label`: "percentage not measurable for this stage") striped/animated progress bar instead of nothing at all — deliberately never a specific fabricated percentage.
+- Tests: `tests/scanMonitoring.test.tsx` (4, new file — no test file existed for the global Scans list or this project-detail behavior before). Full frontend suite re-run clean (99 passed); `tsc`/`eslint`/`npm run build` clean. Live-browser verification confirmed the new links render correctly; a live-progress-stripe screenshot wasn't obtained (unrelated script issue, not an app bug) — judged low-risk given existing indirect test coverage.
+- Full rationale in TBD-105.
+- **Not yet started**: 11 more phases remain (findings, tables/forms/modals, reporting UX, accessibility pass).
+

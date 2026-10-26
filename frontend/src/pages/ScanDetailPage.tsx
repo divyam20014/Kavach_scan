@@ -105,8 +105,14 @@ function ScanDetailView({ detail }: { detail: ScanDetail }) {
               </Text>
             )}
           </Group>
-          {scan.progress.percent !== null && (
+          {scan.progress.percent !== null ? (
             <Progress value={scan.progress.percent} mt="sm" aria-label={`Progress ${scan.progress.percent}%`} />
+          ) : (
+            live && (
+              // No measurable percentage for this module/stage -- a moving stripe signals
+              // "still working", never a specific (and therefore fabricated) completion amount.
+              <Progress value={100} striped animated mt="sm" aria-label="In progress (percentage not measurable for this stage)" />
+            )
           )}
           {scan.final_reason && (
             <Text size="sm" mt="sm">

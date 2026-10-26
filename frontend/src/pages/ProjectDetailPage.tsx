@@ -159,18 +159,25 @@ function ProjectDetail({ overview }: { overview: ProjectOverview }) {
               Last scan
             </Title>
             {last_scan ? (
-              <Group>
-                <ScanStateLabel state={last_scan.state} />
-                <Text size="sm">{formatDateTime(last_scan.at)}</Text>
-              </Group>
+              <Anchor component={Link} to={`/projects/${project.project_id}/scans/${last_scan.scan_id}`} underline="never">
+                <Group>
+                  <ScanStateLabel state={last_scan.state} />
+                  <Text size="sm">{formatDateTime(last_scan.at)}</Text>
+                </Group>
+              </Anchor>
             ) : (
               <Text size="sm" c="dimmed">
                 No scans recorded for this project.
               </Text>
             )}
-            <Anchor component={Link} to={`/findings?project_id=${project.project_id}`} size="sm" display="block" mt="sm">
-              View this project's findings
-            </Anchor>
+            <Stack gap={2} mt="sm">
+              <Anchor component={Link} to={`/scans?project_id=${project.project_id}`} size="sm" display="block">
+                View this project's scan history
+              </Anchor>
+              <Anchor component={Link} to={`/findings?project_id=${project.project_id}`} size="sm" display="block">
+                View this project's findings
+              </Anchor>
+            </Stack>
           </Card>
         </SimpleGrid>
 

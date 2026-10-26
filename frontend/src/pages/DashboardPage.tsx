@@ -1,12 +1,13 @@
 import { Alert, Anchor, Button, Card, Group, Progress, SimpleGrid, Stack, Table, Text, Title } from "@mantine/core";
 import { Link } from "react-router-dom";
-import { useDashboard } from "../api/hooks";
-import { CONFIDENCES, SEVERITIES, type DashboardSummary } from "../api/types";
+import { useDashboard, useRecords } from "../api/hooks";
+import { CONFIDENCES, SEVERITIES, type DashboardSummary, type ScanJob } from "../api/types";
 import { KpiCard } from "../components/KpiCard";
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState, QueryState } from "../components/QueryState";
-import { SEVERITY, SeverityLabel } from "../components/StatusLabel";
+import { ScanStateLabel, SEVERITY, SeverityLabel } from "../components/StatusLabel";
 import { formatDateTime, humanize } from "../lib/format";
+import { projectLink } from "./RecordPages";
 
 export function DashboardPage() {
   const query = useDashboard();
@@ -15,6 +16,11 @@ export function DashboardPage() {
       <PageHeader
         title="Dashboard"
         description="Every number is counted from stored records when this page loads. Nothing is estimated or sample data."
+        actions={
+          <Button component={Link} to="/projects/new">
+            New project
+          </Button>
+        }
       />
       <QueryState query={query} loadingLabel="Loading dashboard…">
         {(data) => <DashboardBody data={data} />}
@@ -49,6 +55,8 @@ function DashboardBody({ data }: { data: DashboardSummary }) {
           <KpiCard testId="kpi-active-scans" label="Active scans" value={scans.active}
             to="/scans?state=queued&state=validating&state=running" />
           <KpiCard testId="kpi-failed-scans" label="Failed scans" value={scans.failed} to="/scans?state=failed" />
+          <KpiCard testId="kpi-critical-high" label="Critical & High findings" value={findings.by_severity.critical + findings.by_severity.high}
+            to="/findings?severity=critical&severity=high" hint="Needs attention first" />
           <KpiCard testId="kpi-findings" label="Findings (unique records)" value={findings.total} to="/findings"
             hint={`${findings.open} open`} />
           <KpiCard testId="kpi-confirmed" label="Confirmed findings" value={findings.by_confidence.confirmed}
@@ -132,36 +140,99 @@ function DashboardBody({ data }: { data: DashboardSummary }) {
           )}
         </Card>
 
-        <Card withBorder component="section" aria-labelledby="activity-heading">
-          <Group justify="space-between" mb="sm">
-            <Title order={2} size="h4" id="activity-heading">
-              Recent activity
-            </Title>
-            <Anchor component={Link} to="/audit" size="sm">
-              Full audit log
-            </Anchor>
-          </Group>
-          {data.recent_activity.length === 0 ? (
+        <RecentScansCard />
+      </SimpleGrid>
+
+      <Card withBorder component="section" aria-labelledby="activity-heading">
+        <Group justify="space-between" mb="sm">
+          <Title order={2} size="h4" id="activity-heading">
+            Recent activity
+          </Title>
+          <Anchor component={Link} to="/audit" size="sm">
+            Full audit log
+          </Anchor>
+        </Group>
+        {data.recent_activity.length === 0 ? (
+          <Text size="sm" c="dimmed">
+            No activity recorded yet.
+          </Text>
+        ) : (
+          <Stack gap={6} component="ul" style={{ listStyle: "none", padding: 0, margin: 0 }}>
+            {data.recent_activity.map((e) => (
+              <li key={e.event_id}>
+                <Text size="sm">
+                  <strong>{humanize(e.action)}</strong>{" "}
+                  <Text span c="dimmed" size="xs">
+                    {formatDateTime(e.ts)}
+                  </Text>
+                </Text>
+              </li>
+            ))}
+          </Stack>
+        )}
+      </Card>
+    </Stack>
+  );
+}
+
+const RECENT_SCANS_LIMIT = 5;
+
+/** The 5 most recently updated scans across all projects (reuses the existing `/api/scans`
+ * list endpoint already powering the Scans record page -- no new backend route). Shows
+ * exactly what an operator needs to jump back into a scan: module, project, status, when. */
+function RecentScansCard() {
+  const query = useRecords<ScanJob>("scans", { limit: RECENT_SCANS_LIMIT, sort: "updated_at", order: "desc" });
+  return (
+    <Card withBorder component="section" aria-labelledby="recent-scans-heading">
+      <Group justify="space-between" mb="sm">
+        <Title order={2} size="h4" id="recent-scans-heading">
+          Recent scans
+        </Title>
+        <Anchor component={Link} to="/scans" size="sm">
+          All scans
+        </Anchor>
+      </Group>
+      <QueryState query={query} loadingLabel="Loading recent scans…">
+        {(page) =>
+          page.total === 0 ? (
             <Text size="sm" c="dimmed">
-              No activity recorded yet.
+              No scans have been run yet. Open a project and start one from its "Start a job" card.
             </Text>
           ) : (
-            <Stack gap={6} component="ul" style={{ listStyle: "none", padding: 0, margin: 0 }}>
-              {data.recent_activity.map((e) => (
-                <li key={e.event_id}>
-                  <Text size="sm">
-                    <strong>{humanize(e.action)}</strong>{" "}
-                    <Text span c="dimmed" size="xs">
-                      {formatDateTime(e.ts)}
-                    </Text>
-                  </Text>
-                </li>
-              ))}
-            </Stack>
-          )}
-        </Card>
-      </SimpleGrid>
-    </Stack>
+            <Table.ScrollContainer minWidth={320}>
+              <Table verticalSpacing={6}>
+                <Table.Thead>
+                  <Table.Tr>
+                    <Table.Th scope="col">Scan</Table.Th>
+                    <Table.Th scope="col">Module</Table.Th>
+                    <Table.Th scope="col">Project</Table.Th>
+                    <Table.Th scope="col">State</Table.Th>
+                    <Table.Th scope="col">Updated</Table.Th>
+                  </Table.Tr>
+                </Table.Thead>
+                <Table.Tbody>
+                  {page.items.map((s) => (
+                    <Table.Tr key={s.scan_id}>
+                      <Table.Td>
+                        <Anchor component={Link} to={`/projects/${s.project_id}/scans/${s.scan_id}`} size="sm">
+                          {s.scan_id.slice(0, 12)}…
+                        </Anchor>
+                      </Table.Td>
+                      <Table.Td>{humanize(s.module)}</Table.Td>
+                      <Table.Td>{projectLink(s.project_id)}</Table.Td>
+                      <Table.Td>
+                        <ScanStateLabel state={s.state} />
+                      </Table.Td>
+                      <Table.Td>{formatDateTime(s.updated_at)}</Table.Td>
+                    </Table.Tr>
+                  ))}
+                </Table.Tbody>
+              </Table>
+            </Table.ScrollContainer>
+          )
+        }
+      </QueryState>
+    </Card>
   );
 }
 

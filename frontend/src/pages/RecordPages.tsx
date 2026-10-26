@@ -6,7 +6,7 @@ import type { Asset, Page, ScanJob } from "../api/types";
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState, QueryState } from "../components/QueryState";
 import { ScanStateLabel } from "../components/StatusLabel";
-import { formatDateTime, humanize } from "../lib/format";
+import { formatDateTime, formatDuration, humanize } from "../lib/format";
 
 const PAGE_SIZE = 25;
 const FILTER_KEYS = ["project_id", "scan_id", "severity", "analyst_status", "confidence", "asset_type", "state"];
@@ -108,7 +108,7 @@ function RecordList<T>({
   );
 }
 
-const projectLink = (id: string) => (
+export const projectLink = (id: string) => (
   <Anchor component={Link} to={`/projects/${id}`} size="sm">
     {id.slice(0, 12)}…
   </Anchor>
@@ -143,7 +143,7 @@ export function ScansPage() {
       base="/scans"
       kind="scans"
       emptyText="No jobs have been recorded. Start a job from a project page (web, attack-surface and API scanners available)."
-      columns={["Scan", "Module", "State", "Project", "Updated"]}
+      columns={["Scan", "Module", "State", "Project", "Duration", "Updated"]}
       row={(s) => (
         <Table.Tr key={s.scan_id}>
           <Table.Td>
@@ -154,6 +154,7 @@ export function ScansPage() {
           <Table.Td>{humanize(s.module)}</Table.Td>
           <Table.Td><ScanStateLabel state={s.state} /></Table.Td>
           <Table.Td>{projectLink(s.project_id)}</Table.Td>
+          <Table.Td>{formatDuration(s.started_at, s.finished_at)}</Table.Td>
           <Table.Td>{formatDateTime(s.updated_at)}</Table.Td>
         </Table.Tr>
       )}

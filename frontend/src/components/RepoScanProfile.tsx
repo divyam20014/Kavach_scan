@@ -1,5 +1,6 @@
 import { Alert, Checkbox, Group, NumberInput, Select, Stack, Text } from "@mantine/core";
 import type { ScanParams } from "../api/types";
+import { AdvancedOptions } from "./AdvancedOptions";
 
 export type RepoScanEngine = "semgrep" | "gitleaks" | "trivy";
 
@@ -121,28 +122,30 @@ export function RepoScanOptionsPanel({
           })}
         </Stack>
       </div>
-      {value.engines.includes("semgrep") && (
-        <Select
-          label="Semgrep ruleset"
-          data={SEMGREP_CONFIGS}
-          value={value.semgrep_config}
-          onChange={(v) => set("semgrep_config", v ?? DEFAULT_REPO_SCAN_OPTIONS.semgrep_config)}
-        />
-      )}
-      <Group grow align="flex-start">
+      <AdvancedOptions>
         {value.engines.includes("semgrep") && (
-          <NumberInput label="Semgrep timeout (min)" min={1} max={60} value={value.semgrep_timeout_minutes}
-            onChange={(v) => set("semgrep_timeout_minutes", Number(v) || 5)} />
+          <Select
+            label="Semgrep ruleset"
+            data={SEMGREP_CONFIGS}
+            value={value.semgrep_config}
+            onChange={(v) => set("semgrep_config", v ?? DEFAULT_REPO_SCAN_OPTIONS.semgrep_config)}
+          />
         )}
-        {value.engines.includes("gitleaks") && (
-          <NumberInput label="Gitleaks timeout (min)" min={1} max={60} value={value.gitleaks_timeout_minutes}
-            onChange={(v) => set("gitleaks_timeout_minutes", Number(v) || 5)} />
-        )}
-        {value.engines.includes("trivy") && (
-          <NumberInput label="Trivy timeout (min)" min={1} max={60} value={value.trivy_timeout_minutes}
-            onChange={(v) => set("trivy_timeout_minutes", Number(v) || 5)} />
-        )}
-      </Group>
+        <Group grow align="flex-start">
+          {value.engines.includes("semgrep") && (
+            <NumberInput label="Semgrep timeout (min)" min={1} max={60} value={value.semgrep_timeout_minutes}
+              onChange={(v) => set("semgrep_timeout_minutes", Number(v) || 5)} />
+          )}
+          {value.engines.includes("gitleaks") && (
+            <NumberInput label="Gitleaks timeout (min)" min={1} max={60} value={value.gitleaks_timeout_minutes}
+              onChange={(v) => set("gitleaks_timeout_minutes", Number(v) || 5)} />
+          )}
+          {value.engines.includes("trivy") && (
+            <NumberInput label="Trivy timeout (min)" min={1} max={60} value={value.trivy_timeout_minutes}
+              onChange={(v) => set("trivy_timeout_minutes", Number(v) || 5)} />
+          )}
+        </Group>
+      </AdvancedOptions>
     </Stack>
   );
 }

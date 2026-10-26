@@ -81,7 +81,7 @@ describe("source hygiene", () => {
   it("binds every dashboard KPI value to the API response", () => {
     const dashboard = readFileSync(join(SRC, "pages", "DashboardPage.tsx"), "utf8");
     const values = [...dashboard.matchAll(/<KpiCard[\s\S]*?value=\{([^}]+)\}/g)].map((m) => m[1]!.trim());
-    expect(values.length).toBe(8);
+    expect(values.length).toBe(9);
     for (const v of values) expect(v).toMatch(/^(projects|scans|findings|assets)\./);
   });
 

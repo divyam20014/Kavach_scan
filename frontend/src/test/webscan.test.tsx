@@ -128,6 +128,7 @@ describe("web scan start dialog", () => {
     expect(within(profile).getByRole("table", { name: "Disabled checks" })).toHaveTextContent(/Not built in/);
     expect(within(profile).getByText(/200 pages · depth 3/)).toBeInTheDocument();
     expect(within(profile).getByText(/TLS tools detected: none \(protocol\/cipher checks will be reported as skipped\)/)).toBeInTheDocument();
+    await u.click(within(card).getByRole("button", { name: "Advanced options" }));
     await u.click(within(card).getByRole("switch", { name: /CORS check/ }));
     await waitFor(() => expect(calls.some((c) => c.path.endsWith("/web-scan-profile") && c.query.get("check_cors") === "false")).toBe(true));
     await u.type(within(card).getByRole("textbox", { name: /targets/i }), "https://app.example.com/");
@@ -160,6 +161,7 @@ describe("web scan start dialog", () => {
     await within(card).findByLabelText("Web scan profile details");
     await u.click(within(card).getByLabelText("Scan engine"));
     await u.click(await screen.findByRole("option", { name: /OWASP ZAP/ }));
+    await u.click(within(card).getByRole("button", { name: "Advanced options" }));
     // native-only controls disappear once ZAP is selected
     expect(within(card).queryByRole("switch", { name: /CORS check/ })).not.toBeInTheDocument();
     expect(within(card).getByLabelText(/Spider duration/)).toBeInTheDocument();
