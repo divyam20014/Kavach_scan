@@ -701,6 +701,7 @@ export interface RepoScanEngineResult {
   status: "completed" | "failed";
   findings?: number;
   error?: string;
+  errors?: string[];
 }
 
 export interface RepoScanSummary {

@@ -180,6 +180,16 @@ export function RepoScanSummaryPanel({ scan, ready }: { scan: ScanJob; ready: bo
               </Table.Tbody>
             </Table>
           </Card>
+          {Object.entries(s.engines).some(([, r]) => (r.errors?.length ?? 0) > 0) && (
+            <Card withBorder component="section" aria-labelledby="repo-scan-tool-errors-h">
+              <Title order={2} size="h4" id="repo-scan-tool-errors-h" mb="sm">Files the tools could not analyze</Title>
+              <List size="sm">
+                {Object.entries(s.engines).flatMap(([name, r]) =>
+                  (r.errors ?? []).map((e, i) => <List.Item key={`${name}-${i}`}>{humanize(name)}: {e}</List.Item>),
+                )}
+              </List>
+            </Card>
+          )}
           {s.limitations.length > 0 && (
             <Card withBorder component="section" aria-labelledby="repo-scan-limits-h">
               <Title order={2} size="h4" id="repo-scan-limits-h" mb="sm">Limitations of this scan</Title>

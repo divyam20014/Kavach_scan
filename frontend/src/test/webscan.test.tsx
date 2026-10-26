@@ -254,7 +254,7 @@ describe("web scan detail tabs", () => {
   it("shows the repo_scan summary panel and hides web-only tabs for module=repo_scan", async () => {
     const repoScanSummary = {
       engines: {
-        semgrep: { status: "completed", findings: 2 },
+        semgrep: { status: "completed", findings: 2, errors: ["Could not parse broken.py: syntax error at line 3"] },
         gitleaks: { status: "completed", findings: 1 },
         trivy: { status: "failed", error: "trivy exited with status 1" },
       },
@@ -276,6 +276,8 @@ describe("web scan detail tabs", () => {
     expect(await screen.findByText(/Static analysis only/)).toBeInTheDocument();
     expect(screen.getByText("Semgrep")).toBeInTheDocument();
     expect(screen.getByText("trivy exited with status 1")).toBeInTheDocument();
+    // Semgrep's own `errors` list (files it could not parse) is surfaced, not dropped
+    expect(screen.getByText(/Could not parse broken.py/)).toBeInTheDocument();
     // web-only and surface-only tabs never appear for a repo_scan job
     expect(screen.queryByRole("tab", { name: "Pages / endpoints" })).not.toBeInTheDocument();
     expect(screen.queryByRole("tab", { name: "Coverage" })).not.toBeInTheDocument();

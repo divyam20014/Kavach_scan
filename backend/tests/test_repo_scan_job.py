@@ -175,6 +175,65 @@ def test_repo_scan_dispatches_all_three_engines_and_creates_findings(
     assert set(summary["engines"]) == {"semgrep", "gitleaks", "trivy"}
 
 
+def test_semgreps_own_errors_list_is_surfaced_not_silently_dropped(
+    repo: StorageRepository,
+    settings: RuntimeSettings,
+    tmp_path: Path,
+) -> None:
+    """Roadmap Phase 2 increment 6 (TBD-089): Semgrep's own `errors` list (e.g. a file it
+    could not parse) was parsed since TBD-084 but never wired into the summary or the
+    scan's own warnings -- a partial scan must never look identical to a clean one."""
+    runner = RepoScanRunner(
+        semgrep_availability=lambda: sys.executable,
+        gitleaks_availability=lambda: sys.executable,
+        trivy_availability=lambda: sys.executable,
+        trivy_db_ready=lambda: True,
+    )
+    jm = _manager(repo, settings, runner)
+    project = _repo_scan_project(repo, tmp_path)
+    scan, _created = jm.submit(
+        project.project_id,
+        StartScanRequest(
+            module=ScanModule.REPO_SCAN,
+            targets=["repo-scan"],
+            parameters={"engines": ["semgrep"]},
+            confirmed=True,
+        ),
+    )
+
+    semgrep_output = {
+        "results": [],
+        "errors": ["Could not parse broken.py: syntax error at line 3"],
+    }
+
+    import app.scanners.repo_scan.runner as runner_mod
+
+    def fake_semgrep_argv(executable, repo_path, **kw):  # noqa: ANN001, ANN201
+        code = f"import sys; sys.stdout.write({json.dumps(json.dumps(semgrep_output))})"
+        return [sys.executable, "-c", code]
+
+    mp = pytest.MonkeyPatch()
+    mp.setattr(runner_mod, "semgrep_argv", fake_semgrep_argv)
+    try:
+        jm.start()
+        try:
+            done = wait_for(repo, project.project_id, scan.scan_id, terminal, timeout=30)
+        finally:
+            jm.stop()
+    finally:
+        mp.undo()
+
+    # A tool-reported error must never look identical to a cleanly completed scan -- the
+    # job system's own warning-escalation rule already enforces this once `ctx.warn()` runs.
+    assert done.state == ScanState.COMPLETED_WITH_WARNINGS, (done.state, done.errors, done.warnings)
+    assert any("Could not parse broken.py" in w for w in done.warnings)
+    summary_bytes = repo.read_scan_output(
+        project.project_id, scan.scan_id, "repo_scan_summary.json"
+    )
+    summary = json.loads(summary_bytes)
+    assert "Could not parse broken.py" in summary["engines"]["semgrep"]["errors"][0]
+
+
 def test_repo_scan_rejected_before_starting_when_an_engine_is_unavailable(
     repo: StorageRepository,
     settings: RuntimeSettings,

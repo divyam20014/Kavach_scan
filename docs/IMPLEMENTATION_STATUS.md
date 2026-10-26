@@ -338,3 +338,14 @@ Closes both gaps TBD-087 left open: the scan-start UI for `repo_scan` and the sc
 - **Not yet built**: Semgrep's own `errors` list remains unsurfaced in any UI; no scan-comparison/trend UI for `repo_scan` yet (not a defect, simply new); Phases 3–12 of the wider roadmap.
 - Full rationale in TBD-088.
 
+## Roadmap Phase 2 increment 6: Semgrep's own errors list surfaced (2026-10-26, TBD-089)
+
+Closes the last open item Phase 2 had been carrying since TBD-084: Semgrep's own `errors` list (files it could not analyze) was parsed but never wired anywhere.
+
+- **Backend**: `RepoScanRunner._run_semgrep` now also returns `report_errors(result.stdout)`; all three `_run_*` methods use a uniform `tuple[int, list[str]]` return shape (Gitleaks/Trivy always return `[]`, since neither has an `errors` concept). Any non-empty list is written into `repo_scan_summary.json` under that engine's entry and also recorded via `ctx.warn()`, so a partial scan is never indistinguishable from a clean one.
+- **Observed, correct side effect**: triggering `ctx.warn()` escalates the job to `completed_with_warnings` via the job system's own existing rule — the new test's first draft asserted `COMPLETED` and failed, which was the test being wrong, not the behavior; fixed the test's expectation.
+- **Frontend**: `RepoScanSummaryPanel` gained a "Files the tools could not analyze" card, shown only when at least one engine reports an error.
+- Tests: `tests/test_repo_scan_job.py` (+1), `src/test/webscan.test.tsx` (existing repo_scan detail test extended, no new test function). Full backend suite re-run clean: **2191 passed, 1 skipped**, zero failures; `ruff check`/`ruff format --check`/`mypy` all clean. Frontend: `tsc -b --noEmit`/`eslint .` clean; full suite re-ran clean (86 passed, unchanged count); `npm run build` clean.
+- **Not yet built**: no scan-comparison/trend UI for `repo_scan` yet (not a defect, simply new); Phases 3–12 of the wider roadmap.
+- Full rationale in TBD-089.
+

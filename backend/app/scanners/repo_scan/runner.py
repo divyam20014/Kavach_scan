@@ -44,6 +44,9 @@ from app.scanners.repo_scan.semgrep_adapter import (
 from app.scanners.repo_scan.semgrep_adapter import (
     build_scan_argv as semgrep_argv,
 )
+from app.scanners.repo_scan.semgrep_adapter import (
+    report_errors as semgrep_report_errors,
+)
 from app.scanners.repo_scan.trivy_adapter import (
     TrivyReportError,
     parse_trivy_json,
@@ -122,12 +125,20 @@ class RepoScanRunner:
                 ctx.stage(f"{engine} scan")
                 try:
                     if engine == "semgrep":
-                        count = self._run_semgrep(ctx, profile, repo_path, writer)
+                        count, tool_errors = self._run_semgrep(ctx, profile, repo_path, writer)
                     elif engine == "gitleaks":
-                        count = self._run_gitleaks(ctx, profile, repo_path, writer)
+                        count, tool_errors = self._run_gitleaks(ctx, profile, repo_path, writer)
                     else:
-                        count = self._run_trivy(ctx, profile, repo_path, writer)
+                        count, tool_errors = self._run_trivy(ctx, profile, repo_path, writer)
                     summary[engine] = {"status": "completed", "findings": count}
+                    if tool_errors:
+                        # The tool's own report named specific files it could not analyze
+                        # (e.g. a parse failure) -- a partial scan must never look identical
+                        # to a fully clean one, so these are surfaced both in the summary and
+                        # as scan-level warnings, never silently dropped.
+                        summary[engine]["errors"] = tool_errors[:20]
+                        for e in tool_errors[:20]:
+                            ctx.warn(f"{engine}: {e}")
                 except RuntimeError as exc:
                     ctx.error(f"{engine} failed: {exc}")
                     summary[engine] = {"status": "failed", "error": str(exc)[:500]}
@@ -157,7 +168,7 @@ class RepoScanRunner:
         profile: RepoScanProfile,
         repo_path: Path,
         writer: RepoScanFindingWriter,
-    ) -> int:
+    ) -> tuple[int, list[str]]:
         executable = self.semgrep_availability()
         if not executable:
             raise RuntimeError("semgrep is not available")
@@ -182,7 +193,10 @@ class RepoScanRunner:
             raise RuntimeError(f"could not interpret the semgrep report: {exc}") from exc
         for f in findings:
             writer.write_semgrep(f, tool_version="Semgrep")
-        return len(findings)
+        # Semgrep's own `errors` list (e.g. a file it could not parse) is surfaced
+        # separately from a hard failure -- a scan can produce real findings AND report
+        # that some files were skipped; TBD-084 parsed this but never wired it anywhere.
+        return len(findings), semgrep_report_errors(result.stdout)
 
     def _run_gitleaks(
         self,
@@ -190,7 +204,7 @@ class RepoScanRunner:
         profile: RepoScanProfile,
         repo_path: Path,
         writer: RepoScanFindingWriter,
-    ) -> int:
+    ) -> tuple[int, list[str]]:
         executable = self.gitleaks_availability()
         if not executable:
             raise RuntimeError("gitleaks is not available")
@@ -213,7 +227,7 @@ class RepoScanRunner:
             raise RuntimeError(f"could not interpret the gitleaks report: {exc}") from exc
         for f in findings:
             writer.write_gitleaks(f, tool_version="Gitleaks")
-        return len(findings)
+        return len(findings), []  # Gitleaks' own JSON report has no "errors" list of its own
 
     def _run_trivy(
         self,
@@ -221,7 +235,7 @@ class RepoScanRunner:
         profile: RepoScanProfile,
         repo_path: Path,
         writer: RepoScanFindingWriter,
-    ) -> int:
+    ) -> tuple[int, list[str]]:
         executable = self.trivy_availability()
         if not executable:
             raise RuntimeError("trivy is not available")
@@ -265,4 +279,4 @@ class RepoScanRunner:
             raise RuntimeError(f"could not interpret the trivy report: {exc}") from exc
         for f in findings:
             writer.write_trivy(f, tool_version="Trivy")
-        return len(findings)
+        return len(findings), []  # Trivy's own JSON report has no "errors" list of its own
