@@ -57,10 +57,53 @@ def test_validate_parameters_rejects_an_unknown_parameter_name() -> None:
     assert any("unknown parameter" in e for e in errors)
 
 
+def test_default_profile_has_no_docker_engines() -> None:
+    profile = build_profile({})
+    assert profile.docker_engines == []
+
+
+def test_build_profile_accepts_docker_engines_as_a_subset_of_selected_engines() -> None:
+    profile = build_profile({"engines": ["semgrep", "gitleaks"], "docker_engines": ["gitleaks"]})
+    assert profile.docker_engines == ["gitleaks"]
+
+
+def test_build_profile_drops_a_docker_engine_not_in_the_selected_engines() -> None:
+    profile = build_profile({"engines": ["semgrep"], "docker_engines": ["trivy"]})
+    assert profile.docker_engines == []
+
+
+def test_validate_parameters_rejects_a_docker_engine_outside_the_allowed_set() -> None:
+    errors = validate_parameters({"docker_engines": ["nuclei"]}, POLICY)
+    assert any("docker_engines" in e and "subset of" in e for e in errors)
+
+
+def test_validate_parameters_rejects_a_docker_engine_not_among_the_selected_engines() -> None:
+    errors = validate_parameters({"engines": ["semgrep"], "docker_engines": ["trivy"]}, POLICY)
+    assert any("subset of the selected engines" in e for e in errors)
+
+
+def test_validate_parameters_checks_docker_engines_against_the_default_when_engines_omitted() -> (
+    None
+):
+    """`engines` defaults to `["semgrep"]` when not sent at all -- `docker_engines` must be
+    validated against that effective default, not skip validation just because `engines`
+    itself was never sent."""
+    errors = validate_parameters({"docker_engines": ["trivy"]}, POLICY)
+    assert any("subset of the selected engines" in e for e in errors)
+
+
+def test_validate_parameters_rejects_a_repeated_docker_engine() -> None:
+    errors = validate_parameters(
+        {"engines": ["semgrep"], "docker_engines": ["semgrep", "semgrep"]}, POLICY
+    )
+    assert any("docker_engines must not repeat" in e for e in errors)
+
+
 def test_validate_parameters_accepts_a_full_valid_set() -> None:
     errors = validate_parameters(
         {
             "engines": ["semgrep", "gitleaks", "trivy"],
+            "docker_engines": ["gitleaks"],
             "semgrep_config": "p/owasp-top-ten",
             "semgrep_timeout_minutes": 10,
             "gitleaks_timeout_minutes": 10,

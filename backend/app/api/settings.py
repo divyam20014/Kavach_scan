@@ -21,9 +21,18 @@ from app.integrations.process import ProcessPolicyError, run_process
 from app.models.audit import AuditAction
 from app.models.common import StrictModel, utc_now
 from app.models.cve_catalog import CveCatalogRecord
+from app.models.docker_image import DockerImageStatusRecord
 from app.models.settings import AppSettings
 from app.models.trivy_db import TrivyDbStatusRecord
 from app.scanners.repo_scan.availability import find_tool
+from app.scanners.repo_scan.docker_images import (
+    ENGINES as DOCKER_ENGINES,
+)
+from app.scanners.repo_scan.docker_images import (
+    build_pull_argv,
+    build_verify_argv,
+    image_for,
+)
 from app.scanners.repo_scan.trivy_adapter import build_download_db_argv
 from app.services.integrations import (
     TOOL_IDS,
@@ -47,6 +56,7 @@ class IntegrationsSettingsUpdate(StrictModel):
     semgrep_path: str | None = None
     gitleaks_path: str | None = None
     trivy_path: str | None = None
+    docker_path: str | None = None
     online_lookup_credential_alias: str | None = None
 
 
@@ -80,6 +90,7 @@ def update_settings(body: SettingsUpdateRequest, repo: Repository) -> AppSetting
             "semgrep_path",
             "gitleaks_path",
             "trivy_path",
+            "docker_path",
             "online_lookup_credential_alias",
         ):
             value = getattr(body.integrations, field_name)
@@ -260,6 +271,141 @@ def remove_trivy_db_status(repo: Repository) -> None:
     data directory's `diagnostics/trivy_db` folder directly, same as any other cache)."""
     repo.delete_trivy_db_status()
     repo.audit.record(AuditAction.TRIVY_DB_DOWNLOADED, metadata={"action": "status_cleared"})
+
+
+# ------------------------------------------------------------------ Docker-based engines
+# (Docker-based execution roadmap phase 2 of 5, TBD-091: operator-confirmed design --
+# per-engine, additive to a native install, pinned image versions.)
+
+DOCKER_PULL_TIMEOUT_SECONDS = 300.0
+DOCKER_VERIFY_TIMEOUT_SECONDS = 60.0
+
+
+class DockerImageStatusResponse(StrictModel):
+    image: str
+    digest: str
+    size_bytes: int
+    verified_version: str
+    pulled_at: str
+
+
+def _docker_image_response(record: DockerImageStatusRecord) -> DockerImageStatusResponse:
+    return DockerImageStatusResponse(
+        image=record.image,
+        digest=record.digest,
+        size_bytes=record.size_bytes,
+        verified_version=record.verified_version,
+        pulled_at=record.pulled_at.isoformat(),
+    )
+
+
+@router.get(
+    "/integrations/docker/{engine}/image-status",
+    response_model=DockerImageStatusResponse | None,
+)
+def docker_image_status(engine: str, repo: Repository) -> DockerImageStatusResponse | None:
+    """`None` means this engine's pinned image has never been explicitly pulled."""
+    if engine not in DOCKER_ENGINES:
+        raise NotFoundError(f"unknown engine {engine!r}")
+    record = repo.get_docker_image_status(engine)
+    return _docker_image_response(record) if record else None
+
+
+@router.post("/integrations/docker/{engine}/pull-image", response_model=DockerImageStatusResponse)
+def pull_docker_image(engine: str, repo: Repository) -> DockerImageStatusResponse:
+    """The one explicit, operator-initiated action that ever pulls a Docker image for a
+    repo_scan engine -- a scan never pulls one itself, the same "never a silent network
+    fetch" rule TBD-087 already established for Trivy's own vulnerability database. Pulls
+    the pinned image, then runs one bounded verification command inside it (proves the
+    image doesn't just exist locally but actually executes in this environment) before
+    recording success."""
+    if engine not in DOCKER_ENGINES:
+        raise NotFoundError(f"unknown engine {engine!r}")
+    executable = find_tool(repo.get_settings().integrations.docker_path, ["docker"])
+    if not executable:
+        raise ValidationFailedError("Docker is not installed or configured; set its path first")
+    argv = build_pull_argv(executable, engine)
+    try:
+        result = run_process(
+            argv,
+            allowed_executables=[executable],
+            cwd=repo.diagnostics_temp_dir(),
+            timeout=DOCKER_PULL_TIMEOUT_SECONDS,
+            temp_dir=repo.diagnostics_temp_dir(),
+        )
+    except ProcessPolicyError as exc:
+        raise ValidationFailedError(f"could not run docker: {exc}") from exc
+    if result.timed_out:
+        raise ValidationFailedError(
+            f"the pull did not finish within {DOCKER_PULL_TIMEOUT_SECONDS:.0f}s"
+        )
+    if result.exit_code != 0:
+        raise ValidationFailedError(f"docker pull exited with status {result.exit_code}")
+
+    image = image_for(engine)
+    inspect_result = run_process(
+        [executable, "image", "inspect", image, "--format", "{{.Size}} {{index .RepoDigests 0}}"],
+        allowed_executables=[executable],
+        cwd=repo.diagnostics_temp_dir(),
+        timeout=DOCKER_VERIFY_TIMEOUT_SECONDS,
+        temp_dir=repo.diagnostics_temp_dir(),
+    )
+    size_bytes = 0
+    digest = ""
+    inspect_text = inspect_result.stdout.decode("utf-8", "replace").strip()
+    if inspect_result.exit_code == 0 and inspect_text:
+        parts = inspect_text.split(" ", 1)
+        if parts[0].isdigit():
+            size_bytes = int(parts[0])
+        if len(parts) > 1 and "@" in parts[1]:
+            digest = parts[1].split("@", 1)[1][:100]
+
+    verify_argv = build_verify_argv(executable, engine)
+    try:
+        verify_result = run_process(
+            verify_argv,
+            allowed_executables=[executable],
+            cwd=repo.diagnostics_temp_dir(),
+            timeout=DOCKER_VERIFY_TIMEOUT_SECONDS,
+            temp_dir=repo.diagnostics_temp_dir(),
+        )
+    except ProcessPolicyError as exc:
+        raise ValidationFailedError(f"pulled, but could not verify the image: {exc}") from exc
+    if verify_result.exit_code != 0:
+        raise ValidationFailedError(
+            f"the image was pulled but did not run correctly (exit "
+            f"{verify_result.exit_code}); it was not recorded as ready"
+        )
+    verified_version = verify_result.stdout.decode("utf-8", "replace").strip()[:200]
+
+    record = repo.save_docker_image_status(
+        engine,
+        DockerImageStatusRecord(
+            image=image,
+            digest=digest,
+            size_bytes=size_bytes,
+            verified_version=verified_version,
+            pulled_at=utc_now(),
+        ),
+    )
+    repo.audit.record(
+        AuditAction.DOCKER_IMAGE_PULLED,
+        metadata={"engine": engine, "image": record.image, "size_bytes": record.size_bytes},
+    )
+    return _docker_image_response(record)
+
+
+@router.delete("/integrations/docker/{engine}/image-status", status_code=204)
+def remove_docker_image_status(engine: str, repo: Repository) -> None:
+    """Clears only this application's own record that the pull happened -- never removes
+    the image from Docker's own local store (an operator who wants that back runs
+    `docker rmi` themselves, same as any other cache)."""
+    if engine not in DOCKER_ENGINES:
+        raise NotFoundError(f"unknown engine {engine!r}")
+    repo.delete_docker_image_status(engine)
+    repo.audit.record(
+        AuditAction.DOCKER_IMAGE_PULLED, metadata={"engine": engine, "action": "status_cleared"}
+    )
 
 
 # ------------------------------------------------------------------ CVE catalog

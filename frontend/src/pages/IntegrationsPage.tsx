@@ -5,10 +5,12 @@ import { ApiError } from "../api/client";
 import {
   useCveCatalog,
   useDeleteCveCatalog,
+  useDockerImageStatus,
   useDownloadTrivyDb,
   useImportCveCatalog,
   useIntegrationSelftest,
   useIntegrations,
+  usePullDockerImage,
   useSettings,
   useTrivyDbStatus,
   useUpdateSettings,
@@ -41,6 +43,7 @@ export function IntegrationsPage() {
 
         <CveCatalogCard />
         <TrivyDbCard />
+        <DockerImagesCard />
         <ToolPathSettingsCard />
       </Stack>
     </>
@@ -195,6 +198,66 @@ function TrivyDbCard() {
   );
 }
 
+const DOCKER_ENGINES: { value: "semgrep" | "gitleaks" | "trivy"; label: string }[] = [
+  { value: "semgrep", label: "Semgrep" },
+  { value: "gitleaks", label: "Gitleaks" },
+  { value: "trivy", label: "Trivy" },
+];
+
+function DockerEngineImageRow({ engine, label }: { engine: "semgrep" | "gitleaks" | "trivy"; label: string }) {
+  const status = useDockerImageStatus(engine);
+  const pullMutation = usePullDockerImage(engine);
+
+  const onPull = () =>
+    pullMutation.mutate(undefined, {
+      onSuccess: () => notifications.show({ color: "green", message: `${label} Docker image pulled` }),
+      onError: (e) => notifications.show({ color: "red", title: "Pull failed", message: e instanceof ApiError ? e.describe() : "Unexpected error" }),
+    });
+
+  return (
+    <Group justify="space-between" wrap="wrap" py="xs">
+      <div>
+        <Text size="sm" fw={500}>{label}</Text>
+        {status.isPending ? (
+          <Loading label="Checking image status…" />
+        ) : status.isError ? (
+          <ErrorAlert error={status.error} />
+        ) : !status.data ? (
+          <Text size="xs" c="dimmed">Not pulled yet.</Text>
+        ) : (
+          <Group gap="xs">
+            <Badge variant="outline">{status.data.image}</Badge>
+            <Badge variant="outline">{(status.data.size_bytes / (1024 * 1024)).toFixed(0)} MB</Badge>
+            <Text size="xs" c="dimmed">verified {status.data.verified_version} · pulled {formatDateTime(status.data.pulled_at)}</Text>
+          </Group>
+        )}
+      </div>
+      <Button variant="default" size="xs" onClick={onPull} loading={pullMutation.isPending}>
+        {status.data ? "Re-pull image" : "Pull image…"}
+      </Button>
+    </Group>
+  );
+}
+
+function DockerImagesCard() {
+  return (
+    <Card withBorder component="section" aria-labelledby="docker-images-h">
+      <Title order={2} size="h4" id="docker-images-h" mb="sm">Docker images (optional, per engine)</Title>
+      <Text size="sm" c="dimmed" mb="sm">
+        An alternative to installing Semgrep/Gitleaks/Trivy locally — pull a pinned, versioned
+        image once, per engine. Never pulled automatically by a scan. Requires Docker (see above).
+      </Text>
+      <Stack gap={0}>
+        {DOCKER_ENGINES.map((e, i) => (
+          <div key={e.value} style={i > 0 ? { borderTop: "1px solid var(--mantine-color-gray-3)" } : undefined}>
+            <DockerEngineImageRow engine={e.value} label={e.label} />
+          </div>
+        ))}
+      </Stack>
+    </Card>
+  );
+}
+
 function ToolPathSettingsCard() {
   const settings = useSettings();
   const update = useUpdateSettings();
@@ -205,6 +268,7 @@ function ToolPathSettingsCard() {
   const [semgrepPath, setSemgrepPath] = useState("");
   const [gitleaksPath, setGitleaksPath] = useState("");
   const [trivyPath, setTrivyPath] = useState("");
+  const [dockerPath, setDockerPath] = useState("");
   const [credentialAlias, setCredentialAlias] = useState("");
   const [loadedRevision, setLoadedRevision] = useState<number | null>(null);
 
@@ -219,6 +283,7 @@ function ToolPathSettingsCard() {
       setSemgrepPath(settings.data.integrations.semgrep_path);
       setGitleaksPath(settings.data.integrations.gitleaks_path);
       setTrivyPath(settings.data.integrations.trivy_path);
+      setDockerPath(settings.data.integrations.docker_path);
       setLoadedRevision(settings.data.revision);
     }
   }, [settings.data, loadedRevision]);
@@ -235,6 +300,7 @@ function ToolPathSettingsCard() {
           semgrep_path: semgrepPath,
           gitleaks_path: gitleaksPath,
           trivy_path: trivyPath,
+          docker_path: dockerPath,
           ...(credentialAlias ? { online_lookup_credential_alias: credentialAlias } : {}),
         },
       },
@@ -292,6 +358,12 @@ function ToolPathSettingsCard() {
               description="A specific trivy executable. Leave blank to use the one on PATH."
               placeholder="auto-detect"
               value={trivyPath} onChange={(e) => setTrivyPath(e.currentTarget.value)}
+            />
+            <TextInput
+              label="Docker path"
+              description="A specific docker CLI executable. Leave blank to use the one on PATH."
+              placeholder="auto-detect"
+              value={dockerPath} onChange={(e) => setDockerPath(e.currentTarget.value)}
             />
             <TextInput
               type="password"

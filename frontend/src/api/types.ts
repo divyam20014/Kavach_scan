@@ -981,6 +981,7 @@ export interface IntegrationsSettings {
   semgrep_path: string;
   gitleaks_path: string;
   trivy_path: string;
+  docker_path: string;
   online_lookup_credential_alias: string;
 }
 
@@ -1003,6 +1004,7 @@ export interface IntegrationsSettingsUpdate {
   semgrep_path?: string;
   gitleaks_path?: string;
   trivy_path?: string;
+  docker_path?: string;
   online_lookup_credential_alias?: string;
 }
 
@@ -1051,4 +1053,12 @@ export interface TrivyDbStatus {
   downloaded_at: string;
   trivy_version: string;
   size_bytes: number;
+}
+
+export interface DockerImageStatus {
+  image: string;
+  digest: string;
+  size_bytes: number;
+  verified_version: string;
+  pulled_at: string;
 }

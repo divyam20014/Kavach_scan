@@ -64,6 +64,7 @@ class IntegrationsSettings(StrictModel):
     semgrep_path: ToolPath = ""  # the semgrep executable; auto-detected from PATH otherwise
     gitleaks_path: ToolPath = ""  # the gitleaks executable; auto-detected from PATH otherwise
     trivy_path: ToolPath = ""  # the trivy executable; auto-detected from PATH otherwise
+    docker_path: ToolPath = ""  # the docker CLI executable; auto-detected from PATH otherwise
     online_lookup_credential_alias: CredentialAlias = ""
 
 

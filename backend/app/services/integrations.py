@@ -41,6 +41,7 @@ TOOL_IDS: tuple[str, ...] = (
     "semgrep",
     "gitleaks",
     "trivy",
+    "docker",
 )
 
 _CAPABILITIES: dict[str, str] = {
@@ -62,6 +63,10 @@ _CAPABILITIES: dict[str, str] = {
     "detection/self-test only in this release — repository-scan job wiring, including "
     "explicit operator consent to the vulnerability database's own first-time download, "
     "is a separate, later increment).",
+    "docker": "Docker, as an optional per-engine alternative to a locally installed "
+    "Semgrep/Gitleaks/Trivy (roadmap Phase 2, TBD-090) — detection/self-test only in this "
+    "release; running a scan via a container is a separate, later increment. Self-test "
+    "requires the Docker daemon to actually be reachable, not just the CLI installed.",
 }
 _TROUBLESHOOTING: dict[str, str] = {
     "nmap": "Install Nmap and ensure it is on PATH, or set an explicit path in Settings. "
@@ -79,6 +84,9 @@ _TROUBLESHOOTING: dict[str, str] = {
     "PATH, or set an explicit path in Settings.",
     "trivy": "Install Trivy (https://github.com/aquasecurity/trivy) and ensure it is on "
     "PATH, or set an explicit path in Settings.",
+    "docker": "Install Docker (https://www.docker.com/) and ensure the daemon is running. "
+    "A 'detected' Docker CLI with a self-test error usually means the daemon is not "
+    "reachable (Docker Desktop not started).",
 }
 
 _SELFTEST_TIMEOUT_SECONDS = 20.0
@@ -116,6 +124,7 @@ def _configured_path(settings: IntegrationsSettings, tool_id: str) -> str:
         "semgrep": settings.semgrep_path,
         "gitleaks": settings.gitleaks_path,
         "trivy": settings.trivy_path,
+        "docker": settings.docker_path,
     }[tool_id]
 
 
@@ -144,6 +153,11 @@ def _detect_path(tool_id: str, configured: str) -> str:
         # Trivy ships as a single static binary an operator places on PATH themselves,
         # same as Gitleaks -- plain PATH lookup.
         return find_executable(["trivy"]) or ""
+    if tool_id == "docker":
+        # The Docker CLI is a normal PATH executable -- plain PATH lookup, same as the
+        # others. Detection alone never confirms the daemon is reachable: that is what
+        # the self-test's own version_args check (below) exists to do.
+        return find_executable(["docker"]) or ""
     found = detect_tls_tools()
     match = next((t for t in found if t.name == tool_id), None)
     return match.executable if match else ""
@@ -217,6 +231,12 @@ def _version_args(tool_id: str, executable: str) -> list[str]:
         return ["version"]
     if tool_id == "trivy":
         return ["--version"]
+    if tool_id == "docker":
+        # Confirmed directly: this single command proves both the CLI works AND the
+        # daemon is actually reachable -- `.Server` is only populated by a real daemon
+        # round trip, so a stopped Docker Desktop fails this cleanly (non-zero exit),
+        # never a false "verified" from the client binary alone.
+        return ["version", "--format", "{{.Server.Version}}"]
     return TlsToolSpec(tool_id, executable).version_args()
 
 

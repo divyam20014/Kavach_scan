@@ -5,6 +5,7 @@ export type RepoScanEngine = "semgrep" | "gitleaks" | "trivy";
 
 export interface RepoScanOptions {
   engines: RepoScanEngine[];
+  docker_engines: RepoScanEngine[];
   semgrep_config: string;
   semgrep_timeout_minutes: number;
   gitleaks_timeout_minutes: number;
@@ -13,6 +14,7 @@ export interface RepoScanOptions {
 
 export const DEFAULT_REPO_SCAN_OPTIONS: RepoScanOptions = {
   engines: ["semgrep"],
+  docker_engines: [],
   semgrep_config: "p/security-audit",
   semgrep_timeout_minutes: 5,
   gitleaks_timeout_minutes: 5,
@@ -39,6 +41,7 @@ const ENGINES: { value: RepoScanEngine; label: string }[] = [
  * other scan-profile components' own convention. */
 export function repoScanParams(o: RepoScanOptions): ScanParams {
   const p: ScanParams = { engines: o.engines };
+  if (o.docker_engines.length) p.docker_engines = o.docker_engines;
   if (o.semgrep_config !== DEFAULT_REPO_SCAN_OPTIONS.semgrep_config) p.semgrep_config = o.semgrep_config;
   if (o.semgrep_timeout_minutes !== DEFAULT_REPO_SCAN_OPTIONS.semgrep_timeout_minutes) p.semgrep_timeout_minutes = o.semgrep_timeout_minutes;
   if (o.gitleaks_timeout_minutes !== DEFAULT_REPO_SCAN_OPTIONS.gitleaks_timeout_minutes) p.gitleaks_timeout_minutes = o.gitleaks_timeout_minutes;
@@ -65,17 +68,55 @@ export function RepoScanOptionsPanel({
       ) : (
         <Text size="sm" c="dimmed">Scanning: <strong>{repositoryPath}</strong></Text>
       )}
-      <Checkbox.Group
-        label="Engines"
-        value={value.engines}
-        onChange={(v) => set("engines", (v.length ? v : ["semgrep"]) as RepoScanEngine[])}
-      >
-        <Stack mt={4} gap={6}>
-          {ENGINES.map((e) => (
-            <Checkbox key={e.value} value={e.value} label={e.label} />
-          ))}
+      <div>
+        <Text size="sm" fw={500} mb={4}>Engines</Text>
+        <Stack gap={6}>
+          {ENGINES.map((e) => {
+            const checked = value.engines.includes(e.value);
+            const viaDocker = value.docker_engines.includes(e.value);
+            return (
+              <div key={e.value}>
+                <Checkbox
+                  label={e.label}
+                  checked={checked}
+                  onChange={(ev) => {
+                    const on = ev.currentTarget.checked;
+                    const engines = on
+                      ? [...value.engines, e.value]
+                      : value.engines.filter((x) => x !== e.value);
+                    const docker_engines = on
+                      ? value.docker_engines
+                      : value.docker_engines.filter((x) => x !== e.value);
+                    onChange({
+                      ...value,
+                      engines: (engines.length ? engines : ["semgrep"]) as RepoScanEngine[],
+                      docker_engines,
+                    });
+                  }}
+                />
+                {checked && (
+                  <Checkbox
+                    ml="xl"
+                    mt={2}
+                    size="xs"
+                    label="Run via Docker (uses the pulled image instead of a native install — see Integrations)"
+                    checked={viaDocker}
+                    onChange={(ev) => {
+                      const on = ev.currentTarget.checked;
+                      set(
+                        "docker_engines",
+                        on
+                          ? [...value.docker_engines, e.value]
+                          : value.docker_engines.filter((x) => x !== e.value),
+                      );
+                    }}
+                  />
+                )}
+              </div>
+            );
+          })}
         </Stack>
-      </Checkbox.Group>
+      </div>
       {value.engines.includes("semgrep") && (
         <Select
           label="Semgrep ruleset"

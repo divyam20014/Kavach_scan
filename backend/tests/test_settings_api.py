@@ -22,6 +22,7 @@ def test_get_settings_returns_defaults(client: TestClient) -> None:
         "semgrep_path": "",
         "gitleaks_path": "",
         "trivy_path": "",
+        "docker_path": "",
         "online_lookup_credential_alias": "",
     }
 
@@ -53,6 +54,7 @@ def test_patch_settings_accepts_every_tool_path_field_the_integrations_page_send
                 "semgrep_path": sys.executable,
                 "gitleaks_path": sys.executable,
                 "trivy_path": sys.executable,
+                "docker_path": sys.executable,
             }
         },
     )
@@ -62,6 +64,7 @@ def test_patch_settings_accepts_every_tool_path_field_the_integrations_page_send
     assert integ["semgrep_path"] == sys.executable
     assert integ["gitleaks_path"] == sys.executable
     assert integ["trivy_path"] == sys.executable
+    assert integ["docker_path"] == sys.executable
 
 
 def test_patch_settings_rejects_a_relative_tool_path(client: TestClient) -> None:
@@ -207,6 +210,129 @@ def test_download_trivy_db_reports_a_clean_error_on_nonzero_exit(
     resp = client.post("/api/integrations/trivy/download-db")
     assert resp.status_code == 422
     assert client.get("/api/integrations/trivy/db-status").json() is None
+
+
+def test_docker_image_status_is_none_before_any_pull(client: TestClient) -> None:
+    resp = client.get("/api/integrations/docker/semgrep/image-status")
+    assert resp.status_code == 200
+    assert resp.json() is None
+
+
+def test_docker_image_status_rejects_an_unknown_engine(client: TestClient) -> None:
+    resp = client.get("/api/integrations/docker/nuclei/image-status")
+    assert resp.status_code == 404
+
+
+def test_pull_docker_image_cleanly_errors_when_docker_is_not_available(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import app.api.settings as settings_api
+
+    monkeypatch.setattr(settings_api, "find_tool", lambda configured, names: "")
+    resp = client.post("/api/integrations/docker/semgrep/pull-image")
+    assert resp.status_code == 422
+    assert client.get("/api/integrations/docker/semgrep/image-status").json() is None
+
+
+def test_pull_docker_image_rejects_an_unknown_engine(client: TestClient) -> None:
+    resp = client.post("/api/integrations/docker/nuclei/pull-image")
+    assert resp.status_code == 404
+
+
+def test_pull_docker_image_runs_the_real_argv_and_saves_status(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The *pull* and *verify* argvs are mocked to true no-ops (no real network fetch of a
+    400+ MB image in the automated suite; see TBD-091's own live verification for the real
+    invocations). The `docker image inspect` call is left real (against `sys.executable`,
+    which cannot understand it) to prove the route degrades safely -- `size_bytes`/`digest`
+    default to 0/"" rather than ever failing the whole request over cosmetic metadata."""
+    import app.api.settings as settings_api
+
+    client.patch("/api/settings", json={"integrations": {"docker_path": sys.executable}})
+    monkeypatch.setattr(
+        settings_api, "build_pull_argv", lambda executable, engine: [executable, "-c", "pass"]
+    )
+    monkeypatch.setattr(
+        settings_api,
+        "build_verify_argv",
+        lambda executable, engine: [executable, "-c", "print('1.182.1')"],
+    )
+    resp = client.post("/api/integrations/docker/semgrep/pull-image")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["verified_version"] == "1.182.1"
+    assert body["image"] == "semgrep/semgrep:1.182.1"
+    assert body["size_bytes"] == 0  # the real `docker image inspect` call failed harmlessly
+
+    status = client.get("/api/integrations/docker/semgrep/image-status").json()
+    assert status["verified_version"] == "1.182.1"
+
+    audit = client.get("/api/audit").json()
+    assert any(e["action"] == "docker_image_pulled" for e in audit["items"])
+
+
+def test_pull_docker_image_reports_a_clean_error_on_nonzero_pull_exit(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import app.api.settings as settings_api
+
+    client.patch("/api/settings", json={"integrations": {"docker_path": sys.executable}})
+    monkeypatch.setattr(
+        settings_api,
+        "build_pull_argv",
+        lambda executable, engine: [executable, "-c", "import sys; sys.exit(1)"],
+    )
+    resp = client.post("/api/integrations/docker/semgrep/pull-image")
+    assert resp.status_code == 422
+    assert client.get("/api/integrations/docker/semgrep/image-status").json() is None
+
+
+def test_pull_docker_image_reports_a_clean_error_when_verification_fails(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A pull can succeed while the image still does not run correctly in this environment
+    (e.g. a platform mismatch) -- this must never be recorded as a ready image."""
+    import app.api.settings as settings_api
+
+    client.patch("/api/settings", json={"integrations": {"docker_path": sys.executable}})
+    monkeypatch.setattr(
+        settings_api, "build_pull_argv", lambda executable, engine: [executable, "-c", "pass"]
+    )
+    monkeypatch.setattr(
+        settings_api,
+        "build_verify_argv",
+        lambda executable, engine: [executable, "-c", "import sys; sys.exit(1)"],
+    )
+    resp = client.post("/api/integrations/docker/semgrep/pull-image")
+    assert resp.status_code == 422
+    assert client.get("/api/integrations/docker/semgrep/image-status").json() is None
+
+
+def test_remove_docker_image_status_clears_it(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import app.api.settings as settings_api
+
+    client.patch("/api/settings", json={"integrations": {"docker_path": sys.executable}})
+    monkeypatch.setattr(
+        settings_api, "build_pull_argv", lambda executable, engine: [executable, "-c", "pass"]
+    )
+    monkeypatch.setattr(
+        settings_api,
+        "build_verify_argv",
+        lambda executable, engine: [executable, "-c", "print('1.182.1')"],
+    )
+    client.post("/api/integrations/docker/semgrep/pull-image")
+    assert client.get("/api/integrations/docker/semgrep/image-status").json() is not None
+    resp = client.delete("/api/integrations/docker/semgrep/image-status")
+    assert resp.status_code == 204
+    assert client.get("/api/integrations/docker/semgrep/image-status").json() is None
+
+
+def test_remove_docker_image_status_rejects_an_unknown_engine(client: TestClient) -> None:
+    resp = client.delete("/api/integrations/docker/nuclei/image-status")
+    assert resp.status_code == 404
 
 
 def test_remove_trivy_db_status_clears_it(

@@ -27,6 +27,7 @@ def _set_tool_path(repo: StorageRepository, tool_id: str, path: str) -> None:
         "semgrep": "semgrep_path",
         "gitleaks": "gitleaks_path",
         "trivy": "trivy_path",
+        "docker": "docker_path",
     }[tool_id]
     settings = repo.get_settings()
     settings.integrations = IntegrationsSettings(**{field: path})
@@ -175,6 +176,59 @@ def test_trivy_selftest_succeeds_against_a_real_executable(repo: StorageReposito
     assert result.status == "verified"
     assert result.version  # python's own --version banner, used as a generic smoke test
     assert result.last_error == ""
+
+
+def test_docker_detected_via_plain_path_lookup_not_candidate_directories(
+    repo: StorageRepository, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The Docker CLI is a normal PATH executable -- detection is a plain `find_executable`
+    call, same as Semgrep/Gitleaks/Trivy's."""
+    monkeypatch.setattr(integrations_mod, "find_executable", lambda names: "/usr/bin/docker")
+    statuses = {s.id: s for s in list_integration_statuses(repo)}
+    assert statuses["docker"].status == "detected"
+    assert statuses["docker"].detected_path == "/usr/bin/docker"
+
+
+def test_docker_selftest_succeeds_when_the_daemon_is_reachable(
+    repo: StorageRepository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Confirmed directly against a real local Docker Desktop installation (TBD-090):
+    `docker version --format "{{.Server.Version}}"` prints a bare version string (e.g.
+    "28.3.3") on stdout and exits 0 only when the daemon actually answers -- this is why
+    that exact command, not just `docker --version`, is used as the self-test."""
+    script = _write_script(tmp_path, "print('28.3.3')\n")
+    _set_tool_path(repo, "docker", sys.executable)
+    monkeypatch.setattr(
+        integrations_mod, "_version_args", lambda tool_id, executable: [str(script)]
+    )
+    result = run_selftest(repo, "docker")
+    assert result.status == "verified"
+    assert result.version
+    assert result.last_error == ""
+
+
+def test_docker_selftest_fails_cleanly_when_the_daemon_is_unreachable(
+    repo: StorageRepository, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Confirmed directly (TBD-090, by pointing `DOCKER_HOST` at an unreachable address
+    rather than stopping a real daemon): the CLI being installed is never enough on its
+    own -- a non-zero exit with a connection error on stderr and nothing on stdout must
+    never be reported as verified, the same false-pass class every other tool's self-test
+    already guards against."""
+    script = _write_script(
+        tmp_path,
+        "import sys\n"
+        "print('error during connect: ...daemon running?', file=sys.stderr)\n"
+        "sys.exit(1)\n",
+    )
+    _set_tool_path(repo, "docker", sys.executable)
+    monkeypatch.setattr(
+        integrations_mod, "_version_args", lambda tool_id, executable: [str(script)]
+    )
+    result = run_selftest(repo, "docker")
+    assert result.status == "error"
+    assert result.version == ""
+    assert "exited with status 1" in result.last_error
 
 
 def test_selftest_reports_an_error_for_a_tool_that_produces_no_version_output(

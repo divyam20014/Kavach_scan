@@ -6,6 +6,13 @@ One module, three engines -- not three modules -- the same "one module bundles m
 internal checks" shape `web_app` already has for its own rule groups (TBD-086's own design
 note). `engines` is a list, not a scalar, which `ScanJob.parameters`' own `ParamValue`
 type (`app/models/scan.py`) already permits.
+
+`docker_engines` (Docker-based execution roadmap, phase 4 of 5, TBD-093) selects which of
+the *selected* `engines` run via a pulled Docker image instead of a native install --
+per-engine, confirmed by the operator (TBD-090): an operator can run Semgrep natively and
+Gitleaks via Docker in the same scan. Defaults to empty (every engine runs natively,
+unchanged from before this parameter existed) -- Docker is strictly additive, never a
+silent default, matching the same operator-confirmed design.
 """
 
 from __future__ import annotations
@@ -29,6 +36,12 @@ MAX_TIMEOUT_MINUTES = 60
 # parameter name -> (type, default, description). Unknown names are rejected at submit.
 PARAMETERS: dict[str, tuple[type, Any, str]] = {
     "engines": (list, DEFAULT_ENGINES, "Which engines to run: semgrep, gitleaks, trivy"),
+    "docker_engines": (
+        list,
+        [],
+        "Which of the selected engines run via a pulled Docker image instead of a "
+        "native install (subset of `engines`; default: none, all native)",
+    ),
     "semgrep_config": (str, "p/security-audit", f"Semgrep ruleset, one of {SEMGREP_CONFIGS}"),
     "semgrep_timeout_minutes": (int, 5, "Bounded Semgrep scan duration, minutes"),
     "gitleaks_timeout_minutes": (int, 5, "Bounded Gitleaks scan duration, minutes"),
@@ -52,6 +65,7 @@ LIMITATIONS = [
 class RepoScanProfile(StrictModel):
     profile_version: int = PROFILE_VERSION
     engines: list[Engine] = Field(default_factory=lambda: list(DEFAULT_ENGINES))
+    docker_engines: list[Engine] = Field(default_factory=list)
     semgrep_config: str = "p/security-audit"
     semgrep_timeout_minutes: int = 5
     gitleaks_timeout_minutes: int = 5
@@ -89,6 +103,16 @@ def validate_parameters(params: dict[str, Any], policy: ScanPolicy) -> list[str]
                 errors.append(f"engines must be a subset of {ENGINES}, got {e!r}")
         if len(set(engines)) != len(engines):
             errors.append("engines must not repeat an entry")
+    docker_engines = params.get("docker_engines")
+    if isinstance(docker_engines, list):
+        for e in docker_engines:
+            if e not in ENGINES:
+                errors.append(f"docker_engines must be a subset of {ENGINES}, got {e!r}")
+        if len(set(docker_engines)) != len(docker_engines):
+            errors.append("docker_engines must not repeat an entry")
+        effective_engines = engines if isinstance(engines, list) and engines else DEFAULT_ENGINES
+        if any(e not in effective_engines for e in docker_engines):
+            errors.append("docker_engines must be a subset of the selected engines")
     config = params.get("semgrep_config")
     if isinstance(config, str) and config not in SEMGREP_CONFIGS:
         errors.append(f"semgrep_config must be one of {SEMGREP_CONFIGS}, got {config!r}")
@@ -118,12 +142,19 @@ def build_profile(params: dict[str, Any]) -> RepoScanProfile:
     )
     if not engines:
         engines = list(DEFAULT_ENGINES)
+    docker_engines_raw = params.get("docker_engines")
+    docker_engines: list[Engine] = (
+        [e for e in docker_engines_raw if e in engines]
+        if isinstance(docker_engines_raw, list)
+        else []
+    )
     config = params.get("semgrep_config")
     semgrep_timeout = params.get("semgrep_timeout_minutes")
     gitleaks_timeout = params.get("gitleaks_timeout_minutes")
     trivy_timeout = params.get("trivy_timeout_minutes")
     return RepoScanProfile(
         engines=engines,
+        docker_engines=docker_engines,
         semgrep_config=config
         if isinstance(config, str) and config in SEMGREP_CONFIGS
         else ("p/security-audit"),

@@ -780,6 +780,16 @@ def default_runners(
             return False
         return repo.get_trivy_db_status() is not None
 
+    def docker_availability() -> str:
+        if repo is None:
+            return find_tool("", ["docker"])
+        return find_tool(repo.get_settings().integrations.docker_path, ["docker"])
+
+    def docker_image_ready(engine: str) -> bool:
+        if repo is None:
+            return False
+        return repo.get_docker_image_status(engine) is not None
+
     runners: dict[ScanModule, Runner] = {
         ScanModule.WEB_APP: WebAppRunner(
             cve_catalog=cve_catalog, zap_availability=zap_availability
@@ -791,6 +801,8 @@ def default_runners(
             gitleaks_availability=gitleaks_availability,
             trivy_availability=trivy_availability,
             trivy_db_ready=trivy_db_ready,
+            docker_availability=docker_availability,
+            docker_image_ready=docker_image_ready,
         ),
     }
     if settings.enable_selftest_jobs:

@@ -38,6 +38,7 @@ from app.models.common import (
     utc_now,
 )
 from app.models.cve_catalog import CveCatalogRecord
+from app.models.docker_image import DockerImageStatusRecord
 from app.models.evidence import MAX_EXCERPT_CHARS, EvidenceMetadata
 from app.models.finding import Finding
 from app.models.import_artifact import ImportArtifact
@@ -1050,6 +1051,40 @@ class StorageRepository:
         with self._lock(path):
             path.unlink(missing_ok=True)
 
+    _DOCKER_IMAGE_ENGINES = ("semgrep", "gitleaks", "trivy")
+
+    def _docker_image_status_path(self, engine: str) -> Path:
+        # `engine` always comes from a route-level Literal in practice, but validated here
+        # too: never build a filesystem path from unvalidated input (TBD-091).
+        if engine not in self._DOCKER_IMAGE_ENGINES:
+            raise ValueError(f"unknown engine {engine!r}")
+        return self.paths.path("diagnostics", "docker_images", f"{engine}.json")
+
+    def get_docker_image_status(self, engine: str) -> DockerImageStatusRecord | None:
+        """`None` means this engine's pinned image has never been explicitly pulled --
+        the same "absence is the honest signal" shape `get_trivy_db_status()` uses."""
+        path = self._docker_image_status_path(engine)
+        if not path.exists():
+            return None
+        return self._read_model(path, "docker_image_status", DockerImageStatusRecord)  # type: ignore[no-any-return]
+
+    def save_docker_image_status(
+        self, engine: str, record: DockerImageStatusRecord
+    ) -> DockerImageStatusRecord:
+        path = self._docker_image_status_path(engine)
+        ensure_dir(path.parent)
+        with self._lock(path):
+            current = self.get_docker_image_status(engine)
+            if current is not None:
+                record = record.model_copy(update={"revision": current.revision + 1})
+            self._write_model(path, record)
+        return record
+
+    def delete_docker_image_status(self, engine: str) -> None:
+        path = self._docker_image_status_path(engine)
+        with self._lock(path):
+            path.unlink(missing_ok=True)
+
     def read_scan_output(
         self, project_id: str, scan_id: str, name: str, *, max_bytes: int = 8 * 1024 * 1024
     ) -> bytes:
@@ -1607,6 +1642,7 @@ _MODELS: dict[str, type[BaseModel]] = {
     "settings": AppSettings,
     "cve_catalog": CveCatalogRecord,
     "trivy_db_status": TrivyDbStatusRecord,
+    "docker_image_status": DockerImageStatusRecord,
 }
 assert set(_MODELS) | {"audit"} == set(CURRENT_VERSIONS)  # noqa: S101 - import-time consistency check
 ID_PATTERN = ANY_ID_RE

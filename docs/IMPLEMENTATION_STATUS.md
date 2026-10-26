@@ -349,3 +349,61 @@ Closes the last open item Phase 2 had been carrying since TBD-084: Semgrep's own
 - **Not yet built**: no scan-comparison/trend UI for `repo_scan` yet (not a defect, simply new); Phases 3–12 of the wider roadmap.
 - Full rationale in TBD-089.
 
+## Docker-based engine execution, phase 1 of 5: detection and self-test (2026-10-26, TBD-090)
+
+Operator-requested enhancement (not a MASTER_SPEC phase): Docker as an optional, per-engine alternative to a locally installed Semgrep/Gitleaks/Trivy. A 5-phase roadmap was presented and confirmed (per-engine toggle, additive not a replacement, pinned image versions) before any code was written; this is phase 1 only — detection/self-test for Docker itself, no image pull, no container run.
+
+- **Implemented**: Docker added as an 8th integration tool (`docker_path` setting, plain PATH detection via `find_executable(["docker"])`, same pattern as Semgrep/Gitleaks/Trivy).
+- **Self-test command chosen and verified against two real, directly observed conditions**: `docker version --format "{{.Server.Version}}"` — run for real with the daemon actually reachable (clean `28.3.3`, exit 0), and with the daemon made unreachable **without stopping the operator's real running daemon** (via `DOCKER_HOST=tcp://127.0.0.1:1`, a port nothing listens on — confirmed clean exit 1, connection error on stderr, nothing on stdout). This specific command proves the daemon round-trips, not just that the CLI binary exists — `docker --version` alone would not have caught a stopped Docker Desktop.
+- **The `IntegrationsSettingsUpdate` checklist item TBD-087 recommended was actually followed this time**: `docker_path` was added to the Settings PATCH DTO in the same step as the model field, not as an afterthought.
+- Tests: `tests/test_integrations.py` (+3: detection, self-test success, self-test failure when the daemon is unreachable); `tests/test_support_bundle.py`/`tests/test_settings_api.py` updated for the 8th tool. Full backend suite re-run clean; `ruff check`/`ruff format --check`/`mypy` all clean. Frontend: a "Docker path" field added to Integrations; `tsc -b --noEmit`/`eslint .` clean; `integrations.test.tsx` re-ran clean; `npm run build` clean.
+- **Not yet built**: Phase 2 (explicit per-engine "pull Docker image" action, mirroring the Trivy-database-download UX) through Phase 5 (a per-engine "Run via Docker" toggle in the scan-start dialog) — actually running a scan via a container does not exist in any form yet.
+- Full rationale in TBD-090.
+
+## Docker-based engine execution, phase 2 of 5: pull pinned images (2026-10-26, TBD-091)
+
+An explicit, one-time, per-engine "pull Docker image" action for Semgrep/Gitleaks/Trivy, mirroring the Trivy-database-download UX rather than a per-scan checkbox. No job-system wiring yet — still preparation only.
+
+- **Pinned image tags, each independently confirmed by a real `docker pull`**: `semgrep/semgrep:1.182.1`, `ghcr.io/gitleaks/gitleaks:v8.30.1`, `aquasec/trivy:0.76.1` — matching the exact native-binary versions already verified in TBD-084/085/086.
+- **A real, non-obvious discovery**: the official `semgrep/semgrep` image has no `ENTRYPOINT` — running `docker run --rm <image> --version` fails outright ("executable file not found: --version"). Every Semgrep-image invocation must prefix the literal word `semgrep` itself; Gitleaks/Trivy's own images need no such prefix.
+- **Pull endpoint**: `docker pull <pinned image>`, then a separate bounded verification run (`docker run --rm <image> <version-check>`) — a pull that succeeds but an image that doesn't actually execute in this environment is never recorded as ready.
+- **Two defects from TBD-087's own pattern were caught immediately this time, not by the full suite**: the new migration kind was registered in both registries in the same step the model was added, and the two new routes were added to the static route allowlist right after writing them — both confirmed by a narrow, targeted test run seconds later.
+- Tests: `tests/test_docker_images.py` (6, new), `tests/test_settings_api.py` (+9). Full backend suite re-run clean; `ruff check`/`ruff format --check`/`mypy` all clean. Frontend: a "Docker images" card on Integrations with one row per engine; `tsc -b --noEmit`/`eslint .` clean; full suite re-ran clean (87 passed, was 86, +1); `npm run build` clean.
+- The three pulled images (1.58 GB + 263 MB + 76.6 MB) were deliberately kept, not deleted — they're the real artifact this feature caches for reuse.
+- **Not yet built**: Phase 3 (per-engine Docker-mode scan argv builders) through Phase 5 (scan-start dialog toggle) — actually running a scan via a container does not exist yet.
+- Full rationale in TBD-091.
+
+## Docker-based engine execution, phase 3 of 5: Docker-mode argv builders (2026-10-26, TBD-092)
+
+Per-engine Docker-mode scan argv builders (`app/scanners/repo_scan/docker_argv.py`) — the volume-mount shape for Semgrep/Gitleaks/Trivy, verified against real `docker run` invocations using the images pulled in TBD-091. Pure argv construction only — no process execution, no job-system wiring yet.
+
+- **Real discovery**: Trivy's own `--output -` produces no output at all inside a container (confirmed directly) — unlike Semgrep/Gitleaks, whose flags genuinely write to stdout in a container. Trivy's Docker-mode argv mounts a dedicated writable report directory instead.
+- **Real discovery**: both the repo mount and Trivy's DB cache mount can be fully read-only — confirmed directly that a `--skip-db-update` run against a `:ro` cache completes successfully. Trivy's database is never a parameter in Docker mode: `--skip-db-update` is always present, since the DB only ever reaches a container via the read-only mount of the host's already-pulled cache.
+- **Real Windows-path fact**: a `-v` mount's host side accepts a plain Windows path with drive letter and backslashes as-is — confirmed directly (after an initial Git-Bash-only test gave a misleading result due to MSYS path mangling, not a real issue since the actual backend uses Python's own `subprocess`, not a shell).
+- Docker-mode Semgrep/Gitleaks report paths come back container-absolute (`/src/app.py`) rather than repo-relative — confirmed the existing, unmodified native parsers accept this without any change.
+- Tests: `tests/test_repo_scan_docker_argv.py` (10, new). Full backend suite re-run clean; `ruff check`/`ruff format --check`/`mypy` all clean; static guards confirm no file I/O or process execution in the new module.
+- **Not yet built**: Phase 4 (job-system wiring: `use_docker` parameter, `RepoScanRunner` branching, availability checks) through Phase 5 (scan-start dialog toggle) — actually running a scan via a container does not exist yet.
+- Full rationale in TBD-092.
+
+## Docker-based engine execution, phase 4 of 5: job-system wiring (2026-10-26, TBD-093)
+
+A per-engine `docker_engines` parameter on `RepoScanProfile`, `RepoScanRunner` branching to the Docker argv builders instead of a native executable, and availability checks (Docker itself + that engine's pulled image) enforced before a job starts. A `repo_scan` job can now actually run an engine via Docker, end to end.
+
+- `docker_engines` defaults to empty (byte-for-byte unchanged native behavior); validated against the *effective* engines list so it can't be snuck past validation by omitting `engines`.
+- `RepoScanRunner` gained `docker_availability`/`docker_image_ready` closures; an unavailable Docker daemon or an unpulled image is rejected before a job starts.
+- **Verified with a real, unmocked, end-to-end run** against the real local Docker daemon and the real images pulled in TBD-091 (disposable project/repo/data dir, deleted after): a real `repo_scan` job with Gitleaks via Docker found 2 real findings (`generic-api-key`, `github-pat`) with zero errors; a second run mixed Semgrep-via-Docker and Gitleaks-via-Docker in one scan, confirming per-engine mixing genuinely works — Semgrep's own zero findings against that sample were independently cross-checked outside the app to rule out a silent failure.
+- Tests (mocked, for the automated suite): `tests/test_repo_scan_profile.py` (+7), `tests/test_repo_scan_job.py` (+3). Full backend suite re-run clean; `ruff check`/`ruff format --check`/`mypy` all clean.
+- **Not yet built**: Phase 5 (the scan-start dialog's own per-engine "Run via Docker" toggle) — Docker-mode execution is reachable only via a direct API call today.
+- Full rationale in TBD-093.
+
+## Docker-based engine execution, phase 5 of 5 (final): scan-start dialog toggle (2026-10-26, TBD-094)
+
+The scan-start dialog's own per-engine "Run via Docker" toggle — the last gap. Docker-based repository scanning is now reachable end to end through the UI.
+
+- `RepoScanOptions` gained `docker_engines` (default `[]`); the engine-selection UI shows a "Run via Docker" sub-checkbox beneath each *selected* engine. Unchecking an engine also clears its Docker toggle in the same state update.
+- Deliberately no client-side Docker-availability pre-check — same posture as every other engine selector in this app (TBD-082/088); an unavailable daemon or unpulled image is still caught by the existing backend rejection (TBD-093).
+- The confirmation dialog shows an "Engines: semgrep (Docker), gitleaks (native)"-shaped summary before the operator confirms.
+- Tests: `src/test/repoScanStart.test.tsx` (+2). `tsc -b --noEmit`/`eslint .` clean; full frontend suite re-ran clean (89 passed, was 87, +2); `npm run build` clean. No backend file touched.
+- **The Docker-based execution roadmap is now complete**: detection (phase 1) → image pull (phase 2) → argv builders, verified against real containers (phase 3) → job-system wiring, verified with a real unmocked end-to-end run (phase 4) → this frontend toggle (phase 5). Docker-based repository scanning is reachable, configurable, and runnable entirely through the UI.
+- Full rationale in TBD-094.
+

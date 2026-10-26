@@ -47,6 +47,7 @@ class AuditAction(StrEnum):
     CVE_CATALOG_REMOVED = "cve_catalog_removed"
     INTEGRATION_SELFTEST_RUN = "integration_selftest_run"
     TRIVY_DB_DOWNLOADED = "trivy_db_downloaded"
+    DOCKER_IMAGE_PULLED = "docker_image_pulled"
     SUPPORT_BUNDLE_EXPORTED = "support_bundle_exported"
 
 

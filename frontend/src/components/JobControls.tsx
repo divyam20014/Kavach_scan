@@ -183,6 +183,13 @@ export function StartJobCard({ project }: { project: Project }) {
               )}
             </>
           )}
+          {isRepoScan && (
+            <Text size="sm">
+              Engines: {repoScanOptions.engines.map((e) => (
+                <Code key={e} mr={4}>{e}{repoScanOptions.docker_engines.includes(e) ? " (Docker)" : " (native)"}</Code>
+              ))}
+            </Text>
+          )}
           <Text size="sm">
             {isRepoScan
               ? "This scan reads local files only; it makes no network requests to any target."

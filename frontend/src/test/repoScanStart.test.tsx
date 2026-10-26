@@ -67,6 +67,58 @@ describe("Repository scan start dialog", () => {
     expect(body.parameters.engines.sort()).toEqual(["gitleaks", "semgrep"]);
   });
 
+  it("toggles an engine to run via Docker and sends docker_engines accordingly", async () => {
+    const withRepoPath = overview({ repository_path: "/srv/some-repo" });
+    const { calls } = mockApi({
+      ...base,
+      [`GET /api/projects/${PID}`]: { body: withRepoPath },
+      [`GET /api/projects/${PID}/scope/policy`]: { body: policy() },
+      "GET /api/jobs/modules": { body: [{ module: "repo_scan", label: "Repository scanner (Semgrep / Gitleaks / Trivy)", available: true, reason: "" }] },
+      [`POST /api/projects/${PID}/scans`]: { status: 202, body: scanRecord },
+      [`GET /api/projects/${PID}/scans/${SID}`]: { body: { scan: scanRecord, active: false, terminal: false, elapsed_seconds: null } },
+    });
+    renderAt(`/projects/${PID}`);
+    const u = userEvent.setup();
+    const card = await screen.findByRole("region", { name: "Start a job" });
+    await u.click(await within(card).findByRole("radio", { name: /Repository scanner/ }));
+
+    // Semgrep is selected by default; its "Run via Docker" sub-checkbox should now be visible.
+    await u.click(within(card).getByRole("checkbox", { name: /Run via Docker/i }));
+
+    await u.click(within(card).getByRole("button", { name: /Review & confirm/ }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("semgrep (Docker)")).toBeInTheDocument();
+    await u.click(within(dialog).getByRole("checkbox", { name: /I confirm/ }));
+    await u.click(within(dialog).getByRole("button", { name: "Start job" }));
+
+    await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path.endsWith("/scans"))).toBe(true));
+    const body = calls.find((c) => c.method === "POST" && c.path.endsWith("/scans"))!.body as {
+      parameters: { engines: string[]; docker_engines: string[] };
+    };
+    expect(body.parameters.engines).toEqual(["semgrep"]);
+    expect(body.parameters.docker_engines).toEqual(["semgrep"]);
+  });
+
+  it("drops a docker toggle when its engine is unchecked", async () => {
+    mockApi({
+      ...base,
+      [`GET /api/projects/${PID}`]: { body: overview({ repository_path: "/srv/some-repo" }) },
+      [`GET /api/projects/${PID}/scope/policy`]: { body: policy() },
+      "GET /api/jobs/modules": { body: [{ module: "repo_scan", label: "Repository scanner (Semgrep / Gitleaks / Trivy)", available: true, reason: "" }] },
+    });
+    renderAt(`/projects/${PID}`);
+    const u = userEvent.setup();
+    const card = await screen.findByRole("region", { name: "Start a job" });
+    await u.click(await within(card).findByRole("radio", { name: /Repository scanner/ }));
+
+    await u.click(within(card).getByRole("checkbox", { name: /Run via Docker/i }));
+    await u.click(within(card).getByRole("checkbox", { name: /^Semgrep/ }));
+    // Unchecking Semgrep removes it (and its Docker toggle) from the engine list; the
+    // panel falls back to the default (Semgrep, native) rather than an empty selection.
+    expect(within(card).getByRole("checkbox", { name: /^Semgrep/ })).toBeChecked();
+    expect(within(card).queryByRole("checkbox", { name: /Run via Docker/i })).not.toBeChecked();
+  });
+
   it("disables starting a repository scan when the project has no repository path", async () => {
     mockApi({
       ...base,

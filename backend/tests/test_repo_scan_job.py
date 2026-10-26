@@ -234,6 +234,106 @@ def test_semgreps_own_errors_list_is_surfaced_not_silently_dropped(
     assert "Could not parse broken.py" in summary["engines"]["semgrep"]["errors"][0]
 
 
+def test_repo_scan_dispatches_a_mix_of_native_and_docker_engines(
+    repo: StorageRepository,
+    settings: RuntimeSettings,
+    tmp_path: Path,
+) -> None:
+    """Roadmap Docker-based execution, phase 4 of 5 (TBD-093): per-engine Docker mode --
+    Semgrep runs via Docker while Gitleaks runs natively in the same scan, confirming the
+    operator-confirmed "per-engine, not global" design actually works end to end."""
+    runner = RepoScanRunner(
+        gitleaks_availability=lambda: sys.executable,
+        docker_availability=lambda: sys.executable,
+        docker_image_ready=lambda engine: True,
+    )
+    jm = _manager(repo, settings, runner)
+    project = _repo_scan_project(repo, tmp_path)
+    scan, _created = jm.submit(
+        project.project_id,
+        StartScanRequest(
+            module=ScanModule.REPO_SCAN,
+            targets=["repo-scan"],
+            parameters={"engines": ["semgrep", "gitleaks"], "docker_engines": ["semgrep"]},
+            confirmed=True,
+        ),
+    )
+
+    import app.scanners.repo_scan.runner as runner_mod
+
+    def fake_semgrep_docker_argv(executable, image, repo_path, **kw):  # noqa: ANN001, ANN201
+        code = f"import sys; sys.stdout.write({json.dumps(json.dumps(_SEMGREP_OUTPUT))})"
+        return [sys.executable, "-c", code]
+
+    def fake_gitleaks_argv(executable, repo_path, **kw):  # noqa: ANN001, ANN201
+        code = f"import sys; sys.stdout.write({json.dumps(json.dumps(_GITLEAKS_OUTPUT))})"
+        return [sys.executable, "-c", code]
+
+    mp = pytest.MonkeyPatch()
+    mp.setattr(runner_mod, "build_semgrep_docker_argv", fake_semgrep_docker_argv)
+    mp.setattr(runner_mod, "gitleaks_argv", fake_gitleaks_argv)
+    try:
+        jm.start()
+        try:
+            done = wait_for(repo, project.project_id, scan.scan_id, terminal, timeout=30)
+        finally:
+            jm.stop()
+    finally:
+        mp.undo()
+
+    assert done.state == ScanState.COMPLETED, (done.state, done.errors, done.warnings)
+    findings = {f.category: f for f in repo.list_findings(project.project_id, limit=50).items}
+    assert set(findings) == {"repo_scan_semgrep", "repo_scan_gitleaks"}
+
+
+def test_repo_scan_rejected_when_docker_engine_selected_but_docker_unavailable(
+    repo: StorageRepository,
+    settings: RuntimeSettings,
+    tmp_path: Path,
+) -> None:
+    runner = RepoScanRunner(docker_availability=lambda: "", docker_image_ready=lambda e: True)
+    jm = _manager(repo, settings, runner)
+    project = _repo_scan_project(repo, tmp_path)
+    from app.core.errors import ValidationFailedError
+
+    with pytest.raises(ValidationFailedError) as exc_info:
+        jm.submit(
+            project.project_id,
+            StartScanRequest(
+                module=ScanModule.REPO_SCAN,
+                targets=["repo-scan"],
+                parameters={"engines": ["semgrep"], "docker_engines": ["semgrep"]},
+                confirmed=True,
+            ),
+        )
+    assert any("docker is not available" in d.message for d in exc_info.value.details)
+
+
+def test_repo_scan_rejected_when_docker_engine_selected_but_image_not_pulled(
+    repo: StorageRepository,
+    settings: RuntimeSettings,
+    tmp_path: Path,
+) -> None:
+    runner = RepoScanRunner(
+        docker_availability=lambda: sys.executable, docker_image_ready=lambda e: False
+    )
+    jm = _manager(repo, settings, runner)
+    project = _repo_scan_project(repo, tmp_path)
+    from app.core.errors import ValidationFailedError
+
+    with pytest.raises(ValidationFailedError) as exc_info:
+        jm.submit(
+            project.project_id,
+            StartScanRequest(
+                module=ScanModule.REPO_SCAN,
+                targets=["repo-scan"],
+                parameters={"engines": ["semgrep"], "docker_engines": ["semgrep"]},
+                confirmed=True,
+            ),
+        )
+    assert any("has not been pulled" in d.message for d in exc_info.value.details)
+
+
 def test_repo_scan_rejected_before_starting_when_an_engine_is_unavailable(
     repo: StorageRepository,
     settings: RuntimeSettings,

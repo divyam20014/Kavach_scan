@@ -29,6 +29,7 @@ import type {
   CveCatalogMetadata,
   IntegrationStatus,
   TrivyDbStatus,
+  DockerImageStatus,
   DashboardSummary,
   DeletionImpact,
   FindingDetailView,
@@ -565,6 +566,23 @@ export function useDownloadTrivyDb() {
   const invalidate = useInvalidateAll();
   return useMutation({
     mutationFn: () => api.post<TrivyDbStatus>("/api/integrations/trivy/download-db"),
+    onSuccess: invalidate,
+  });
+}
+
+export function useDockerImageStatus(engine: string) {
+  return useQuery({
+    queryKey: ["docker-image-status", engine],
+    queryFn: () =>
+      api.get<DockerImageStatus | null>(`/api/integrations/docker/${enc(engine)}/image-status`),
+  });
+}
+
+export function usePullDockerImage(engine: string) {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: () =>
+      api.post<DockerImageStatus>(`/api/integrations/docker/${enc(engine)}/pull-image`),
     onSuccess: invalidate,
   });
 }

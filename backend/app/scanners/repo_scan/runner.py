@@ -15,6 +15,14 @@ Safety properties:
 - `targets` carries no real meaning for this module (the real "target" is the project's
   `repository_path`, not a URL) -- `check_targets` accepts a single placeholder, the same
   pattern `app/scanners/apisec/runner.py` already uses for its own non-URL target shape.
+
+Docker-based execution (roadmap phase 4 of 5, TBD-093): any engine in
+`profile.docker_engines` runs via its pulled, pinned Docker image (`app/scanners/
+repo_scan/docker_argv.py`) instead of a native executable -- per-engine, confirmed by the
+operator (TBD-090). Availability for a Docker-mode engine requires both Docker itself and
+that specific engine's image to have been explicitly pulled (TBD-091); Trivy's own
+vulnerability-database requirement applies identically in both modes, since the database
+is data the host manages, not something tied to which binary runs the scan.
 """
 
 from __future__ import annotations
@@ -28,6 +36,12 @@ from typing import Any
 from app.core.redaction import redact
 from app.jobs.context import JobContext, JobStop, RunResult
 from app.models.project import ScanPolicy
+from app.scanners.repo_scan.docker_argv import (
+    build_gitleaks_docker_argv,
+    build_semgrep_docker_argv,
+    build_trivy_docker_argv,
+)
+from app.scanners.repo_scan.docker_images import image_for
 from app.scanners.repo_scan.findings import RepoScanFindingWriter
 from app.scanners.repo_scan.gitleaks_adapter import (
     GitleaksReportError,
@@ -72,6 +86,8 @@ class RepoScanRunner:
     gitleaks_availability: Callable[[], str] = field(default=lambda: "")
     trivy_availability: Callable[[], str] = field(default=lambda: "")
     trivy_db_ready: Callable[[], bool] = field(default=lambda: False)
+    docker_availability: Callable[[], str] = field(default=lambda: "")
+    docker_image_ready: Callable[[str], bool] = field(default=lambda engine: False)
 
     def check_targets(
         self, targets: list[str], policy: ScopePolicy
@@ -91,7 +107,15 @@ class RepoScanRunner:
             "trivy": self.trivy_availability,
         }
         for engine in profile.engines:
-            if not availability[engine]():
+            if engine in profile.docker_engines:
+                if not self.docker_availability():
+                    errors.append("docker is not available (not installed or not configured)")
+                elif not self.docker_image_ready(engine):
+                    errors.append(
+                        f"{engine}'s Docker image has not been pulled yet -- pull it from "
+                        "the Integrations page first"
+                    )
+            elif not availability[engine]():
                 errors.append(f"{engine} is not available (not installed or not configured)")
         if "trivy" in profile.engines and not self.trivy_db_ready():
             errors.append(
@@ -169,16 +193,33 @@ class RepoScanRunner:
         repo_path: Path,
         writer: RepoScanFindingWriter,
     ) -> tuple[int, list[str]]:
-        executable = self.semgrep_availability()
-        if not executable:
-            raise RuntimeError("semgrep is not available")
         timeout_seconds = profile.semgrep_timeout_minutes * 60
-        argv = semgrep_argv(
-            executable, repo_path, config=profile.semgrep_config, timeout_seconds=timeout_seconds
-        )
+        if "semgrep" in profile.docker_engines:
+            docker_executable = self.docker_availability()
+            if not docker_executable:
+                raise RuntimeError("docker is not available")
+            argv = build_semgrep_docker_argv(
+                docker_executable,
+                image_for("semgrep"),
+                repo_path,
+                config=profile.semgrep_config,
+                timeout_seconds=timeout_seconds,
+            )
+            allowed = [docker_executable]
+        else:
+            executable = self.semgrep_availability()
+            if not executable:
+                raise RuntimeError("semgrep is not available")
+            argv = semgrep_argv(
+                executable,
+                repo_path,
+                config=profile.semgrep_config,
+                timeout_seconds=timeout_seconds,
+            )
+            allowed = [executable]
         result = ctx.run_process(
             argv,
-            allowed_executables=[executable],
+            allowed_executables=allowed,
             timeout=timeout_seconds + 30,
             max_output_bytes=MAX_PROCESS_OUTPUT_BYTES,
         )
@@ -205,14 +246,24 @@ class RepoScanRunner:
         repo_path: Path,
         writer: RepoScanFindingWriter,
     ) -> tuple[int, list[str]]:
-        executable = self.gitleaks_availability()
-        if not executable:
-            raise RuntimeError("gitleaks is not available")
         timeout_seconds = profile.gitleaks_timeout_minutes * 60
-        argv = gitleaks_argv(executable, repo_path, timeout_seconds=timeout_seconds)
+        if "gitleaks" in profile.docker_engines:
+            docker_executable = self.docker_availability()
+            if not docker_executable:
+                raise RuntimeError("docker is not available")
+            argv = build_gitleaks_docker_argv(
+                docker_executable, image_for("gitleaks"), repo_path, timeout_seconds=timeout_seconds
+            )
+            allowed = [docker_executable]
+        else:
+            executable = self.gitleaks_availability()
+            if not executable:
+                raise RuntimeError("gitleaks is not available")
+            argv = gitleaks_argv(executable, repo_path, timeout_seconds=timeout_seconds)
+            allowed = [executable]
         result = ctx.run_process(
             argv,
-            allowed_executables=[executable],
+            allowed_executables=allowed,
             timeout=timeout_seconds + 30,
             max_output_bytes=MAX_PROCESS_OUTPUT_BYTES,
         )
@@ -236,9 +287,6 @@ class RepoScanRunner:
         repo_path: Path,
         writer: RepoScanFindingWriter,
     ) -> tuple[int, list[str]]:
-        executable = self.trivy_availability()
-        if not executable:
-            raise RuntimeError("trivy is not available")
         if not self.trivy_db_ready():
             raise RuntimeError(
                 "Trivy's vulnerability database has not been downloaded -- download it from "
@@ -246,18 +294,36 @@ class RepoScanRunner:
             )
         timeout_seconds = profile.trivy_timeout_minutes * 60
         report_dir = ctx.repo.scan_work_subdir(ctx.project_id, ctx.scan_id, "trivy_report")
-        report_path = report_dir / "report.json"
-        argv = trivy_argv(
-            executable,
-            repo_path,
-            report_path,
-            ctx.repo.trivy_db_dir(),
-            skip_db_update=True,
-            timeout_seconds=timeout_seconds,
-        )
+        if "trivy" in profile.docker_engines:
+            docker_executable = self.docker_availability()
+            if not docker_executable:
+                raise RuntimeError("docker is not available")
+            argv = build_trivy_docker_argv(
+                docker_executable,
+                image_for("trivy"),
+                repo_path,
+                ctx.repo.trivy_db_dir(),
+                report_dir,
+                timeout_seconds=timeout_seconds,
+            )
+            allowed = [docker_executable]
+        else:
+            executable = self.trivy_availability()
+            if not executable:
+                raise RuntimeError("trivy is not available")
+            report_path = report_dir / "report.json"
+            argv = trivy_argv(
+                executable,
+                repo_path,
+                report_path,
+                ctx.repo.trivy_db_dir(),
+                skip_db_update=True,
+                timeout_seconds=timeout_seconds,
+            )
+            allowed = [executable]
         result = ctx.run_process(
             argv,
-            allowed_executables=[executable],
+            allowed_executables=allowed,
             timeout=timeout_seconds + 30,
             max_output_bytes=MAX_PROCESS_OUTPUT_BYTES,
         )

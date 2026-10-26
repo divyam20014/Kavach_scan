@@ -88,6 +88,9 @@ SYSTEM_ROUTES = {
     # Roadmap Phase 2 (TBD-087)
     "/api/integrations/trivy/db-status",
     "/api/integrations/trivy/download-db",
+    # Docker-based execution roadmap, phase 2 of 5 (TBD-091)
+    "/api/integrations/docker/{engine}/image-status",
+    "/api/integrations/docker/{engine}/pull-image",
 }
 
 # No lifespan: these endpoints must work without storage.

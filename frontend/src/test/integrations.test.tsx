@@ -1,6 +1,6 @@
 // Phase 11 UI: integrations status (never a false "verified" for a merely-detected tool),
 // self-test action, and the local CVE catalog import/remove flow.
-import { screen, waitFor } from "@testing-library/react";
+import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
 import type { AppSettings, CveCatalogMetadata, IntegrationStatus } from "../api/types";
@@ -15,7 +15,7 @@ function settings(overrides: Partial<AppSettings["integrations"]> = {}): AppSett
   return {
     schema_version: 1, product_name: "VAPT Workbench", disk_space_warning_bytes: 0,
     evidence_quota_bytes: null, report_timezone_label: "UTC",
-    integrations: { nmap_path: "", sslyze_path: "", testssl_path: "", zap_path: "", semgrep_path: "", gitleaks_path: "", trivy_path: "", online_lookup_credential_alias: "", ...overrides },
+    integrations: { nmap_path: "", sslyze_path: "", testssl_path: "", zap_path: "", semgrep_path: "", gitleaks_path: "", trivy_path: "", docker_path: "", online_lookup_credential_alias: "", ...overrides },
     revision: 1, updated_at: "2026-10-25T00:00:00Z",
   };
 }
@@ -134,6 +134,43 @@ describe("Integrations page", () => {
     );
     expect(await screen.findByText("Trivy 0.76.1")).toBeInTheDocument();
     expect(screen.getByText(/1\.6\d GB/)).toBeInTheDocument();
+  });
+
+  it("shows a Docker image as not pulled, then pulls it on click", async () => {
+    let pulled = false;
+    const { calls } = mockApi({
+      ...base,
+      "GET /api/integrations": { body: [] },
+      "GET /api/settings": { body: settings() },
+      "GET /api/cve-catalog": { body: null },
+      "GET /api/integrations/trivy/db-status": { body: null },
+      "GET /api/integrations/docker/semgrep/image-status": () => ({
+        body: pulled
+          ? { image: "semgrep/semgrep:1.182.1", digest: "sha256:abc", size_bytes: 431596529, verified_version: "1.182.1", pulled_at: "2026-10-26T00:00:00Z" }
+          : null,
+      }),
+      "GET /api/integrations/docker/gitleaks/image-status": { body: null },
+      "GET /api/integrations/docker/trivy/image-status": { body: null },
+      "POST /api/integrations/docker/semgrep/pull-image": () => {
+        pulled = true;
+        return { body: { image: "semgrep/semgrep:1.182.1", digest: "sha256:abc", size_bytes: 431596529, verified_version: "1.182.1", pulled_at: "2026-10-26T00:00:00Z" } };
+      },
+    });
+    renderAt("/integrations");
+
+    const row = (await screen.findByText("Semgrep")).closest("div")!.parentElement!;
+    expect(await within(row).findByText("Not pulled yet.")).toBeInTheDocument();
+
+    const u = userEvent.setup();
+    await u.click(within(row).getByRole("button", { name: /Pull image/i }));
+
+    await waitFor(() =>
+      expect(
+        calls.some((c) => c.method === "POST" && c.path === "/api/integrations/docker/semgrep/pull-image"),
+      ).toBe(true),
+    );
+    expect(await within(row).findByText("semgrep/semgrep:1.182.1")).toBeInTheDocument();
+    expect(within(row).getByText(/verified 1.182.1/)).toBeInTheDocument();
   });
 
   it("flags a stale catalog", async () => {
