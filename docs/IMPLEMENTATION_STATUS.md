@@ -532,3 +532,15 @@ A real navigation bug fix, a new scan-history link, a Duration column, and a cle
 - Full rationale in TBD-105.
 - **Not yet started**: 11 more phases remain (findings, tables/forms/modals, reporting UX, accessibility pass).
 
+## UI/UX modernization, increment 5 of N: findings (2026-10-27, TBD-106)
+
+The findings list/detail pages were already a comprehensive implementation of most of the spec's own checklist. The one genuine gap: `Finding.evidence_ids` existed in the API response but was never rendered anywhere — an operator had no way to see or view evidence for a finding. Operator explicitly confirmed (via a question) to build the real thing rather than a stub.
+
+- New read-only route `GET /api/projects/{id}/findings/{id}/evidence` (`app/services/findings.py::list_finding_evidence`) reuses 100% existing storage (`get_evidence`) and redaction (`redact_text`, mirroring `reports/builder.py`'s own defense-in-depth second redaction pass) infrastructure — returns metadata + bounded text excerpts only, never a blob's raw bytes.
+- A dangling `evidence_ids` reference is silently skipped, not a 500 — mirrors the existing `get_finding_detail` pattern for a dangling `merged_into` target.
+- New `EvidenceCard` on the finding detail page, shown only when evidence exists.
+- Tests: `tests/test_findings_api.py` (+1: secret redaction + dangling-reference handling), `tests/test_health.py` (route allowlist), `src/test/findings.test.tsx` (+3). Full backend suite re-run clean (2309 passed); full frontend suite re-run clean (102 passed); all lint/type/build checks clean.
+- A live-browser screenshot of the evidence viewer wasn't obtained (seeding real finding+evidence data needs a running scan or direct storage write, neither reachable from the pure-HTTP verification scripts) — judged sufficient given precise unit-test coverage of redaction, dangling-reference handling, and rendered content.
+- Full rationale in TBD-106.
+- **Not yet started**: 10 more phases remain (tables/forms/modals, reporting UX, accessibility pass). Evidence blob download was identified but deliberately not built — flagged for a future decision.
+

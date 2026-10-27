@@ -1,4 +1,4 @@
-import { Alert, Anchor, Badge, Button, Card, Group, List, Modal, Select, SimpleGrid, Stack, Table, Text, Textarea, TextInput, Title } from "@mantine/core";
+import { Alert, Anchor, Badge, Button, Card, Code, Group, List, Modal, Select, SimpleGrid, Stack, Table, Text, Textarea, TextInput, Title } from "@mantine/core";
 import { notifications } from "@mantine/notifications";
 import { useState } from "react";
 import { Link, useParams } from "react-router-dom";
@@ -7,6 +7,7 @@ import {
   useAddFindingComment,
   useAudit,
   useFindingDetail,
+  useFindingEvidence,
   useMergeFinding,
   useUnmergeFinding,
   useUpdateFinding,
@@ -15,7 +16,7 @@ import type { AnalystStatus, BusinessPriority, FindingDetailView } from "../api/
 import { PageHeader } from "../components/PageHeader";
 import { EmptyState, QueryState } from "../components/QueryState";
 import { SeverityLabel } from "../components/StatusLabel";
-import { formatDateTime, humanize } from "../lib/format";
+import { formatBytes, formatDateTime, humanize } from "../lib/format";
 
 const STATUSES: AnalystStatus[] = ["new", "confirmed", "false_positive", "accepted_risk", "fixed", "retest_needed", "needs_review"];
 const PRIORITIES: BusinessPriority[] = ["p1", "p2", "p3", "p4"];
@@ -38,6 +39,65 @@ export function FindingDetailPage() {
 
 function RiskBadge({ tier, score }: { tier: string; score: number }) {
   return <Badge variant="outline" title="Internal prioritization score — not CVSS">{humanize(tier)} risk ({score}/100)</Badge>;
+}
+
+/** The request/response excerpts backing this finding -- already bounded and redacted by
+ * the backend before this ever reaches the client (never a raw, unredacted capture). A
+ * dangling evidence reference (the record was deleted since) is simply absent from the
+ * response, not an error. */
+function EvidenceCard({ projectId, findingId }: { projectId: string; findingId: string }) {
+  const query = useFindingEvidence(projectId, findingId);
+  return (
+    <Card withBorder component="section" aria-labelledby="evidence-h">
+      <Title order={3} size="h5" id="evidence-h" mb="xs">Evidence</Title>
+      <Text size="xs" c="dimmed" mb="sm">
+        Sanitized excerpts captured at scan time — secrets, cookies and tokens are redacted before storage.
+      </Text>
+      <QueryState query={query} loadingLabel="Loading evidence…">
+        {(items) =>
+          items.length === 0 ? (
+            <Text size="sm" c="dimmed">The referenced evidence record(s) are no longer available.</Text>
+          ) : (
+            <Stack gap="md">
+              {items.map((e) => (
+                <Card key={e.evidence_id} withBorder padding="sm">
+                  <Group justify="space-between" mb="xs" wrap="wrap">
+                    <Group gap="xs">
+                      <Badge variant="light">{humanize(e.evidence_type)}</Badge>
+                      {e.source_stage && <Text size="xs" c="dimmed">{e.source_stage}</Text>}
+                    </Group>
+                    <Text size="xs" c="dimmed">
+                      {e.source_tool} · {formatDateTime(e.updated_at)}
+                      {e.has_blob && ` · ${formatBytes(e.blob_size)} attachment`}
+                    </Text>
+                  </Group>
+                  {e.request_excerpt && (
+                    <>
+                      <Text size="xs" fw={600} c="dimmed">Request</Text>
+                      <Code block style={{ maxHeight: 240, overflow: "auto", whiteSpace: "pre-wrap" }}>
+                        {e.request_excerpt}
+                      </Code>
+                    </>
+                  )}
+                  {e.response_excerpt && (
+                    <>
+                      <Text size="xs" fw={600} c="dimmed" mt="xs">Response</Text>
+                      <Code block style={{ maxHeight: 240, overflow: "auto", whiteSpace: "pre-wrap" }}>
+                        {e.response_excerpt}
+                      </Code>
+                    </>
+                  )}
+                  {e.excerpt_truncated && (
+                    <Text size="xs" c="dimmed" mt="xs">Truncated to a bounded size.</Text>
+                  )}
+                </Card>
+              ))}
+            </Stack>
+          )
+        }
+      </QueryState>
+    </Card>
+  );
 }
 
 function FindingDetailBody({
@@ -148,6 +208,8 @@ function FindingDetailBody({
           </Group>
         )}
       </Card>
+
+      {f.evidence_ids.length > 0 && <EvidenceCard projectId={projectId} findingId={findingId} />}
 
       <SimpleGrid cols={{ base: 1, md: 2 }} spacing="md">
         <Card withBorder component="section" aria-labelledby="triage-h">

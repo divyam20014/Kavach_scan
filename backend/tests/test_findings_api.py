@@ -84,6 +84,43 @@ def test_finding_detail_update_comment_and_audit_trail(
     assert "finding_comment_added" in actions
 
 
+def test_finding_evidence_is_redacted_and_a_dangling_reference_is_skipped(
+    client: TestClient, repo: StorageRepository
+) -> None:
+    """UI/UX modernization, findings phase (TBD-106): `evidence_ids` was already on every
+    `Finding` but never had a route to read it back through -- this is that route. A raw
+    secret embedded in an evidence excerpt must never reach the response, and a finding
+    referencing an evidence record that no longer exists must not 500 the whole detail."""
+    from app.models.evidence import EvidenceMetadata
+
+    pid = _project(repo)
+    secret_fragments = ("not", "a", "real", "credential", "0123456789abcdef0123456789abcdef")
+    secret = "-".join(secret_fragments)
+    evidence = repo.save_evidence(
+        EvidenceMetadata(
+            evidence_id=new_id("evidence"),
+            project_id=pid,
+            evidence_type="http_exchange",
+            request_excerpt=f"Cookie: session={secret}",
+            response_excerpt="HTTP/1.1 200 OK",
+        )
+    )
+    dangling_id = new_id("evidence")
+    f = repo.create_finding(
+        make_finding(
+            pid, title="Session cookie exposed", evidence_ids=[evidence.evidence_id, dangling_id]
+        )
+    )
+
+    resp = client.get(f"/api/projects/{pid}/findings/{f.finding_id}/evidence")
+    assert resp.status_code == 200
+    items = resp.json()
+    assert len(items) == 1  # the dangling reference was skipped, not a 500
+    assert items[0]["evidence_id"] == evidence.evidence_id
+    assert secret not in items[0]["request_excerpt"]
+    assert items[0]["response_excerpt"] == "HTTP/1.1 200 OK"
+
+
 def test_update_finding_rejects_unknown_field_and_stale_revision(
     client: TestClient, repo: StorageRepository
 ) -> None:

@@ -16,6 +16,7 @@ from typing import Any, Literal
 from pydantic import Field
 
 from app.core.errors import ConflictError, ValidationFailedError
+from app.core.redaction import redact_text
 from app.models.asset import Asset
 from app.models.audit import AuditAction
 from app.models.common import (
@@ -26,8 +27,10 @@ from app.models.common import (
     StrictModel,
     new_id,
 )
+from app.models.evidence import MAX_EXCERPT_CHARS, EvidenceMetadata
 from app.models.finding import DedupEvent, Finding, FindingComment
 from app.services.risk import RiskBreakdown, max_asset_criticality, score_finding
+from app.storage.errors import StorageError
 from app.storage.repository import StorageRepository
 
 MAX_LIST_PAGE = 200
@@ -265,6 +268,34 @@ def get_finding_detail(
         duplicate_of=duplicate_of,
         merged_duplicates=merged_duplicates,
     )
+
+
+def list_finding_evidence(
+    repo: StorageRepository, project_id: str, finding_id: str
+) -> list[EvidenceMetadata]:
+    """The evidence records a finding's own `evidence_ids` reference, re-redacted here
+    (defense in depth: `save_evidence` already redacts at write time, mirroring
+    `app.reports.builder._redact_evidence`'s own second pass before a report embeds one).
+    A missing or corrupt evidence record is skipped, not a 500 for the whole finding --
+    the same "a dangling reference degrades gracefully" posture already used for a finding's
+    own dangling `merged_into` target."""
+    finding = repo.get_finding(project_id, finding_id)
+    out: list[EvidenceMetadata] = []
+    limit = MAX_EXCERPT_CHARS - 32
+    for evidence_id in finding.evidence_ids:
+        try:
+            meta = repo.get_evidence(project_id, evidence_id)
+        except StorageError:
+            continue
+        out.append(
+            meta.model_copy(
+                update={
+                    "request_excerpt": redact_text(meta.request_excerpt, max_chars=limit),
+                    "response_excerpt": redact_text(meta.response_excerpt, max_chars=limit),
+                }
+            )
+        )
+    return out
 
 
 _EDITABLE_FIELDS = {"analyst_status", "business_impact", "business_priority", "remediation"}

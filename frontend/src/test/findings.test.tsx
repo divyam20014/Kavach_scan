@@ -3,7 +3,7 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it } from "vitest";
-import type { Finding, FindingDetailView, FindingListItem } from "../api/types";
+import type { EvidenceMetadata, Finding, FindingDetailView, FindingListItem } from "../api/types";
 import { mockApi, overview, PID, renderAt, VERSION } from "./utils";
 
 const FID = "fnd_" + "a".repeat(32);
@@ -180,5 +180,50 @@ describe("Finding detail page", () => {
     expect(region).toHaveTextContent(xss);
     expect(document.querySelector("script[src], img[onerror]")).toBeNull();
     expect((window as unknown as { __pwned?: boolean }).__pwned).toBeUndefined();
+  });
+
+  it("does not show an Evidence section when the finding has no evidence_ids", async () => {
+    detailApi();
+    renderAt(`/projects/${PID}/findings/${FID}`);
+    await screen.findByRole("heading", { name: "Reflected XSS in search" });
+    expect(screen.queryByRole("heading", { name: "Evidence" })).not.toBeInTheDocument();
+  });
+
+  it("fetches and shows sanitized evidence excerpts when the finding references evidence", async () => {
+    const EID = "evd_" + "e".repeat(32);
+    const evidence: EvidenceMetadata = {
+      schema_version: 1, revision: 1, created_at: "2026-11-01T09:00:00Z", updated_at: "2026-11-01T09:00:00Z",
+      evidence_id: EID, project_id: PID, scan_id: null, finding_ids: [FID], evidence_type: "http_exchange",
+      source_stage: "crawl", source_tool: "vapt-web-scanner",
+      request_excerpt: "GET /search?q=%3Cscript%3E HTTP/1.1", response_excerpt: "HTTP/1.1 200 OK",
+      excerpt_truncated: false, bytes_observed: 128, sha256: "a".repeat(64), classification: "confidential",
+      has_blob: false, blob_sha256: null, blob_size: null,
+    };
+    const { calls } = mockApi({
+      ...base,
+      [`GET /api/projects/${PID}`]: { body: overview() },
+      [`GET /api/projects/${PID}/findings/${FID}`]: { body: detailView({ finding: finding({ evidence_ids: [EID] }) }) },
+      [`GET /api/projects/${PID}/findings/${FID}/evidence`]: { body: [evidence] },
+      "GET /api/audit": { body: { items: [], offset: 0, limit: 50, has_more: false, corrupt_lines: 0 } },
+    });
+    renderAt(`/projects/${PID}/findings/${FID}`);
+    const region = await screen.findByRole("region", { name: "Evidence" });
+    expect(await within(region).findByText(/GET \/search/)).toBeInTheDocument();
+    expect(within(region).getByText("HTTP/1.1 200 OK")).toBeInTheDocument();
+    expect(within(region).getByText("Http exchange")).toBeInTheDocument();
+    expect(calls.some((c) => c.path === `/api/projects/${PID}/findings/${FID}/evidence`)).toBe(true);
+  });
+
+  it("shows a clear message when a referenced evidence record is no longer available", async () => {
+    mockApi({
+      ...base,
+      [`GET /api/projects/${PID}`]: { body: overview() },
+      [`GET /api/projects/${PID}/findings/${FID}`]: { body: detailView({ finding: finding({ evidence_ids: ["evd_" + "f".repeat(32)] }) }) },
+      [`GET /api/projects/${PID}/findings/${FID}/evidence`]: { body: [] },
+      "GET /api/audit": { body: { items: [], offset: 0, limit: 50, has_more: false, corrupt_lines: 0 } },
+    });
+    renderAt(`/projects/${PID}/findings/${FID}`);
+    const region = await screen.findByRole("region", { name: "Evidence" });
+    expect(await within(region).findByText(/no longer available/)).toBeInTheDocument();
   });
 });

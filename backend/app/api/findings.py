@@ -25,6 +25,7 @@ from app.models.common import (
     ShortText,
     StrictModel,
 )
+from app.models.evidence import EvidenceMetadata
 from app.models.finding import BusinessPriority
 from app.services import findings as svc
 from app.services.risk import formula_description
@@ -93,6 +94,16 @@ def list_findings(
 @router.get("/projects/{project_id}/findings/{finding_id}", response_model=svc.FindingDetailView)
 def finding_detail(project_id: str, finding_id: str, repo: Repository) -> svc.FindingDetailView:
     return svc.get_finding_detail(repo, project_id, finding_id)
+
+
+@router.get(
+    "/projects/{project_id}/findings/{finding_id}/evidence",
+    response_model=list[EvidenceMetadata],
+)
+def finding_evidence(project_id: str, finding_id: str, repo: Repository) -> list[EvidenceMetadata]:
+    """Read-only; never includes a blob's raw bytes, only its already-bounded, redacted
+    request/response excerpts -- the same shape a generated report already embeds."""
+    return svc.list_finding_evidence(repo, project_id, finding_id)
 
 
 class FindingUpdateRequest(StrictModel):

@@ -448,6 +448,39 @@ export interface FindingDetailView {
   merged_duplicates: Finding[];
 }
 
+export type EvidenceType =
+  | "http_exchange"
+  | "tls_certificate"
+  | "dns_record"
+  | "tool_output"
+  | "text_excerpt"
+  | "file_signature";
+
+export interface EvidenceMetadata {
+  schema_version: 1;
+  revision: number;
+  created_at: string;
+  updated_at: string;
+  evidence_id: string;
+  project_id: string;
+  scan_id: string | null;
+  finding_ids: string[];
+  evidence_type: EvidenceType;
+  source_stage: string;
+  source_tool: string;
+  // Already bounded and redacted by the backend before this ever reaches the client --
+  // never a raw, unredacted capture.
+  request_excerpt: string;
+  response_excerpt: string;
+  excerpt_truncated: boolean;
+  bytes_observed: number | null;
+  sha256: string | null;
+  classification: "public" | "internal" | "confidential" | "restricted";
+  has_blob: boolean;
+  blob_sha256: string | null;
+  blob_size: number | null;
+}
+
 export interface CatalogView {
   catalog: string;
   version: string;

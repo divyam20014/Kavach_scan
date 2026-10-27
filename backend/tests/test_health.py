@@ -62,6 +62,7 @@ SYSTEM_ROUTES = {
     "/api/imports/formats",
     # Phase 09
     "/api/projects/{project_id}/findings/{finding_id}",
+    "/api/projects/{project_id}/findings/{finding_id}/evidence",
     "/api/projects/{project_id}/findings/{finding_id}/comments",
     "/api/projects/{project_id}/findings/{finding_id}/merge",
     "/api/projects/{project_id}/findings/{finding_id}/unmerge",

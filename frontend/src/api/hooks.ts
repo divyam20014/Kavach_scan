@@ -32,6 +32,7 @@ import type {
   DockerImageStatus,
   DashboardSummary,
   DeletionImpact,
+  EvidenceMetadata,
   FindingDetailView,
   FindingListItem,
   Page,
@@ -104,6 +105,14 @@ export function useFindingDetail(projectId: string | undefined, findingId: strin
   return useQuery({
     queryKey: ["finding", projectId, findingId],
     queryFn: () => api.get<FindingDetailView>(`/api/projects/${enc(projectId ?? "")}/findings/${enc(findingId ?? "")}`),
+    enabled: Boolean(projectId && findingId),
+  });
+}
+
+export function useFindingEvidence(projectId: string | undefined, findingId: string | undefined) {
+  return useQuery({
+    queryKey: ["finding-evidence", projectId, findingId],
+    queryFn: () => api.get<EvidenceMetadata[]>(`/api/projects/${enc(projectId ?? "")}/findings/${enc(findingId ?? "")}/evidence`),
     enabled: Boolean(projectId && findingId),
   });
 }
