@@ -27,6 +27,7 @@ CURRENT_VERSIONS: dict[str, int] = {
     "audit": 1,
     "cve_catalog": 1,
     "trivy_db_status": 1,
+    "trivy_checks_status": 1,
     "docker_image_status": 1,
 }
 

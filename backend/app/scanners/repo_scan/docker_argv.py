@@ -182,24 +182,28 @@ def build_trivy_docker_argv(
     cache_dir: Path,
     report_dir: Path,
     *,
+    scanners: tuple[str, ...] = ("vuln",),
     timeout_seconds: int = 300,
 ) -> list[str]:
     """`docker run --rm -v <repo>:/src:ro -v <cache_dir>:/cache:ro -v <report_dir>:/report
-    <image> fs /src --scanners vuln --format json --output /report/report.json --cache-dir
-    /cache --disable-telemetry --no-progress --skip-version-check --timeout <n>s
-    --skip-db-update`. `--skip-db-update` is never a parameter here (unlike the native
-    adapter's own `skip_db_update` toggle): Docker mode has no equivalent to the native
-    "operator opts into a direct download" path at all -- the database only ever reaches a
-    container by mounting the host's own already-downloaded cache (TBD-087/091), so
-    skipping its own update is always correct, never optional. The report directory mount
-    is the only writable one in this module -- see the module docstring for why Trivy's own
-    `--output -` could not be used."""
+    <image> fs /src --scanners <scanners> --format json --output /report/report.json
+    --cache-dir /cache --disable-telemetry --no-progress --skip-version-check --timeout
+    <n>s --skip-db-update`, plus `--skip-check-update` whenever `"misconfig"` is requested
+    (security/reliability/scope roadmap Phase 4, TBD-111 -- mirrors the native adapter's
+    own rule). Neither skip flag is ever a parameter here (unlike the native adapter's own
+    `skip_db_update` toggle): Docker mode has no equivalent to the native "operator opts
+    into a direct download" path at all -- both the vulnerability database and the
+    misconfiguration checks bundle only ever reach a container by mounting the host's own
+    already-downloaded cache (TBD-087/091/111), read-only, so skipping their own update is
+    always correct, never optional. The report directory mount is the only writable one in
+    this module -- see the module docstring for why Trivy's own `--output -` could not be
+    used."""
     if not TRIVY_MIN_TIMEOUT_SECONDS <= timeout_seconds <= TRIVY_MAX_TIMEOUT_SECONDS:
         raise DockerArgvError(
             f"timeout_seconds must be between {TRIVY_MIN_TIMEOUT_SECONDS} and "
             f"{TRIVY_MAX_TIMEOUT_SECONDS}"
         )
-    return [
+    argv = [
         docker_executable,
         "run",
         "--rm",
@@ -213,7 +217,7 @@ def build_trivy_docker_argv(
         "fs",
         CONTAINER_REPO_PATH,
         "--scanners",
-        "vuln",
+        ",".join(scanners),
         "--format",
         "json",
         "--output",
@@ -227,6 +231,11 @@ def build_trivy_docker_argv(
         f"{timeout_seconds}s",
         "--skip-db-update",
     ]
+    if "misconfig" in scanners:
+        argv.append("--skip-check-update")
+    if "license" in scanners:
+        argv.append("--license-full")  # mirrors the native adapter's own rule (TBD-112)
+    return argv
 
 
 def build_trivy_db_download_docker_argv(

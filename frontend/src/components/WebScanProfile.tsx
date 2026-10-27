@@ -14,6 +14,9 @@ export interface WebOptions {
   seed_paths: string;
   zap_spider_max_minutes: number | "";
   zap_wait_max_minutes: number | "";
+  auth_scheme: "none" | "bearer" | "header" | "cookie" | "basic";
+  auth_header_name: string;
+  auth_secret_ref: string;
 }
 
 export const DEFAULT_WEB_OPTIONS: WebOptions = {
@@ -27,6 +30,9 @@ export const DEFAULT_WEB_OPTIONS: WebOptions = {
   seed_paths: "",
   zap_spider_max_minutes: "",
   zap_wait_max_minutes: "",
+  auth_scheme: "none",
+  auth_header_name: "Authorization",
+  auth_secret_ref: "",
 };
 
 /** Start-request parameters: only values that differ from defaults are sent. */
@@ -42,6 +48,13 @@ export function webParams(o: WebOptions): ScanParams {
   if (o.engine === "zap") {
     if (o.zap_spider_max_minutes !== "") p.zap_spider_max_minutes = o.zap_spider_max_minutes;
     if (o.zap_wait_max_minutes !== "") p.zap_wait_max_minutes = o.zap_wait_max_minutes;
+  }
+  if (o.auth_scheme !== "none") {
+    p.auth_scheme = o.auth_scheme;
+    if (o.auth_header_name.trim() && o.auth_header_name.trim() !== "Authorization") {
+      p.auth_header_name = o.auth_header_name.trim();
+    }
+    if (o.auth_secret_ref.trim()) p.auth_secret_ref = o.auth_secret_ref.trim();
   }
   return p;
 }
@@ -83,6 +96,39 @@ export function WebScanOptions({ value, onChange, limits }: { value: WebOptions;
                 onChange={(v) => set("max_depth", typeof v === "number" ? v : "")} placeholder={String(limits.depth)} />
             </SimpleGrid>
             <TextInput label="Extra start paths (comma separated, e.g. /app/, /docs/)" value={value.seed_paths} onChange={(e) => set("seed_paths", e.currentTarget.value)} />
+            <Select
+              label="Authenticated crawling"
+              description="Crawl with a session credential already obtained outside this app. No login is ever attempted here; the secret is never typed here either — only the environment alias it's stored under."
+              data={[
+                { value: "none", label: "None (unauthenticated)" },
+                { value: "bearer", label: "Bearer token" },
+                { value: "header", label: "Custom header" },
+                { value: "cookie", label: "Session cookie" },
+                { value: "basic", label: "HTTP Basic" },
+              ]}
+              value={value.auth_scheme}
+              onChange={(v) => v && set("auth_scheme", v as WebOptions["auth_scheme"])}
+              allowDeselect={false}
+            />
+            {value.auth_scheme !== "none" && (
+              <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="xs">
+                {value.auth_scheme !== "basic" && (
+                  <TextInput
+                    label={value.auth_scheme === "cookie" ? "Cookie name" : "Header name"}
+                    value={value.auth_header_name}
+                    onChange={(e) => set("auth_header_name", e.currentTarget.value)}
+                    placeholder="Authorization"
+                  />
+                )}
+                <TextInput
+                  label="Credential environment alias"
+                  description="e.g. env:VAPT_SESSION_TOKEN — the backend's own env var, never the secret value"
+                  value={value.auth_secret_ref}
+                  onChange={(e) => set("auth_secret_ref", e.currentTarget.value)}
+                  placeholder="env:VAPT_SESSION_TOKEN"
+                />
+              </SimpleGrid>
+            )}
           </>
         )}
       </AdvancedOptions>
@@ -114,7 +160,9 @@ export function ProfileView({ profile, tlsTools }: { profile: WebScanProfile; tl
         <Badge color={profile.safe_mode ? "green" : "red"} variant="light">{profile.safe_mode ? "Safe mode: on" : "Safe mode: off"}</Badge>
         <Badge color={profile.engine === "zap" ? "violet" : "blue"} variant="light">Engine: {profile.engine === "zap" ? "OWASP ZAP" : "Native"}</Badge>
         <Badge variant="outline">Rule catalog {profile.catalog_version}</Badge>
-        <Badge variant="outline">Authentication: {profile.auth_profile ?? "none (unauthenticated)"}</Badge>
+        <Badge variant="outline">
+          Authentication: {profile.auth_scheme === "none" ? "none (unauthenticated)" : `${profile.auth_scheme} (${profile.auth_header_name})`}
+        </Badge>
         <Badge variant="outline">robots.txt {profile.respect_robots ? "respected" : "ignored"}</Badge>
         <Badge variant="outline">TLS verify {profile.tls_verify ? "on" : "off"}</Badge>
       </Group>

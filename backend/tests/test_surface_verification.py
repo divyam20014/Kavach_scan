@@ -41,7 +41,13 @@ def _scan(
     )
     jm.start()
     try:
-        return wait_for(repo, pid, scan.scan_id, terminal, timeout=90)
+        # Confirmed directly (TBD-107): under a loaded full-suite run, a real failure here
+        # traced to the summary stage's own several sequential `atomic_write_bytes` calls,
+        # each with a bounded (5s) Windows antivirus/indexer retry-on-PermissionError
+        # (`storage/atomic.py::_replace_with_retry`, the project's own already-documented
+        # risk R2 in ARCHITECTURE.md) -- not an HTTP timing issue. A wider outer margin
+        # here absorbs several such retries compounding on an already-busy machine.
+        return wait_for(repo, pid, scan.scan_id, terminal, timeout=150)
     finally:
         jm.stop()
 

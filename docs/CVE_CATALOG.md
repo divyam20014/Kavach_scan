@@ -33,6 +33,8 @@ A small, fully-specified, VAPT-Workbench-specific JSON schema (TBD-069) — not 
 
 Every import records: `source` and `catalog_version` (operator-provided labels), `imported_at` (this app's clock, not an unverifiable external publish date), `file_sha256` (of the exact uploaded bytes), `file_name`, `parser_version`, and the per-entry count. `stale_after_days` (operator-set, default 180) turns into an honest `is_stale` flag computed from `imported_at`'s age — shown in the Integrations page so an operator knows when their catalog needs refreshing, without this app ever claiming to know whether new CVEs exist upstream.
 
+`StoredCveCatalog.stale` (TBD-109) computes this same `age_days > stale_after_days` rule and threads it into a scan's own WEB-COMP-002 result, not only the Integrations page: a "no entries found" PASS outcome against a stale catalog says so explicitly in its rationale text, so an analyst reading scan results directly never mistakes an aging catalog's silence for a clean bill of health. A CVE *match* (a `FINDING` outcome) is unaffected — it is already reporting something actionable regardless of catalog freshness.
+
 ## 4. Matching: defensible, never a guess
 
 `StoredCveCatalog.match(product, version)` only matches an **exact, case-insensitive product name** — no fuzzy or substring matching, since a wrong match would fabricate a vulnerability claim. Version comparison uses a small, dependency-free dotted-version comparator (`app/cve/version.py`, TBD-069); a version or spec that doesn't parse cleanly is treated as **no match**, never a guess.

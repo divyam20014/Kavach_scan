@@ -81,7 +81,10 @@ def _run(
     )
     jm.start()
     try:
-        return wait_for(repo, pid, scan.scan_id, terminal, timeout=90)
+        # 150s, not 90s: TBD-107 traced a real stuck-near-completion failure (in a sibling
+        # test using the same shape) to bounded Windows antivirus/indexer retry delays
+        # compounding across several sequential output writes on a long-running suite run.
+        return wait_for(repo, pid, scan.scan_id, terminal, timeout=150)
     finally:
         jm.stop()
 

@@ -131,6 +131,7 @@ MODULE_LABELS = {
     ScanModule.ATTACK_SURFACE: "Attack surface mapper (Option B)",
     ScanModule.API_SECURITY: "API security testing (Option C)",
     ScanModule.REPO_SCAN: "Repository scanner (Semgrep / Gitleaks / Trivy)",
+    ScanModule.CONTAINER_IMAGE: "Container image scanner (Trivy)",
     ScanModule.SELF_TEST: "Job system self-test (no network traffic)",
 }
 MODULE_PHASE = {
@@ -138,6 +139,7 @@ MODULE_PHASE = {
     ScanModule.ATTACK_SURFACE: "06",
     ScanModule.API_SECURITY: "07",
     ScanModule.REPO_SCAN: "roadmap-phase-2",
+    ScanModule.CONTAINER_IMAGE: "security-roadmap-phase-3",
 }
 
 
@@ -746,6 +748,7 @@ def default_runners(
     from app.integrations.zap import ZapAvailability, check_availability
     from app.jobs.selftest import SelfTestRunner
     from app.scanners.apisec.runner import ApiSecRunner
+    from app.scanners.container_image.runner import ContainerImageRunner
     from app.scanners.repo_scan.availability import find_tool
     from app.scanners.repo_scan.runner import RepoScanRunner
     from app.scanners.surface.runner import SurfaceRunner
@@ -780,6 +783,11 @@ def default_runners(
             return False
         return repo.get_trivy_db_status() is not None
 
+    def trivy_checks_ready() -> bool:
+        if repo is None:
+            return False
+        return repo.get_trivy_checks_status() is not None
+
     def docker_availability() -> str:
         if repo is None:
             return find_tool("", ["docker"])
@@ -806,9 +814,14 @@ def default_runners(
             gitleaks_availability=gitleaks_availability,
             trivy_availability=trivy_availability,
             trivy_db_ready=trivy_db_ready,
+            trivy_checks_ready=trivy_checks_ready,
             docker_availability=docker_availability,
             docker_image_ready=docker_image_ready,
             git_availability=git_availability,
+        ),
+        ScanModule.CONTAINER_IMAGE: ContainerImageRunner(
+            trivy_availability=trivy_availability,
+            trivy_db_ready=trivy_db_ready,
         ),
     }
     if settings.enable_selftest_jobs:

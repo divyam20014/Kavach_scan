@@ -136,6 +136,38 @@ describe("Integrations page", () => {
     expect(screen.getByText(/1\.6\d GB/)).toBeInTheDocument();
   });
 
+  it("shows Trivy's checks bundle as not downloaded, then downloads it on click", async () => {
+    let downloaded = false;
+    const { calls } = mockApi({
+      ...base,
+      "GET /api/integrations": { body: [] },
+      "GET /api/settings": { body: settings() },
+      "GET /api/cve-catalog": { body: null },
+      "GET /api/integrations/trivy/checks-status": () => ({
+        body: downloaded
+          ? { downloaded_at: "2026-10-26T00:00:00Z", trivy_version: "0.76.1", size_bytes: 240_700 }
+          : null,
+      }),
+      "POST /api/integrations/trivy/download-checks": () => {
+        downloaded = true;
+        return { body: { downloaded_at: "2026-10-26T00:00:00Z", trivy_version: "0.76.1", size_bytes: 240_700 } };
+      },
+    });
+    renderAt("/integrations");
+
+    expect(await screen.findByText("Trivy IaC/misconfiguration checks bundle")).toBeInTheDocument();
+
+    const u = userEvent.setup();
+    await u.click(screen.getByRole("button", { name: /Download checks bundle/i }));
+
+    await waitFor(() =>
+      expect(
+        calls.some((c) => c.method === "POST" && c.path === "/api/integrations/trivy/download-checks"),
+      ).toBe(true),
+    );
+    expect(await screen.findByText("235 KB")).toBeInTheDocument();
+  });
+
   it("shows a Docker image as not pulled, then pulls it on click", async () => {
     let pulled = false;
     const { calls } = mockApi({

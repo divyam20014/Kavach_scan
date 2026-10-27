@@ -22,7 +22,7 @@ export type ScanState =
   | "interrupted"
   | "blocked_scope"
   | "expired_authorization";
-export type ScanModule = "web_app" | "attack_surface" | "api_security" | "repo_scan" | "self_test";
+export type ScanModule = "web_app" | "attack_surface" | "api_security" | "repo_scan" | "container_image" | "self_test";
 export type ProjectStatus = "active" | "archived";
 export type AuthorizationStatus = "missing" | "not_started" | "active" | "expiring_soon" | "expired";
 export type AssetType = "domain" | "hostname" | "ip" | "port" | "service" | "url" | "api_operation";
@@ -43,6 +43,7 @@ export const SCAN_MODULES: { value: ScanModule; label: string }[] = [
   { value: "attack_surface", label: "Attack surface mapper (Option B)" },
   { value: "api_security", label: "API security testing (Option C)" },
   { value: "repo_scan", label: "Repository scanner (Semgrep / Gitleaks / Trivy)" },
+  { value: "container_image", label: "Container image scanner (Trivy)" },
 ];
 
 export interface RecordError {
@@ -659,7 +660,8 @@ export interface WebScanProfile {
   catalog_version: string;
   safe_mode: boolean;
   engine: "native" | "zap";
-  auth_profile: string | null;
+  auth_scheme: "none" | "bearer" | "header" | "cookie" | "basic";
+  auth_header_name: string;
   respect_robots: boolean;
   tls_verify: boolean;
   seed_paths: string[];
@@ -746,6 +748,40 @@ export interface RepoScanEngineResult {
 
 export interface RepoScanSummary {
   engines: Record<string, RepoScanEngineResult>;
+  findings_created: number;
+  findings_reobserved: number;
+  limitations: string[];
+}
+
+export interface SbomPackage {
+  name: string;
+  version: string;
+  ecosystem: string;
+  target: string;
+  purl: string;
+  licenses: string[];
+}
+
+export interface SbomResult {
+  packages: SbomPackage[];
+}
+
+export interface LicenseInventoryEntry {
+  name: string;
+  category: string;
+  confidence: number;
+  file_path: string;
+  pkg_name: string;
+  actionable: boolean;
+}
+
+export interface LicenseInventoryResult {
+  licenses: LicenseInventoryEntry[];
+}
+
+export interface ContainerImageSummary {
+  image: string;
+  findings_total: number;
   findings_created: number;
   findings_reobserved: number;
   limitations: string[];
@@ -1092,6 +1128,12 @@ export interface CveCatalogMetadata {
 }
 
 export interface TrivyDbStatus {
+  downloaded_at: string;
+  trivy_version: string;
+  size_bytes: number;
+}
+
+export interface TrivyChecksStatus {
   downloaded_at: string;
   trivy_version: string;
   size_bytes: number;

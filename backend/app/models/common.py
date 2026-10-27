@@ -157,6 +157,9 @@ class ScanModule(StrEnum):
     ATTACK_SURFACE = "attack_surface"  # Option B
     API_SECURITY = "api_security"  # Option C
     REPO_SCAN = "repo_scan"  # roadmap Phase 2: repository scanning (Semgrep/Gitleaks/Trivy)
+    # security/reliability/scope roadmap Phase 3: container image vulnerability scanning
+    # (Trivy, native-executable only) against an already-pulled local Docker image.
+    CONTAINER_IMAGE = "container_image"
     SELF_TEST = "self_test"  # job-system self-test; no network activity; dev/test only
 
 

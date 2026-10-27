@@ -9,7 +9,7 @@ import { PageHeader } from "../components/PageHeader";
 import { ErrorAlert, QueryState } from "../components/QueryState";
 import { ScanStateLabel } from "../components/StatusLabel";
 import { formatDateTime, humanize } from "../lib/format";
-import { RepoScanSummaryPanel, WebCoverageTab, WebFindingsTab, WebPagesTab, WebSummaryPanel, WebWarningsPanel, ZapSummaryPanel } from "./ScanResultTabs";
+import { ContainerImageSummaryPanel, RepoScanSummaryPanel, WebCoverageTab, WebFindingsTab, WebPagesTab, WebSummaryPanel, WebWarningsPanel, ZapSummaryPanel } from "./ScanResultTabs";
 import { SurfaceChangesTab, SurfaceCoverageTab, SurfaceFindingsTab, SurfaceHostsTab, SurfaceOriginsTab, SurfaceSummaryPanel } from "./SurfaceResultTabs";
 import { ApiCoverageTab, ApiFindingsTab, ApiSummaryPanel } from "./ApiResultTabs";
 
@@ -38,10 +38,13 @@ function ScanDetailView({ detail }: { detail: ScanDetail }) {
   const isSurface = scan.module === "attack_surface";
   const isApi = scan.module === "api_security";
   const isRepoScan = scan.module === "repo_scan";
-  const hasResults = isWeb || isSurface || isApi || isRepoScan;
+  const isContainerImage = scan.module === "container_image";
+  const hasResults = isWeb || isSurface || isApi || isRepoScan || isContainerImage;
   // Outputs are written at the end of the run (also on cancellation/limits). A ZAP-engine
   // scan writes a distinct `zap_summary.json`, not the native engine's `summary.json`; a
-  // repo_scan writes its own `repo_scan_summary.json` (roadmap Phase 2, TBD-088).
+  // repo_scan writes its own `repo_scan_summary.json` (roadmap Phase 2, TBD-088); a
+  // container_image scan writes its own `container_image_summary.json` (security/
+  // reliability/scope roadmap Phase 3, TBD-110).
   const resultsReady =
     detail.terminal &&
     scan.output_refs.includes(
@@ -49,7 +52,9 @@ function ScanDetailView({ detail }: { detail: ScanDetail }) {
         ? "work/zap_summary.json"
         : isRepoScan
           ? "work/repo_scan_summary.json"
-          : "work/summary.json",
+          : isContainerImage
+            ? "work/container_image_summary.json"
+            : "work/summary.json",
     );
 
   const doRetry = () =>
@@ -141,7 +146,7 @@ function ScanDetailView({ detail }: { detail: ScanDetail }) {
             {isSurface && <Tabs.Tab value="changes">Changes</Tabs.Tab>}
             <Tabs.Tab value="logs">Logs</Tabs.Tab>
             <Tabs.Tab value="warnings">Warnings ({scan.warnings.length + scan.errors.length})</Tabs.Tab>
-            {hasResults && !isZapEngine && !isRepoScan && <Tabs.Tab value="coverage">Coverage</Tabs.Tab>}
+            {hasResults && !isZapEngine && !isRepoScan && !isContainerImage && <Tabs.Tab value="coverage">Coverage</Tabs.Tab>}
           </Tabs.List>
           <Tabs.Panel value="summary" pt="md">
             <Stack gap="md">
@@ -149,6 +154,7 @@ function ScanDetailView({ detail }: { detail: ScanDetail }) {
               {isSurface && <SurfaceSummaryPanel scan={scan} ready={resultsReady} />}
               {isApi && <ApiSummaryPanel scan={scan} ready={resultsReady} />}
               {isRepoScan && <RepoScanSummaryPanel scan={scan} ready={resultsReady} />}
+              {isContainerImage && <ContainerImageSummaryPanel scan={scan} ready={resultsReady} />}
         <SimpleGrid cols={{ base: 1, md: 2 }}>
           <Card withBorder component="section" aria-labelledby="targets-h">
             <Title order={2} size="h4" id="targets-h" mb="sm">Targets (scope-checked)</Title>
@@ -217,7 +223,7 @@ function ScanDetailView({ detail }: { detail: ScanDetail }) {
               {isWeb && !isZapEngine && <WebWarningsPanel scan={scan} ready={resultsReady} />}
             </Stack>
           </Tabs.Panel>
-          {hasResults && !isZapEngine && !isRepoScan && (
+          {hasResults && !isZapEngine && !isRepoScan && !isContainerImage && (
             <Tabs.Panel value="coverage" pt="md">
               {isWeb ? <WebCoverageTab scan={scan} ready={resultsReady} /> : isSurface ? <SurfaceCoverageTab scan={scan} ready={resultsReady} /> : <ApiCoverageTab scan={scan} ready={resultsReady} />}
             </Tabs.Panel>

@@ -28,6 +28,7 @@ import type {
   CatalogView,
   CveCatalogMetadata,
   IntegrationStatus,
+  TrivyChecksStatus,
   TrivyDbStatus,
   DockerImageStatus,
   DashboardSummary,
@@ -334,7 +335,7 @@ export function useWebScanProfile(projectId: string, params: ScanParams, enabled
 }
 
 /** Web scanner outputs (summary / coverage / pages); available once the job wrote them. */
-export function useScanResult<T>(projectId: string, scanId: string, kind: "summary" | "zap_summary" | "repo_scan_summary" | "coverage" | "pages" | "changes", enabled: boolean) {
+export function useScanResult<T>(projectId: string, scanId: string, kind: "summary" | "zap_summary" | "repo_scan_summary" | "container_image_summary" | "coverage" | "pages" | "changes" | "sbom" | "licenses", enabled: boolean) {
   return useQuery({
     queryKey: ["scan-result", projectId, scanId, kind],
     queryFn: () => api.get<T>(`/api/projects/${enc(projectId)}/scans/${enc(scanId)}/results/${kind}`),
@@ -575,6 +576,21 @@ export function useDownloadTrivyDb() {
   const invalidate = useInvalidateAll();
   return useMutation({
     mutationFn: () => api.post<TrivyDbStatus>("/api/integrations/trivy/download-db"),
+    onSuccess: invalidate,
+  });
+}
+
+export function useTrivyChecksStatus() {
+  return useQuery({
+    queryKey: ["trivy-checks-status"],
+    queryFn: () => api.get<TrivyChecksStatus | null>("/api/integrations/trivy/checks-status"),
+  });
+}
+
+export function useDownloadTrivyChecks() {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: () => api.post<TrivyChecksStatus>("/api/integrations/trivy/download-checks"),
     onSuccess: invalidate,
   });
 }

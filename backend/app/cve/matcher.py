@@ -11,6 +11,7 @@ ambiguous, create an observation or needs_review candidate, not confirmed vulner
 from __future__ import annotations
 
 from app.cve.version import is_exact_spec, version_satisfies_spec
+from app.models.common import utc_now
 from app.models.cve_catalog import CveCatalogRecord
 from app.scanners.webapp.components import CveMatch
 from app.storage.repository import StorageRepository
@@ -21,9 +22,9 @@ class StoredCveCatalog:
 
     No in-process caching: catalogs are small enough (bounded to 20,000 entries) that a
     fresh read per scan is cheap, and it guarantees a newly imported catalog takes effect
-    immediately without restarting the app. `catalog_id`/`catalog_version`/`updated_at` are
-    plain (not computed-property) attributes, refreshed by `_refresh()`, because the
-    `CveCatalog` protocol declares them as settable attributes, matching `NoCveCatalog`."""
+    immediately without restarting the app. `catalog_id`/`catalog_version`/`updated_at`/
+    `stale` are plain (not computed-property) attributes, refreshed by `_refresh()`, because
+    the `CveCatalog` protocol declares them as settable attributes, matching `NoCveCatalog`."""
 
     reason = "No local CVE catalog has been imported; CVE matching was not performed."
 
@@ -32,12 +33,16 @@ class StoredCveCatalog:
         self.catalog_id = "none"
         self.catalog_version = ""
         self.updated_at = ""
+        self.stale = False
 
     def _refresh(self) -> CveCatalogRecord | None:
         current = self._repo.get_cve_catalog()
         self.catalog_id = current.source if current else "none"
         self.catalog_version = current.catalog_version if current else ""
         self.updated_at = current.imported_at.isoformat() if current else ""
+        # Same `age_days > stale_after_days` rule as `app/api/settings.py::_catalog_response`.
+        age_days = (utc_now() - current.imported_at).days if current else 0
+        self.stale = current is not None and age_days > current.stale_after_days
         return current
 
     @property

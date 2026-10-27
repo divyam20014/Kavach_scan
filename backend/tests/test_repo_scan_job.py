@@ -176,6 +176,321 @@ def test_repo_scan_dispatches_all_three_engines_and_creates_findings(
     assert set(summary["engines"]) == {"semgrep", "gitleaks", "trivy"}
 
 
+# ---------------------------------------------------------------- IaC/misconfiguration (TBD-111)
+
+_TRIVY_COMBINED_OUTPUT = {
+    "Results": [
+        {
+            "Target": "requirements.txt",
+            "Vulnerabilities": [
+                {
+                    "VulnerabilityID": "CVE-2019-14234",
+                    "PkgName": "django",
+                    "InstalledVersion": "1.11.0",
+                    "FixedVersion": "1.11.23",
+                    "Status": "fixed",
+                    "Title": "Django SQL injection",
+                    "Severity": "CRITICAL",
+                }
+            ],
+        },
+        {
+            "Target": "Dockerfile",
+            "Class": "config",
+            "Type": "dockerfile",
+            "Misconfigurations": [
+                {
+                    "ID": "DS-0002",
+                    "Title": "Image user should not be 'root'",
+                    "Message": "Last USER command in Dockerfile should not be 'root'",
+                    "Description": "Running containers with 'root' user can lead to a container escape.",
+                    "Resolution": "Add 'USER <non root user name>' line to the Dockerfile",
+                    "Severity": "HIGH",
+                    "CauseMetadata": {"StartLine": 2, "EndLine": 2},
+                }
+            ],
+        },
+    ]
+}
+
+
+def test_repo_scan_with_trivy_iac_creates_both_vuln_and_misconfig_findings(
+    repo: StorageRepository,
+    settings: RuntimeSettings,
+    tmp_path: Path,
+) -> None:
+    runner = RepoScanRunner(
+        trivy_availability=lambda: sys.executable,
+        trivy_db_ready=lambda: True,
+        trivy_checks_ready=lambda: True,
+    )
+    jm = _manager(repo, settings, runner)
+    project = _repo_scan_project(repo, tmp_path)
+    scan, _created = jm.submit(
+        project.project_id,
+        StartScanRequest(
+            module=ScanModule.REPO_SCAN,
+            targets=["repo-scan"],
+            parameters={"engines": ["trivy"], "trivy_iac": True},
+            confirmed=True,
+        ),
+    )
+    report_dir = repo.scan_work_subdir(project.project_id, scan.scan_id, "trivy_report")
+    (report_dir / "report.json").write_bytes(json.dumps(_TRIVY_COMBINED_OUTPUT).encode())
+
+    import app.scanners.repo_scan.runner as runner_mod
+
+    def fake_trivy_argv(executable, repo_path, report_path, cache_dir, **kw):  # noqa: ANN001, ANN201
+        return [sys.executable, "-c", "pass"]
+
+    mp = pytest.MonkeyPatch()
+    mp.setattr(runner_mod, "trivy_argv", fake_trivy_argv)
+    try:
+        jm.start()
+        try:
+            done = wait_for(repo, project.project_id, scan.scan_id, terminal, timeout=30)
+        finally:
+            jm.stop()
+    finally:
+        mp.undo()
+
+    assert done.state == ScanState.COMPLETED, (done.state, done.errors, done.warnings)
+    findings = {f.category: f for f in repo.list_findings(project.project_id, limit=50).items}
+    assert set(findings) == {"repo_scan_trivy", "repo_scan_trivy_iac"}
+    assert findings["repo_scan_trivy"].rule_id == "CVE-2019-14234"
+    iac_finding = findings["repo_scan_trivy_iac"]
+    assert iac_finding.rule_id == "DS-0002"
+    assert iac_finding.severity == "high"
+    assert iac_finding.cwe_ids == []  # Trivy gives no CWE mapping for misconfigurations
+    summary = json.loads(
+        repo.read_scan_output(project.project_id, scan.scan_id, "repo_scan_summary.json")
+    )
+    assert summary["engines"]["trivy"]["findings"] == 2
+
+
+def test_repo_scan_rejected_when_trivy_iac_enabled_without_trivy_engine(
+    repo: StorageRepository, settings: RuntimeSettings, tmp_path: Path
+) -> None:
+    runner = RepoScanRunner(
+        semgrep_availability=lambda: sys.executable,
+        trivy_availability=lambda: sys.executable,
+        trivy_db_ready=lambda: True,
+        trivy_checks_ready=lambda: True,
+    )
+    jm = _manager(repo, settings, runner)
+    project = _repo_scan_project(repo, tmp_path)
+    from app.core.errors import ValidationFailedError
+
+    with pytest.raises(ValidationFailedError) as exc_info:
+        jm.submit(
+            project.project_id,
+            StartScanRequest(
+                module=ScanModule.REPO_SCAN,
+                targets=["repo-scan"],
+                parameters={"engines": ["semgrep"], "trivy_iac": True},
+                confirmed=True,
+            ),
+        )
+    assert any("trivy_iac requires" in d.message for d in exc_info.value.details)
+
+
+def test_repo_scan_rejected_when_trivy_iac_checks_bundle_not_downloaded(
+    repo: StorageRepository, settings: RuntimeSettings, tmp_path: Path
+) -> None:
+    runner = RepoScanRunner(
+        trivy_availability=lambda: sys.executable,
+        trivy_db_ready=lambda: True,
+        trivy_checks_ready=lambda: False,  # never downloaded
+    )
+    jm = _manager(repo, settings, runner)
+    project = _repo_scan_project(repo, tmp_path)
+    from app.core.errors import ValidationFailedError
+
+    with pytest.raises(ValidationFailedError) as exc_info:
+        jm.submit(
+            project.project_id,
+            StartScanRequest(
+                module=ScanModule.REPO_SCAN,
+                targets=["repo-scan"],
+                parameters={"engines": ["trivy"], "trivy_iac": True},
+                confirmed=True,
+            ),
+        )
+    assert any("checks bundle has not been downloaded" in d.message for d in exc_info.value.details)
+
+
+# ---------------------------------------------------------------- SBOM / license (TBD-112)
+
+_TRIVY_SBOM_LICENSE_OUTPUT = {
+    "Results": [
+        {
+            "Target": "node/package-lock.json",
+            "Class": "lang-pkgs",
+            "Type": "npm",
+            "Packages": [
+                {
+                    "Name": "lodash",
+                    "Identifier": {"PURL": "pkg:npm/lodash@4.17.21"},
+                    "Version": "4.17.21",
+                    "Licenses": ["MIT"],
+                }
+            ],
+        },
+        {
+            "Target": "Loose File License(s)",
+            "Class": "license-file",
+            "Licenses": [
+                {
+                    "Category": "notice",
+                    "PkgName": "",
+                    "FilePath": "LICENSE",
+                    "Name": "MIT",
+                    "Confidence": 1,
+                    "Link": "https://spdx.org/licenses/MIT.html",
+                },
+                {
+                    "Category": "restricted",
+                    "PkgName": "",
+                    "FilePath": "vendor/COPYING",
+                    "Name": "GPL-3.0",
+                    "Confidence": 0.95,
+                    "Link": "https://spdx.org/licenses/GPL-3.0-only.html",
+                },
+            ],
+        },
+    ]
+}
+
+
+def test_repo_scan_with_trivy_sbom_writes_inventory_and_only_the_restricted_license_finding(
+    repo: StorageRepository,
+    settings: RuntimeSettings,
+    tmp_path: Path,
+) -> None:
+    runner = RepoScanRunner(
+        trivy_availability=lambda: sys.executable,
+        trivy_db_ready=lambda: True,
+    )
+    jm = _manager(repo, settings, runner)
+    project = _repo_scan_project(repo, tmp_path)
+    scan, _created = jm.submit(
+        project.project_id,
+        StartScanRequest(
+            module=ScanModule.REPO_SCAN,
+            targets=["repo-scan"],
+            parameters={"engines": ["trivy"], "trivy_sbom": True},
+            confirmed=True,
+        ),
+    )
+    report_dir = repo.scan_work_subdir(project.project_id, scan.scan_id, "trivy_report")
+    (report_dir / "report.json").write_bytes(json.dumps(_TRIVY_SBOM_LICENSE_OUTPUT).encode())
+
+    import app.scanners.repo_scan.runner as runner_mod
+
+    def fake_trivy_argv(executable, repo_path, report_path, cache_dir, **kw):  # noqa: ANN001, ANN201
+        return [sys.executable, "-c", "pass"]
+
+    mp = pytest.MonkeyPatch()
+    mp.setattr(runner_mod, "trivy_argv", fake_trivy_argv)
+    try:
+        jm.start()
+        try:
+            done = wait_for(repo, project.project_id, scan.scan_id, terminal, timeout=30)
+        finally:
+            jm.stop()
+    finally:
+        mp.undo()
+
+    assert done.state == ScanState.COMPLETED, (done.state, done.errors, done.warnings)
+
+    # Only the "restricted" GPL-3.0 match becomes a Finding -- "notice"-category MIT never does.
+    findings = {f.rule_id: f for f in repo.list_findings(project.project_id, limit=50).items}
+    assert set(findings) == {"GPL-3.0"}
+    assert findings["GPL-3.0"].category == "repo_scan_trivy_license"
+    assert findings["GPL-3.0"].severity == "medium"
+
+    sbom = json.loads(repo.read_scan_output(project.project_id, scan.scan_id, "sbom.json"))
+    assert len(sbom["packages"]) == 1
+    assert sbom["packages"][0]["name"] == "lodash"
+    assert sbom["packages"][0]["licenses"] == ["MIT"]
+
+    # Full license inventory -- both matches, including the non-actionable MIT one.
+    licenses = json.loads(repo.read_scan_output(project.project_id, scan.scan_id, "licenses.json"))
+    names = {entry["name"]: entry["actionable"] for entry in licenses["licenses"]}
+    assert names == {"MIT": False, "GPL-3.0": True}
+
+
+def test_repo_scan_without_trivy_sbom_writes_no_sbom_or_license_outputs(
+    repo: StorageRepository,
+    settings: RuntimeSettings,
+    tmp_path: Path,
+) -> None:
+    from app.storage.errors import RecordNotFoundError
+
+    runner = RepoScanRunner(
+        trivy_availability=lambda: sys.executable,
+        trivy_db_ready=lambda: True,
+    )
+    jm = _manager(repo, settings, runner)
+    project = _repo_scan_project(repo, tmp_path)
+    scan, _created = jm.submit(
+        project.project_id,
+        StartScanRequest(
+            module=ScanModule.REPO_SCAN,
+            targets=["repo-scan"],
+            parameters={"engines": ["trivy"]},
+            confirmed=True,
+        ),
+    )
+    report_dir = repo.scan_work_subdir(project.project_id, scan.scan_id, "trivy_report")
+    (report_dir / "report.json").write_bytes(json.dumps({"Results": []}).encode())
+
+    import app.scanners.repo_scan.runner as runner_mod
+
+    def fake_trivy_argv(executable, repo_path, report_path, cache_dir, **kw):  # noqa: ANN001, ANN201
+        return [sys.executable, "-c", "pass"]
+
+    mp = pytest.MonkeyPatch()
+    mp.setattr(runner_mod, "trivy_argv", fake_trivy_argv)
+    try:
+        jm.start()
+        try:
+            done = wait_for(repo, project.project_id, scan.scan_id, terminal, timeout=30)
+        finally:
+            jm.stop()
+    finally:
+        mp.undo()
+
+    assert done.state == ScanState.COMPLETED, (done.state, done.errors, done.warnings)
+    with pytest.raises(RecordNotFoundError):
+        repo.read_scan_output(project.project_id, scan.scan_id, "sbom.json")
+
+
+def test_repo_scan_rejected_when_trivy_sbom_enabled_without_trivy_engine(
+    repo: StorageRepository, settings: RuntimeSettings, tmp_path: Path
+) -> None:
+    runner = RepoScanRunner(
+        semgrep_availability=lambda: sys.executable,
+        trivy_availability=lambda: sys.executable,
+        trivy_db_ready=lambda: True,
+    )
+    jm = _manager(repo, settings, runner)
+    project = _repo_scan_project(repo, tmp_path)
+    from app.core.errors import ValidationFailedError
+
+    with pytest.raises(ValidationFailedError) as exc_info:
+        jm.submit(
+            project.project_id,
+            StartScanRequest(
+                module=ScanModule.REPO_SCAN,
+                targets=["repo-scan"],
+                parameters={"engines": ["semgrep"], "trivy_sbom": True},
+                confirmed=True,
+            ),
+        )
+    assert any("trivy_sbom requires" in d.message for d in exc_info.value.details)
+
+
 def test_semgreps_own_errors_list_is_surfaced_not_silently_dropped(
     repo: StorageRepository,
     settings: RuntimeSettings,

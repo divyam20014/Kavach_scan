@@ -26,7 +26,7 @@ function preview(problems: string[] = []): WebProfilePreview {
     tls_tools: [],
     parameters: {},
     profile: {
-      profile_version: 1, catalog_version: "1.0.0", safe_mode: true, engine: "native", auth_profile: null, respect_robots: true, tls_verify: true, seed_paths: [],
+      profile_version: 1, catalog_version: "1.0.0", safe_mode: true, engine: "native", auth_scheme: "none", auth_header_name: "Authorization", respect_robots: true, tls_verify: true, seed_paths: [],
       budgets: { max_pages: 200, max_depth: 3, requests_per_second: 2, max_concurrency: 2, max_requests_per_target: 2000, max_duration_seconds: 1800, max_response_bytes: 1048576, max_redirects: 5 },
       checks: [
         { group: "headers", label: "Security headers", kind: "passive", rule_ids: ["WEB-HDR-001"], enabled: true, reason: "" },

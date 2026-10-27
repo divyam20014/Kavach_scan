@@ -150,6 +150,40 @@ def test_build_trivy_docker_argv_matches_the_confirmed_working_invocation(
     assert "--skip-db-update" in argv  # always present, never a caller-supplied toggle
 
 
+def test_build_trivy_docker_argv_with_misconfig_adds_skip_check_update(tmp_path: Path) -> None:
+    """Security/reliability/scope roadmap Phase 4 (TBD-111): mirrors the native adapter's
+    own `--skip-check-update` rule -- the checks bundle only ever reaches the container via
+    the read-only cache mount, never a download the container triggers itself."""
+    argv = build_trivy_docker_argv(
+        "docker",
+        "aquasec/trivy:0.76.1",
+        tmp_path / "repo",
+        tmp_path / "cache",
+        tmp_path / "report",
+        scanners=("vuln", "misconfig"),
+    )
+    idx = argv.index("--scanners")
+    assert argv[idx + 1] == "vuln,misconfig"
+    assert "--skip-check-update" in argv
+    assert "--skip-db-update" in argv  # both skip flags present together
+
+
+def test_build_trivy_docker_argv_with_license_adds_license_full(tmp_path: Path) -> None:
+    """Security/reliability/scope roadmap Phase 5 (TBD-112): mirrors the native adapter's
+    own `--license-full` rule."""
+    argv = build_trivy_docker_argv(
+        "docker",
+        "aquasec/trivy:0.76.1",
+        tmp_path / "repo",
+        tmp_path / "cache",
+        tmp_path / "report",
+        scanners=("vuln", "license"),
+    )
+    idx = argv.index("--scanners")
+    assert argv[idx + 1] == "vuln,license"
+    assert "--license-full" in argv
+
+
 def test_build_trivy_docker_argv_rejects_out_of_range_timeout(tmp_path: Path) -> None:
     with pytest.raises(DockerArgvError, match="timeout_seconds"):
         build_trivy_docker_argv(

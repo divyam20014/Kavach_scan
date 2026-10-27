@@ -76,6 +76,9 @@ from app.scanners.repo_scan.semgrep_adapter import (
 from app.scanners.repo_scan.trivy_adapter import (
     TrivyReportError,
     parse_trivy_json,
+    parse_trivy_license_json,
+    parse_trivy_misconfig_json,
+    parse_trivy_packages_json,
 )
 from app.scanners.repo_scan.trivy_adapter import (
     build_scan_argv as trivy_argv,
@@ -101,6 +104,7 @@ class RepoScanRunner:
     gitleaks_availability: Callable[[], str] = field(default=lambda: "")
     trivy_availability: Callable[[], str] = field(default=lambda: "")
     trivy_db_ready: Callable[[], bool] = field(default=lambda: False)
+    trivy_checks_ready: Callable[[], bool] = field(default=lambda: False)
     docker_availability: Callable[[], str] = field(default=lambda: "")
     docker_image_ready: Callable[[str], bool] = field(default=lambda engine: False)
     git_availability: Callable[[], str] = field(default=lambda: "")
@@ -137,6 +141,11 @@ class RepoScanRunner:
             errors.append(
                 "Trivy's vulnerability database has not been downloaded yet -- download it "
                 "from the Integrations page first"
+            )
+        if profile.trivy_iac and not self.trivy_checks_ready():
+            errors.append(
+                "Trivy's IaC/misconfiguration checks bundle has not been downloaded yet -- "
+                "download it from the Integrations page first"
             )
         return errors
 
@@ -391,6 +400,17 @@ class RepoScanRunner:
                 "Trivy's vulnerability database has not been downloaded -- download it from "
                 "the Integrations page first"
             )
+        if profile.trivy_iac and not self.trivy_checks_ready():
+            raise RuntimeError(
+                "Trivy's IaC/misconfiguration checks bundle has not been downloaded -- "
+                "download it from the Integrations page first"
+            )
+        scanners: list[str] = ["vuln"]
+        if profile.trivy_iac:
+            scanners.append("misconfig")
+        if profile.trivy_sbom:
+            scanners.append("license")
+        scanners_t: tuple[str, ...] = tuple(scanners)
         timeout_seconds = profile.trivy_timeout_minutes * 60
         report_dir = ctx.repo.scan_work_subdir(ctx.project_id, ctx.scan_id, "trivy_report")
         if "trivy" in profile.docker_engines:
@@ -403,6 +423,7 @@ class RepoScanRunner:
                 repo_path,
                 ctx.repo.trivy_db_dir(),
                 report_dir,
+                scanners=scanners_t,
                 timeout_seconds=timeout_seconds,
             )
             allowed = [docker_executable]
@@ -416,6 +437,7 @@ class RepoScanRunner:
                 repo_path,
                 report_path,
                 ctx.repo.trivy_db_dir(),
+                scanners=scanners_t,
                 skip_db_update=True,
                 timeout_seconds=timeout_seconds,
             )
@@ -440,8 +462,59 @@ class RepoScanRunner:
         )
         try:
             findings = parse_trivy_json(report_bytes)
+            misconfig_findings = (
+                parse_trivy_misconfig_json(report_bytes) if profile.trivy_iac else []
+            )
+            license_findings = parse_trivy_license_json(report_bytes) if profile.trivy_sbom else []
+            packages = parse_trivy_packages_json(report_bytes) if profile.trivy_sbom else []
         except TrivyReportError as exc:
             raise RuntimeError(f"could not interpret the trivy report: {exc}") from exc
         for f in findings:
             writer.write_trivy(f, tool_version="Trivy")
-        return len(findings), []  # Trivy's own JSON report has no "errors" list of its own
+        for mf in misconfig_findings:
+            writer.write_trivy_misconfig(mf, tool_version="Trivy")
+        actionable_licenses = [lf for lf in license_findings if lf.is_actionable]
+        for lf in actionable_licenses:
+            writer.write_trivy_license(lf, tool_version="Trivy")
+        if profile.trivy_sbom:
+            # Full inventory, regardless of actionability -- never only the subset that
+            # became a Finding (security/reliability/scope roadmap Phase 5, TBD-112).
+            ctx.write_output(
+                "sbom.json",
+                _json(
+                    {
+                        "packages": [
+                            {
+                                "name": p.name,
+                                "version": p.version,
+                                "ecosystem": p.ecosystem,
+                                "target": p.target,
+                                "purl": p.purl,
+                                "licenses": p.licenses,
+                            }
+                            for p in packages
+                        ],
+                    }
+                ),
+            )
+            ctx.write_output(
+                "licenses.json",
+                _json(
+                    {
+                        "licenses": [
+                            {
+                                "name": lf.name,
+                                "category": lf.category,
+                                "confidence": lf.confidence,
+                                "file_path": lf.file_path,
+                                "pkg_name": lf.pkg_name,
+                                "actionable": lf.is_actionable,
+                            }
+                            for lf in license_findings
+                        ],
+                    }
+                ),
+            )
+        # Trivy's own JSON report has no "errors" list of its own.
+        total = len(findings) + len(misconfig_findings) + len(actionable_licenses)
+        return total, []

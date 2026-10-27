@@ -197,7 +197,7 @@ class ScanPolicy(StrictModel):
     max_response_bytes: int = Field(default=1024 * 1024, ge=1024, le=10 * 1024 * 1024)
     max_duration_seconds: int = Field(default=1800, ge=60, le=8 * 3600)
     max_requests_per_target: int = Field(default=2000, ge=1, le=20_000)
-    allowed_modules: list[ScanModule] = Field(default_factory=list, max_length=4)
+    allowed_modules: list[ScanModule] = Field(default_factory=list, max_length=5)
     active_probes: ActiveProbeToggles = Field(default_factory=ActiveProbeToggles)
     evidence_retention_days: int | None = Field(default=None, ge=1, le=3650)
 

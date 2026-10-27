@@ -89,6 +89,9 @@ SYSTEM_ROUTES = {
     # Roadmap Phase 2 (TBD-087)
     "/api/integrations/trivy/db-status",
     "/api/integrations/trivy/download-db",
+    # Security/reliability/scope roadmap Phase 4 (TBD-111)
+    "/api/integrations/trivy/checks-status",
+    "/api/integrations/trivy/download-checks",
     # Docker-based execution roadmap, phase 2 of 5 (TBD-091)
     "/api/integrations/docker/{engine}/image-status",
     "/api/integrations/docker/{engine}/pull-image",

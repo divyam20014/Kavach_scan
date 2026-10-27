@@ -64,7 +64,11 @@ def _scan(
     jm: JobManager,
     pid: str,
     targets: list[str],
-    timeout: float = 90,
+    # 150s, not 90s: TBD-107 traced a real stuck-near-completion failure here directly
+    # (`test_failing_tls_tool_is_an_error_not_a_pass`) to bounded Windows antivirus/indexer
+    # retry delays compounding across several sequential output writes on an already-busy,
+    # long-running suite run.
+    timeout: float = 150,
     **params: Any,
 ) -> Any:
     scan, _ = jm.submit(
@@ -306,6 +310,61 @@ def test_seed_paths_and_robots_toggle(
     )
     paths = [h.path for h in LabHandler.hits]
     assert "/listing/" in paths and "/robots.txt" not in paths
+
+
+# ---------------------------------------------------------------------- authenticated crawling
+
+
+def test_authenticated_crawling_sends_the_configured_session_header(
+    repo: StorageRepository,
+    settings: RuntimeSettings,
+    ports: tuple[int, int],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setenv("VAPT_TEST_SESSION_TOKEN", "s3cr3t-s3ss10n-v4lue")
+    lab, _ = ports
+    pid = repo.create_project(lab_project([lab])).project_id
+    done = _scan(
+        repo,
+        _manager(repo, settings),
+        pid,
+        [f"http://lab.test:{lab}/about"],
+        max_depth=0,
+        auth_scheme="bearer",
+        auth_secret_ref="env:VAPT_TEST_SESSION_TOKEN",  # noqa: S106 - alias, not a secret value
+    )
+    assert done.state in (ScanState.COMPLETED, ScanState.COMPLETED_WITH_WARNINGS), done.final_reason
+    hits = [h for h in LabHandler.hits if h.path == "/about"]
+    assert hits and all(
+        h.headers.get("authorization") == "Bearer s3cr3t-s3ss10n-v4lue" for h in hits
+    )
+    # Never persisted anywhere, including profile.json (only the non-secret scheme/header
+    # name are) -- mirrors test_secrets_never_reach_findings_evidence_or_outputs above.
+    blob = b""
+    for path in repo.root.rglob("*"):
+        if path.is_file() and pid in str(path):
+            blob += path.read_bytes()
+    assert b"s3cr3t-s3ss10n-v4lue" not in blob
+    profile = _output(repo, pid, done.scan_id, "profile.json")
+    assert profile["auth_scheme"] == "bearer" and profile["auth_header_name"] == "Authorization"
+
+
+def test_authenticated_crawling_fails_fast_when_the_secret_is_not_set(
+    repo: StorageRepository, settings: RuntimeSettings, ports: tuple[int, int]
+) -> None:
+    lab, _ = ports
+    pid = repo.create_project(lab_project([lab])).project_id
+    done = _scan(
+        repo,
+        _manager(repo, settings),
+        pid,
+        [f"http://lab.test:{lab}/"],
+        auth_scheme="bearer",
+        auth_secret_ref="env:VAPT_TEST_TOKEN_NOT_SET",  # noqa: S106 - alias, not a secret value
+    )
+    assert done.state == ScanState.FAILED
+    assert done.errors and "VAPT_TEST_TOKEN_NOT_SET" in " ".join(done.errors)
+    assert LabHandler.hits == []  # never crawled unauthenticated by mistake
 
 
 # ---------------------------------------------------------------------- TLS

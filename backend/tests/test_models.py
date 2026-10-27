@@ -80,9 +80,17 @@ def test_repository_credential_alias_requires_a_repository_url() -> None:
     assert project.repository_credential_alias == "env:SOME_TOKEN"
 
 
-def test_allowed_modules_permits_all_four_modules_including_repo_scan() -> None:
-    policy = ScanPolicy(allowed_modules=["web_app", "attack_surface", "api_security", "repo_scan"])
-    assert len(policy.allowed_modules) == 4
+def test_allowed_modules_permits_all_five_modules_including_container_image() -> None:
+    policy = ScanPolicy(
+        allowed_modules=[
+            "web_app",
+            "attack_surface",
+            "api_security",
+            "repo_scan",
+            "container_image",
+        ]
+    )
+    assert len(policy.allowed_modules) == 5
     with pytest.raises(ValidationError):
         ScanPolicy(
             allowed_modules=[
@@ -90,6 +98,7 @@ def test_allowed_modules_permits_all_four_modules_including_repo_scan() -> None:
                 "attack_surface",
                 "api_security",
                 "repo_scan",
+                "container_image",
                 "self_test",
             ]
         )

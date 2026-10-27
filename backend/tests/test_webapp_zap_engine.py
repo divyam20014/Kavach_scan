@@ -71,7 +71,6 @@ def test_an_older_persisted_profile_with_no_engine_key_loads_as_native() -> None
         "profile_version": 1,
         "catalog_version": "1.1.0",
         "safe_mode": True,
-        "auth_profile": None,
         "respect_robots": True,
         "tls_verify": True,
         "seed_paths": [],
@@ -93,6 +92,8 @@ def test_an_older_persisted_profile_with_no_engine_key_loads_as_native() -> None
     assert profile.engine == "native"
     assert profile.zap_spider_max_minutes == 2
     assert profile.zap_wait_max_minutes == 2
+    assert profile.auth_scheme == "none"
+    assert profile.auth_header_name == "Authorization"
 
 
 def test_existing_web_scan_requests_without_an_engine_parameter_are_unaffected() -> None:
@@ -297,7 +298,10 @@ def test_native_web_scan_is_completely_unaffected_by_the_zap_engine_addition(
     )
     jm.start()
     try:
-        done = wait_for(repo, pid, scan.scan_id, terminal, timeout=90)
+        # 150s, not 90s: TBD-107 traced a real stuck-near-completion failure (in a sibling
+        # test using the same shape) to bounded Windows antivirus/indexer retry delays
+        # compounding across several sequential output writes on a long-running suite run.
+        done = wait_for(repo, pid, scan.scan_id, terminal, timeout=150)
     finally:
         jm.stop()
     assert done.state in (ScanState.COMPLETED, ScanState.COMPLETED_WITH_WARNINGS)

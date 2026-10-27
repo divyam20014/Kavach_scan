@@ -43,7 +43,7 @@ def test_catalog_is_versioned_and_complete() -> None:
 
 def test_profile_defaults_are_safe_and_explicit() -> None:
     profile = build_profile({}, ScanPolicy())
-    assert profile.safe_mode is True and profile.auth_profile is None
+    assert profile.safe_mode is True and profile.auth_scheme == "none"
     disabled = {c.group: c.reason for c in profile.checks if not c.enabled}
     assert set(disabled) == {"cve", "active_injection", "sensitive_files"}
     assert all(
@@ -362,6 +362,7 @@ class FakeCatalog:
     catalog_id = "local-test"
     catalog_version = "2026.10"
     updated_at = "2026-10-01"
+    stale = False
 
     @property
     def available(self) -> bool:

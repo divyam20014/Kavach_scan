@@ -112,3 +112,68 @@ def test_validate_parameters_accepts_a_full_valid_set() -> None:
         POLICY,
     )
     assert errors == []
+
+
+# ---------------------------------------------------------------- IaC/misconfiguration (TBD-111)
+
+
+def test_default_profile_has_trivy_iac_disabled() -> None:
+    assert build_profile({}).trivy_iac is False
+
+
+def test_build_profile_enables_trivy_iac_when_trivy_is_selected() -> None:
+    profile = build_profile({"engines": ["trivy"], "trivy_iac": True})
+    assert profile.trivy_iac is True
+
+
+def test_build_profile_never_enables_trivy_iac_without_trivy_selected() -> None:
+    """`build_profile` is a defensive second check, not the only one -- `validate_parameters`
+    rejects this combination at submit time (see the test below), but a caller that bypasses
+    validation must still never silently enable IaC scanning for an engine list that excludes
+    trivy."""
+    profile = build_profile({"engines": ["semgrep"], "trivy_iac": True})
+    assert profile.trivy_iac is False
+
+
+def test_validate_parameters_rejects_a_non_bool_trivy_iac() -> None:
+    errors = validate_parameters({"trivy_iac": "yes"}, POLICY)
+    assert any("trivy_iac must be true or false" in e for e in errors)
+
+
+def test_validate_parameters_rejects_trivy_iac_without_trivy_selected() -> None:
+    errors = validate_parameters({"engines": ["semgrep"], "trivy_iac": True}, POLICY)
+    assert any("trivy_iac requires" in e for e in errors)
+
+
+def test_validate_parameters_accepts_trivy_iac_with_trivy_selected() -> None:
+    errors = validate_parameters({"engines": ["trivy"], "trivy_iac": True}, POLICY)
+    assert errors == []
+
+
+# ---------------------------------------------------------------- SBOM / license (TBD-112)
+
+
+def test_default_profile_has_trivy_sbom_disabled() -> None:
+    assert build_profile({}).trivy_sbom is False
+
+
+def test_build_profile_enables_trivy_sbom_when_trivy_is_selected() -> None:
+    profile = build_profile({"engines": ["trivy"], "trivy_sbom": True})
+    assert profile.trivy_sbom is True
+
+
+def test_build_profile_never_enables_trivy_sbom_without_trivy_selected() -> None:
+    profile = build_profile({"engines": ["semgrep"], "trivy_sbom": True})
+    assert profile.trivy_sbom is False
+
+
+def test_validate_parameters_rejects_trivy_sbom_without_trivy_selected() -> None:
+    errors = validate_parameters({"engines": ["semgrep"], "trivy_sbom": True}, POLICY)
+    assert any("trivy_sbom requires" in e for e in errors)
+
+
+def test_validate_parameters_accepts_trivy_sbom_and_trivy_iac_together() -> None:
+    errors = validate_parameters(
+        {"engines": ["trivy"], "trivy_iac": True, "trivy_sbom": True}, POLICY
+    )
+    assert errors == []

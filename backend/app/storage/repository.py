@@ -46,6 +46,7 @@ from app.models.project import Project
 from app.models.report import ReportMetadata
 from app.models.scan import ScanJob
 from app.models.settings import AppSettings
+from app.models.trivy_checks import TrivyChecksStatusRecord
 from app.models.trivy_db import TrivyDbStatusRecord
 from app.storage.atomic import (
     atomic_write_bytes,
@@ -1051,6 +1052,32 @@ class StorageRepository:
         with self._lock(path):
             path.unlink(missing_ok=True)
 
+    def _trivy_checks_status_path(self) -> Path:
+        return self.paths.path("diagnostics", "trivy_checks_status.json")
+
+    def get_trivy_checks_status(self) -> TrivyChecksStatusRecord | None:
+        """`None` means the operator has never explicitly triggered the checks-bundle
+        download -- the same "absence is the honest signal" shape `get_trivy_db_status()`
+        uses."""
+        path = self._trivy_checks_status_path()
+        if not path.exists():
+            return None
+        return self._read_model(path, "trivy_checks_status", TrivyChecksStatusRecord)  # type: ignore[no-any-return]
+
+    def save_trivy_checks_status(self, record: TrivyChecksStatusRecord) -> TrivyChecksStatusRecord:
+        path = self._trivy_checks_status_path()
+        with self._lock(path):
+            current = self.get_trivy_checks_status()
+            if current is not None:
+                record = record.model_copy(update={"revision": current.revision + 1})
+            self._write_model(path, record)
+        return record
+
+    def delete_trivy_checks_status(self) -> None:
+        path = self._trivy_checks_status_path()
+        with self._lock(path):
+            path.unlink(missing_ok=True)
+
     _DOCKER_IMAGE_ENGINES = ("semgrep", "gitleaks", "trivy")
 
     def _docker_image_status_path(self, engine: str) -> Path:
@@ -1642,6 +1669,7 @@ _MODELS: dict[str, type[BaseModel]] = {
     "settings": AppSettings,
     "cve_catalog": CveCatalogRecord,
     "trivy_db_status": TrivyDbStatusRecord,
+    "trivy_checks_status": TrivyChecksStatusRecord,
     "docker_image_status": DockerImageStatusRecord,
 }
 assert set(_MODELS) | {"audit"} == set(CURRENT_VERSIONS)  # noqa: S101 - import-time consistency check

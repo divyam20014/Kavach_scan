@@ -13,7 +13,9 @@ Safety properties:
 
 from __future__ import annotations
 
+import base64
 import json
+import os
 from collections import Counter
 from collections.abc import Callable
 from typing import Any
@@ -83,6 +85,44 @@ def _json(data: Any) -> bytes:
     """Serialize a scan output; every string is redacted (URLs may carry tokens)."""
     safe = redact(json.loads(json.dumps(data, default=str)), max_items=OUTPUT_MAX_ITEMS)
     return json.dumps(safe, indent=2, ensure_ascii=False).encode("utf-8")
+
+
+def _resolve_secret(ref: str) -> str | None:
+    """Mirrors `apisec/runner.py`'s own resolver: env-alias only, never a raw secret."""
+    if ref.startswith("env:"):
+        return os.environ.get(ref[4:])
+    return None
+
+
+def _auth_headers(params: dict[str, Any]) -> tuple[tuple[str, str], ...]:
+    """Build the one configured session-credential header, resolved at run time only.
+
+    Raises if a scheme other than "none" is configured but its secret alias does not
+    resolve, rather than silently crawling unauthenticated while the operator believes
+    authentication is active.
+    """
+    scheme = params.get("auth_scheme") or "none"
+    if scheme == "none":
+        return ()
+    ref = str(params.get("auth_secret_ref") or "")
+    secret = _resolve_secret(ref)
+    if not secret:
+        raise RuntimeError(
+            f"authenticated crawling is configured (auth_scheme={scheme!r}) but the "
+            f"credential referenced by {ref!r} is not available; set that environment "
+            "variable before starting the scan"
+        )
+    header_name = str(params.get("auth_header_name") or "Authorization")
+    if scheme == "bearer":
+        return ((header_name, f"Bearer {secret}"),)
+    if scheme == "header":
+        return ((header_name, secret),)
+    if scheme == "cookie":
+        return (("Cookie", f"{header_name}={secret}"),)
+    if scheme == "basic":
+        token = base64.b64encode(secret.encode("utf-8")).decode("ascii")
+        return (("Authorization", f"Basic {token}"),)
+    return ()
 
 
 class WebAppRunner:
@@ -244,8 +284,15 @@ class WebAppRunner:
     ) -> tuple[HttpService, HttpService]:
         crawl_cfg = HttpClientConfig.from_policy(ctx.policy, verify_tls=profile.tls_verify)
         verified_cfg = HttpClientConfig.from_policy(ctx.policy, verify_tls=True)
+        # The configured session credential (if any) is applied to every crawl request via
+        # `default_headers`; the certificate-only `verified` service deliberately does not
+        # receive it -- transport checks don't need an authenticated session.
+        auth_headers = _auth_headers(dict(ctx.scan.parameters))
         crawl = HttpService(
-            ctx, self.transport_factory(crawl_cfg), max_redirects=profile.budgets.max_redirects
+            ctx,
+            self.transport_factory(crawl_cfg),
+            max_redirects=profile.budgets.max_redirects,
+            default_headers=auth_headers,
         )
         verified = HttpService(ctx, self.transport_factory(verified_cfg), max_redirects=0)
         return crawl, verified

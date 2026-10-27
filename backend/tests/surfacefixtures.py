@@ -147,6 +147,12 @@ def surface_project(
         "allowed_modules": ["attack_surface"],
         "requests_per_second": 10,
         "max_concurrency": 2,
+        # Same reasoning as `webfixtures.lab_project` (TBD-107): these are real loopback
+        # calls serviced by a thread in the same contended test process, not real network
+        # conditions -- widen past `ScanPolicy`'s own tight production defaults (5s/15s) so
+        # a real scan here doesn't trip on scheduling delay rather than an actual fault.
+        "connect_timeout_seconds": 20.0,
+        "read_timeout_seconds": 40.0,
     }
     defaults.update(policy)
     return make_project(authorization=auth, scope=scope, scan_policy=ScanPolicy(**defaults))

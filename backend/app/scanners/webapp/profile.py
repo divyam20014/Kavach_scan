@@ -8,6 +8,7 @@ Safe mode is always on in this build: the scanner sends no injection test input
 
 from __future__ import annotations
 
+import re
 from typing import Any, Literal
 
 from pydantic import Field
@@ -18,6 +19,11 @@ from app.scanners.webapp.rules import CATALOG_VERSION, RULES, Kind
 
 PROFILE_VERSION = 1
 MAX_SEED_PATHS = 20
+#: "none" (default, unauthenticated) or a single operator-configured session credential,
+#: resolved only from an environment alias at run time -- never a raw secret value (mirrors
+#: `apisec/profile.py`'s `AuthProfile`). See TBD_DECISIONS.md.
+AUTH_SCHEMES: tuple[str, ...] = ("none", "bearer", "header", "cookie", "basic")
+AUTH_ALIAS_PATTERN = re.compile(r"^env:[A-Z][A-Z0-9_]{1,127}$")
 
 #: the native, built-in scanner stays the backward-compatible default: an older persisted
 #: `ScanJob.parameters` with no `engine` key, or an older client that never sends one, gets
@@ -43,6 +49,22 @@ PARAMETERS: dict[str, tuple[type, Any, str]] = {
     "check_http_methods": (bool, True, "Send one OPTIONS request per origin to read Allow"),
     "zap_spider_max_minutes": (int, 2, "engine=zap only: bounded spider duration, minutes"),
     "zap_wait_max_minutes": (int, 2, "engine=zap only: bounded passive-scan wait, minutes"),
+    "auth_scheme": (
+        str,
+        "none",
+        "Authenticated crawling: 'none' (default), 'bearer', 'header', 'cookie', or 'basic'",
+    ),
+    "auth_header_name": (
+        str,
+        "Authorization",
+        "Header name for bearer/header schemes, or cookie name for the cookie scheme",
+    ),
+    "auth_secret_ref": (
+        str,
+        "",
+        "Credential reference, e.g. env:VAPT_SESSION_TOKEN (required unless auth_scheme is "
+        "'none'; never a raw secret value)",
+    ),
 }
 
 LIMITATIONS = [
@@ -50,8 +72,10 @@ LIMITATIONS = [
     "Passive indicators only; import results from a dedicated tool (e.g. OWASP ZAP, Burp "
     "Suite) for injection coverage.",
     "JavaScript is not executed; links created only by scripts are not discovered.",
-    "Authenticated crawling is not configured in this build; only unauthenticated pages "
-    "are covered.",
+    "Authenticated crawling supports exactly one operator-configured session credential "
+    "(bearer/header/cookie/basic), resolved from an environment alias; it never attempts "
+    "login guessing. When engine=zap, this credential is not applied -- ZAP crawls "
+    "unauthenticated regardless of auth_scheme.",
     "Content-Security-Policy is checked for presence and basic unsafe patterns only.",
     "Sensitive-file probing is not built in; directory listings, debug and default pages "
     "are detected only on pages the crawler reaches.",
@@ -89,7 +113,10 @@ class WebScanProfile(StrictModel):
     # (or an older client that never sends one) loads with the same native behavior it
     # always had (TBD-081).
     engine: Literal["native", "zap"] = "native"
-    auth_profile: str | None = None  # authenticated crawling is not configured in this build
+    # Never the secret or the env alias name -- only the non-sensitive scheme/header-name
+    # metadata is persisted/displayed (mirrors apisec's `auth_aliases` minimization).
+    auth_scheme: Literal["none", "bearer", "header", "cookie", "basic"] = "none"
+    auth_header_name: str = "Authorization"
     respect_robots: bool
     tls_verify: bool
     seed_paths: list[str] = Field(default_factory=list)
@@ -214,6 +241,19 @@ def validate_parameters(params: dict[str, Any], policy: ScanPolicy) -> list[str]
         minutes = params.get(minutes_param)
         if isinstance(minutes, int) and not isinstance(minutes, bool) and not 1 <= minutes <= 60:
             errors.append(f"{minutes_param} must be between 1 and 60")
+    auth_scheme = params.get("auth_scheme")
+    scheme = auth_scheme if isinstance(auth_scheme, str) and auth_scheme in AUTH_SCHEMES else None
+    if auth_scheme is not None and isinstance(auth_scheme, str) and scheme is None:
+        errors.append(f"auth_scheme must be one of {AUTH_SCHEMES}, got {auth_scheme!r}")
+    if (scheme or "none") != "none":
+        ref = params.get("auth_secret_ref")
+        if not isinstance(ref, str) or not AUTH_ALIAS_PATTERN.match(ref):
+            errors.append(
+                "auth_secret_ref must look like env:NAME (uppercase) when auth_scheme is not 'none'"
+            )
+    header_name = params.get("auth_header_name")
+    if isinstance(header_name, str) and (not header_name or len(header_name) > 64):
+        errors.append("auth_header_name must be 1-64 characters")
     return errors
 
 
@@ -246,8 +286,17 @@ def build_profile(params: dict[str, Any], policy: ScanPolicy) -> WebScanProfile:
     seeds = params.get("seed_paths")
     spider_minutes = params.get("zap_spider_max_minutes")
     wait_minutes = params.get("zap_wait_max_minutes")
+    auth_scheme_raw = params.get("auth_scheme")
+    auth_scheme: Literal["none", "bearer", "header", "cookie", "basic"] = (
+        auth_scheme_raw if auth_scheme_raw in AUTH_SCHEMES else "none"
+    )
+    header_name = params.get("auth_header_name")
     return WebScanProfile(
         engine=engine,
+        auth_scheme=auth_scheme,
+        auth_header_name=(
+            header_name if isinstance(header_name, str) and header_name else "Authorization"
+        ),
         respect_robots=_bool(params, "respect_robots"),
         tls_verify=_bool(params, "tls_verify"),
         seed_paths=_split(seeds) if isinstance(seeds, str) else [],

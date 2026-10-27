@@ -23,6 +23,7 @@ from app.models.common import StrictModel, utc_now
 from app.models.cve_catalog import CveCatalogRecord
 from app.models.docker_image import DockerImageStatusRecord
 from app.models.settings import AppSettings
+from app.models.trivy_checks import TrivyChecksStatusRecord
 from app.models.trivy_db import TrivyDbStatusRecord
 from app.scanners.repo_scan.availability import find_tool
 from app.scanners.repo_scan.docker_argv import build_trivy_db_download_docker_argv
@@ -34,7 +35,7 @@ from app.scanners.repo_scan.docker_images import (
     build_verify_argv,
     image_for,
 )
-from app.scanners.repo_scan.trivy_adapter import build_download_db_argv
+from app.scanners.repo_scan.trivy_adapter import build_download_checks_argv, build_download_db_argv
 from app.services.integrations import (
     TOOL_IDS,
     IntegrationStatus,
@@ -294,6 +295,124 @@ def remove_trivy_db_status(repo: Repository) -> None:
     data directory's `diagnostics/trivy_db` folder directly, same as any other cache)."""
     repo.delete_trivy_db_status()
     repo.audit.record(AuditAction.TRIVY_DB_DOWNLOADED, metadata={"action": "status_cleared"})
+
+
+# ------------------------------------------------------------------ Trivy IaC checks bundle
+# (security/reliability/scope roadmap Phase 4, TBD-111: a second, independent Trivy
+# artifact from the vulnerability database -- see `trivy_adapter.py`'s own module
+# docstring. Native-only for now -- Docker-mode checks-bundle download is deliberately
+# deferred, a disclosed scope simplification, not an oversight.)
+
+TRIVY_CHECKS_DOWNLOAD_TIMEOUT_SECONDS = 120.0  # the real bundle is ~235 KiB (TBD-111); far
+# smaller than the vulnerability database, so a much shorter timeout than TRIVY_DOWNLOAD_
+# TIMEOUT_SECONDS is still generous.
+
+
+class TrivyChecksStatusResponse(StrictModel):
+    downloaded_at: str
+    trivy_version: str
+    size_bytes: int
+
+
+def _checks_bundle_populated(cache_dir: Path) -> bool:
+    """Confirmed directly (TBD-111): Trivy's own checks-bundle download can exit 0 while
+    silently falling back to its embedded checks on a network failure -- unlike the
+    vulnerability database, a 0 exit code alone does not prove the bundle was fetched. The
+    caller must check the cache directory itself before recording success."""
+    content_dir = cache_dir / "policy" / "content"
+    return content_dir.is_dir() and any(content_dir.iterdir())
+
+
+@router.get("/integrations/trivy/checks-status", response_model=TrivyChecksStatusResponse | None)
+def trivy_checks_status(repo: Repository) -> TrivyChecksStatusResponse | None:
+    """`None` means the operator has never explicitly triggered the download -- see
+    `app/models/trivy_checks.py`."""
+    record = repo.get_trivy_checks_status()
+    if record is None:
+        return None
+    return TrivyChecksStatusResponse(
+        downloaded_at=record.downloaded_at.isoformat(),
+        trivy_version=record.trivy_version,
+        size_bytes=record.size_bytes,
+    )
+
+
+@router.post("/integrations/trivy/download-checks", response_model=TrivyChecksStatusResponse)
+def download_trivy_checks(repo: Repository) -> TrivyChecksStatusResponse:
+    """The one explicit, operator-initiated action that is ever allowed to download
+    Trivy's IaC/misconfiguration checks bundle (TBD-111) -- a `repo_scan` job with
+    `trivy_iac` enabled never downloads it itself (see `trivy_adapter.py`'s own module
+    docstring). Native `trivy` only in this build (Docker-mode fallback, unlike the
+    sibling vulnerability-database route, is deliberately deferred).
+
+    Scans a harmless, empty directory (`repo.diagnostics_temp_dir()`) with misconfig
+    scanning enabled, which triggers the bundle fetch as a side effect before any
+    file-type detection happens -- see `build_download_checks_argv`'s own docstring.
+    Critically, this does **not** trust Trivy's own exit code: a 0 exit can mean the
+    download genuinely succeeded, or that it silently fell back to embedded checks after a
+    network failure (confirmed directly, TBD-111) -- the cache directory itself is checked
+    for the bundle's own marker content before any success is ever recorded."""
+    native_executable = find_tool(repo.get_settings().integrations.trivy_path, ["trivy"])
+    if not native_executable:
+        raise ValidationFailedError(
+            "Trivy is not installed or configured -- set a native path in Integrations first"
+        )
+    cache_dir = repo.trivy_db_dir()
+    argv = build_download_checks_argv(native_executable, cache_dir)
+    try:
+        result = run_process(
+            argv,
+            allowed_executables=[native_executable],
+            cwd=repo.diagnostics_temp_dir(),
+            timeout=TRIVY_CHECKS_DOWNLOAD_TIMEOUT_SECONDS,
+            temp_dir=repo.diagnostics_temp_dir(),
+        )
+    except ProcessPolicyError as exc:
+        raise ValidationFailedError(f"could not run trivy: {exc}") from exc
+    if result.timed_out:
+        raise ValidationFailedError(
+            f"the download did not finish within {TRIVY_CHECKS_DOWNLOAD_TIMEOUT_SECONDS:.0f}s"
+        )
+    if result.exit_code != 0:
+        raise ValidationFailedError(f"trivy exited with status {result.exit_code}")
+    if not _checks_bundle_populated(cache_dir):
+        raise ValidationFailedError(
+            "trivy exited successfully but the checks bundle was not downloaded -- this "
+            "usually means the network is unreachable (Trivy falls back to its own "
+            "embedded checks rather than failing); check connectivity and try again"
+        )
+    version_result = run_process(
+        [native_executable, "--version"],
+        allowed_executables=[native_executable],
+        cwd=repo.diagnostics_temp_dir(),
+        timeout=DOCKER_VERIFY_TIMEOUT_SECONDS,
+        temp_dir=repo.diagnostics_temp_dir(),
+    )
+    version_text = version_result.stdout.decode("utf-8", "replace").strip()
+    record = repo.save_trivy_checks_status(
+        TrivyChecksStatusRecord(
+            downloaded_at=utc_now(),
+            trivy_version=version_text[:200],
+            size_bytes=_db_dir_size(cache_dir / "policy"),
+        )
+    )
+    repo.audit.record(
+        AuditAction.TRIVY_CHECKS_DOWNLOADED,
+        metadata={"trivy_version": record.trivy_version, "size_bytes": record.size_bytes},
+    )
+    return TrivyChecksStatusResponse(
+        downloaded_at=record.downloaded_at.isoformat(),
+        trivy_version=record.trivy_version,
+        size_bytes=record.size_bytes,
+    )
+
+
+@router.delete("/integrations/trivy/checks-status", status_code=204)
+def remove_trivy_checks_status(repo: Repository) -> None:
+    """Clears only this application's own *record* that the download happened -- never
+    deletes the cache directory's contents, same as `remove_trivy_db_status`."""
+    repo.delete_trivy_checks_status()
+    repo.audit.record(AuditAction.TRIVY_CHECKS_DOWNLOADED, metadata={"action": "status_cleared"})
 
 
 # ------------------------------------------------------------------ Docker-based engines

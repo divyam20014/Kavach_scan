@@ -46,6 +46,19 @@ PARAMETERS: dict[str, tuple[type, Any, str]] = {
     "semgrep_timeout_minutes": (int, 5, "Bounded Semgrep scan duration, minutes"),
     "gitleaks_timeout_minutes": (int, 5, "Bounded Gitleaks scan duration, minutes"),
     "trivy_timeout_minutes": (int, 5, "Bounded Trivy scan duration, minutes"),
+    "trivy_iac": (
+        bool,
+        False,
+        "Also run Trivy's IaC/misconfiguration checks (Terraform, Dockerfile, Kubernetes, "
+        "CloudFormation, Helm, Ansible) -- requires 'trivy' to be selected and its checks "
+        "bundle to have been downloaded from the Integrations page",
+    ),
+    "trivy_sbom": (
+        bool,
+        False,
+        "Also generate a software bill of materials (package inventory) and a license "
+        "inventory -- requires 'trivy' to be selected",
+    ),
 }
 
 LIMITATIONS = [
@@ -59,6 +72,19 @@ LIMITATIONS = [
     "even in redacted form -- only the rule, file and line are recorded.",
     "Trivy's vulnerability database is downloaded once, explicitly, from the Integrations "
     "page -- never automatically by a scan -- and may be out of date if not refreshed.",
+    "Trivy's IaC/misconfiguration checks (when enabled) are a static policy match against "
+    "declared infrastructure-as-code; a failed check proves the declared configuration "
+    "does not meet that policy, not that it was ever deployed or exploited. Its own checks "
+    "bundle is downloaded once, explicitly, from the Integrations page -- never "
+    "automatically by a scan.",
+    "The software bill of materials (when enabled) lists every package Trivy's own "
+    "dependency-file parsing detects; per-package license fields are only as complete as "
+    "each ecosystem's own metadata -- e.g. a bare Python requirements.txt with no "
+    "installed environment yields no license data for its packages, never a false 'no "
+    "license' claim. The separate license-file scan (classifier-confirmed, with a "
+    "confidence score) is the more reliable source for an actual license finding; only "
+    "a 'forbidden' or 'restricted' classification becomes a finding, never a lower-risk "
+    "or unclassified one.",
 ]
 
 
@@ -70,6 +96,8 @@ class RepoScanProfile(StrictModel):
     semgrep_timeout_minutes: int = 5
     gitleaks_timeout_minutes: int = 5
     trivy_timeout_minutes: int = 5
+    trivy_iac: bool = False
+    trivy_sbom: bool = False
     limitations: list[str] = Field(default_factory=lambda: list(LIMITATIONS))
 
 
@@ -92,6 +120,8 @@ def validate_parameters(params: dict[str, Any], policy: ScanPolicy) -> list[str]
             errors.append(f"{name} must be text")
         elif kind is list and not isinstance(value, list):
             errors.append(f"{name} must be a list")
+        elif kind is bool and not isinstance(value, bool):
+            errors.append(f"{name} must be true or false")
     engines = params.get("engines")
     if isinstance(engines, list):
         if not engines:
@@ -130,6 +160,14 @@ def validate_parameters(params: dict[str, Any], policy: ScanPolicy) -> list[str]
             errors.append(
                 f"{minutes_param} must be between {MIN_TIMEOUT_MINUTES} and {MAX_TIMEOUT_MINUTES}"
             )
+    trivy_iac = params.get("trivy_iac")
+    trivy_sbom = params.get("trivy_sbom")
+    if trivy_iac is True or trivy_sbom is True:
+        effective_engines = engines if isinstance(engines, list) and engines else DEFAULT_ENGINES
+        if trivy_iac is True and "trivy" not in effective_engines:
+            errors.append("trivy_iac requires 'trivy' to be one of the selected engines")
+        if trivy_sbom is True and "trivy" not in effective_engines:
+            errors.append("trivy_sbom requires 'trivy' to be one of the selected engines")
     return errors
 
 
@@ -163,4 +201,6 @@ def build_profile(params: dict[str, Any]) -> RepoScanProfile:
             int(gitleaks_timeout) if isinstance(gitleaks_timeout, int) else 5
         ),
         trivy_timeout_minutes=(int(trivy_timeout) if isinstance(trivy_timeout, int) else 5),
+        trivy_iac=params.get("trivy_iac") is True and "trivy" in engines,
+        trivy_sbom=params.get("trivy_sbom") is True and "trivy" in engines,
     )

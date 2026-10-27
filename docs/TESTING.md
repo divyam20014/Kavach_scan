@@ -361,6 +361,16 @@ Not live-tested: a real remote client against `uvicorn app.main:app --host 0.0.0
 
 `tests/conftest.py::_offline_guard` (autouse) patches `socket.socket.connect`, so any connection to a non-loopback IP or to a hostname fails the test immediately. Loopback stays allowed for fixture servers. Subprocesses spawned by tests are not covered by this in-process patch; they only run app code that has no network imports (enforced by `tests/test_static_guards.py`).
 
+## 5.1 A known, investigated, now root-caused intermittent flake (TBD-107)
+
+`tests/test_webapp_verification.py::test_every_evidence_record_and_output_is_bounded_and_secret_free` and `::test_raw_tls_tool_output_is_redacted_and_absent_tool_is_skipped` have intermittently failed during full-suite runs. The investigation initially suspected HTTP connect/read timing (these tests run a real `JobManager` scan against a real loopback `ThreadingHTTPServer`, as threads in the same test process, under `lab_project()`'s `ScanPolicy`) — but two isolated CPU-stress attempts and two full-suite reproduction runs (one deliberately concurrent with a real frontend `vitest` pass that independently proved genuine severe system contention by starving its own worker pool) all passed cleanly, **disproving** that theory.
+
+A third full-suite run caught a live instance of the same failure class in a different test, `test_surface_verification.py::test_changing_dns_answer_is_revalidated_each_scan`, stuck at `stage='summary' percent=97.0` past its 90s wait. Tracing the actual stall point found the real mechanism: `app/storage/atomic.py::_replace_with_retry`, a bounded (5s per call) Windows-only retry on `PermissionError` for antivirus/indexer software briefly holding a just-replaced file open — **already documented as risk R2 in `docs/ARCHITECTURE.md`**, not a hidden defect. The summary stage writes five to six files sequentially; several retries compounding on an already-busy, long-running suite run is enough to exceed even a 90s test timeout.
+
+After widening that one test's margin, a fourth full-suite run caught a **third, independent** instance of the identical signature in a **third** file (`test_webapp_scan.py::test_failing_tls_tool_is_an_error_not_a_pass`, stuck at `stage='findings' percent=92.0`) — proving this is a **systemic pattern** across every test sharing the "real scan job + ~90s `wait_for`" shape, not a handful of isolated tests.
+
+Applied mitigations, all test-only: every `tests/` call site with this shape was found by grep and widened from 90s to 150s (`test_cve_catalog.py`, `test_e2e_full_flow.py`, `test_surface_scan.py`, `test_webapp_scan.py`, `test_webapp_verification.py`, `test_webapp_zap_engine.py`), each with the reasoning recorded as a code comment; `lab_project()` and `surface_project()` widen `connect_timeout_seconds`/`read_timeout_seconds` to 20s/40s. `ScanPolicy`'s production defaults and the antivirus-retry cap itself are untouched — this is a scoped, test-only accommodation for a documented, bounded, already-deliberate piece of defensive code, not an application defect. If a test sharing this shape fails again, the mechanism is already known — check whether a new call site was added without the same timeout convention before assuming a new cause.
+
 ## 6. Phase-specific must-have tests
 
 | Phase | Must test |

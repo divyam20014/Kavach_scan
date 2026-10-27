@@ -190,6 +190,9 @@ RESULT_FILES = {
     "zap_summary": "zap_summary.json",
     # repo_scan (roadmap Phase 2 increment 4, TBD-087)
     "repo_scan_summary": "repo_scan_summary.json",
+    # repo_scan, trivy_sbom (security/reliability/scope roadmap Phase 5, TBD-112)
+    "sbom": "sbom.json",
+    "licenses": "licenses.json",
     # attack surface (Phase 06)
     "inventory": "inventory.json",
     "changes": "changes.json",

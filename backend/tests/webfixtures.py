@@ -341,6 +341,22 @@ def lab_project(ports: list[int], *, schemes: list[str] | None = None, **policy:
         "allowed_modules": ["web_app"],
         "requests_per_second": 10,
         "max_concurrency": 2,
+        # Wider than `ScanPolicy`'s own production defaults (5s/15s) on purpose: these
+        # fixture requests are real loopback HTTP calls serviced by a thread in the SAME
+        # test process as the job worker consuming them, so they compete for the same GIL
+        # and CPU as the rest of the suite -- under real system load (confirmed directly:
+        # a concurrent frontend test run starved even the frontend's own worker pool, unable
+        # to start 7 of its own workers in time) a connect/read that would be instant in
+        # isolation can occasionally take longer than production's own tight budget allows.
+        # A real investigation (two full-suite reproduction attempts, one of them under
+        # confirmed heavy concurrent contention) could not reproduce the historical
+        # intermittent failure directly, so this margin is a disclosed, deliberate
+        # mitigation for a suspected rare race, not a confirmed fix for a confirmed cause --
+        # see TBD_DECISIONS.md. Individual tests that need a short timeout to exercise
+        # timeout/backoff behavior build their own `HttpClientConfig` directly and are
+        # unaffected by this default.
+        "connect_timeout_seconds": 20.0,
+        "read_timeout_seconds": 40.0,
     }
     defaults.update(policy)
     return make_project(authorization=auth, scope=scope, scan_policy=ScanPolicy(**defaults))

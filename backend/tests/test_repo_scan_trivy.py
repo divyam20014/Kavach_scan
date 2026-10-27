@@ -17,10 +17,15 @@ import pytest
 
 from app.models.common import Confidence, Severity
 from app.scanners.repo_scan.trivy_adapter import (
+    LICENSE_ACTIONABLE_CATEGORIES,
     TrivyArgvError,
     TrivyReportError,
+    build_download_checks_argv,
     build_scan_argv,
     parse_trivy_json,
+    parse_trivy_license_json,
+    parse_trivy_misconfig_json,
+    parse_trivy_packages_json,
 )
 
 REAL_TRIVY_OUTPUT = b"""
@@ -223,3 +228,297 @@ def test_build_scan_argv_rejects_out_of_range_timeout(tmp_path: Path) -> None:
             tmp_path / "cache",
             timeout_seconds=99999,
         )
+
+
+# ---------------------------------------------------------------- IaC/misconfiguration (TBD-111)
+
+# Trimmed directly from a real local Trivy 0.76.1 run (`trivy fs <dir> --scanners misconfig
+# ...` against a throwaway Dockerfile and Terraform file with known misconfigurations, run
+# via the official `aquasec/trivy` Docker image pulled from Docker Hub -- GitHub's own
+# binary-release CDN was blocked in this environment, see TBD-111), not hand-invented.
+REAL_TRIVY_MISCONFIG_OUTPUT = b"""
+{
+  "SchemaVersion": 2,
+  "Trivy": {"Version": "0.76.1"},
+  "ArtifactName": "/work/iac",
+  "ArtifactType": "filesystem",
+  "Results": [
+    {
+      "Target": ".",
+      "Class": "config",
+      "Type": "terraform",
+      "MisconfSummary": {"Successes": 69, "Failures": 0}
+    },
+    {
+      "Target": "Dockerfile",
+      "Class": "config",
+      "Type": "dockerfile",
+      "MisconfSummary": {"Successes": 23, "Failures": 2},
+      "Misconfigurations": [
+        {
+          "Type": "Dockerfile Security Check",
+          "ID": "DS-0001",
+          "Title": "':latest' tag used",
+          "Description": "When using a 'FROM' statement you should use a specific tag.",
+          "Message": "Specify a tag in the 'FROM' statement for image 'ubuntu'",
+          "Resolution": "Add a tag to the image in the 'FROM' statement",
+          "Severity": "MEDIUM",
+          "References": ["https://avd.aquasec.com/misconfig/ds-0001"],
+          "Status": "FAIL",
+          "CauseMetadata": {"Provider": "Dockerfile", "Service": "general", "StartLine": 1, "EndLine": 1}
+        },
+        {
+          "Type": "Dockerfile Security Check",
+          "ID": "DS-0002",
+          "Title": "Image user should not be 'root'",
+          "Description": "Running containers with 'root' user can lead to a container escape.",
+          "Message": "Last USER command in Dockerfile should not be 'root'",
+          "Resolution": "Add 'USER <non root user name>' line to the Dockerfile",
+          "Severity": "HIGH",
+          "References": ["https://avd.aquasec.com/misconfig/ds-0002"],
+          "Status": "FAIL",
+          "CauseMetadata": {"Provider": "Dockerfile", "Service": "general", "StartLine": 2, "EndLine": 2}
+        }
+      ]
+    },
+    {
+      "Target": "main.tf",
+      "Class": "config",
+      "Type": "terraform",
+      "MisconfSummary": {"Successes": 0, "Failures": 1},
+      "Misconfigurations": [
+        {
+          "Type": "Terraform Security Check",
+          "ID": "AWS-0107",
+          "Title": "Security groups should not allow unrestricted ingress to SSH or RDP.",
+          "Description": "It is recommended that no security group allows unrestricted ingress.",
+          "Message": "Security group rule allows unrestricted ingress from any IP address.",
+          "Resolution": "Set a more restrictive CIDR range",
+          "Severity": "HIGH",
+          "References": ["https://avd.aquasec.com/misconfig/aws-0107"],
+          "Status": "FAIL",
+          "CauseMetadata": {
+            "Resource": "aws_security_group.bad_sg",
+            "Provider": "AWS",
+            "Service": "ec2",
+            "StartLine": 12,
+            "EndLine": 12
+          }
+        }
+      ]
+    }
+  ]
+}
+"""
+
+
+def test_parse_trivy_misconfig_json_reads_only_misconfigurations_not_vulnerabilities() -> None:
+    findings = parse_trivy_misconfig_json(REAL_TRIVY_MISCONFIG_OUTPUT)
+    assert len(findings) == 3
+    ids = {f.check_id for f in findings}
+    assert ids == {"DS-0001", "DS-0002", "AWS-0107"}
+
+
+def test_parse_trivy_misconfig_json_maps_severity_and_never_confirms() -> None:
+    findings = parse_trivy_misconfig_json(REAL_TRIVY_MISCONFIG_OUTPUT)
+    by_id = {f.check_id: f for f in findings}
+    assert by_id["DS-0002"].severity == Severity.HIGH
+    assert by_id["DS-0001"].severity == Severity.MEDIUM
+    assert all(f.confidence == Confidence.PROBABLE for f in findings)  # never CONFIRMED
+
+
+def test_parse_trivy_misconfig_json_captures_file_resource_and_lines() -> None:
+    findings = parse_trivy_misconfig_json(REAL_TRIVY_MISCONFIG_OUTPUT)
+    by_id = {f.check_id: f for f in findings}
+    assert by_id["DS-0001"].target == "Dockerfile"
+    assert by_id["DS-0001"].start_line == 1
+    assert by_id["AWS-0107"].target == "main.tf"
+    assert by_id["AWS-0107"].resource == "aws_security_group.bad_sg"
+    assert by_id["AWS-0107"].start_line == 12
+
+
+def test_parse_trivy_misconfig_json_fingerprint_differs_per_finding() -> None:
+    findings = parse_trivy_misconfig_json(REAL_TRIVY_MISCONFIG_OUTPUT)
+    keys = {f.fingerprint_key for f in findings}
+    assert len(keys) == len(findings)  # no two distinct findings collide
+
+
+def test_parse_trivy_json_ignores_misconfig_only_results() -> None:
+    """The combined-report shape (TBD-111): a pure-`config`-class result with zero
+    `Vulnerabilities` must contribute nothing to the vulnerability finding list."""
+    assert parse_trivy_json(REAL_TRIVY_MISCONFIG_OUTPUT) == []
+
+
+def test_build_scan_argv_with_misconfig_adds_skip_check_update(tmp_path: Path) -> None:
+    argv = build_scan_argv(
+        "/usr/bin/trivy",
+        tmp_path / "repo",
+        tmp_path / "report.json",
+        tmp_path / "cache",
+        scanners=("vuln", "misconfig"),
+    )
+    idx = argv.index("--scanners")
+    assert argv[idx + 1] == "vuln,misconfig"
+    assert "--skip-check-update" in argv
+
+
+def test_build_scan_argv_vuln_only_has_no_skip_check_update(tmp_path: Path) -> None:
+    argv = build_scan_argv(
+        "/usr/bin/trivy", tmp_path / "repo", tmp_path / "report.json", tmp_path / "cache"
+    )
+    assert "--skip-check-update" not in argv
+
+
+def test_build_download_checks_argv_matches_the_confirmed_working_shape(tmp_path: Path) -> None:
+    cache_dir = tmp_path / "cache"
+    argv = build_download_checks_argv("/usr/bin/trivy", cache_dir)
+    assert argv == [
+        "/usr/bin/trivy",
+        "fs",
+        ".",
+        "--scanners",
+        "misconfig",
+        "--cache-dir",
+        str(cache_dir),
+        "--disable-telemetry",
+        "--no-progress",
+        "--skip-version-check",
+    ]
+
+
+# ---------------------------------------------------------------- SBOM / license (TBD-112)
+
+# Trimmed directly from a real local Trivy 0.76.1 run (`trivy fs <dir> --scanners
+# vuln,license --license-full ...` against a throwaway npm/pip/LICENSE fixture, run via the
+# official `aquasec/trivy` Docker image pulled from Docker Hub -- GitHub's own binary-
+# release CDN was blocked in this environment, see TBD-112), not hand-invented. The pip
+# result's missing `Licenses` key on its own package (no `site-packages` directory found)
+# is the real, confirmed behavior, not an simplification for the test.
+REAL_TRIVY_SBOM_LICENSE_OUTPUT = b"""
+{
+  "SchemaVersion": 2,
+  "Trivy": {"Version": "0.76.1"},
+  "ArtifactName": "/work/all",
+  "ArtifactType": "filesystem",
+  "Results": [
+    {
+      "Target": "node/package-lock.json",
+      "Class": "lang-pkgs",
+      "Type": "npm",
+      "Packages": [
+        {
+          "ID": "lodash@4.17.21",
+          "Name": "lodash",
+          "Identifier": {"PURL": "pkg:npm/lodash@4.17.21", "UID": "d8b5f60846330939"},
+          "Version": "4.17.21",
+          "Licenses": ["MIT"],
+          "Relationship": "direct"
+        }
+      ]
+    },
+    {
+      "Target": "requirements.txt",
+      "Class": "lang-pkgs",
+      "Type": "pip",
+      "Packages": [
+        {
+          "Name": "Django",
+          "Identifier": {"PURL": "pkg:pypi/django@4.2.0", "UID": "9c6b5407efd73222"},
+          "Version": "4.2.0"
+        }
+      ]
+    },
+    {
+      "Target": "Loose File License(s)",
+      "Class": "license-file",
+      "Licenses": [
+        {
+          "Severity": "LOW",
+          "Category": "notice",
+          "PkgName": "",
+          "FilePath": "LICENSE",
+          "Name": "MIT",
+          "Text": "",
+          "Confidence": 1,
+          "Link": "https://spdx.org/licenses/MIT.html"
+        },
+        {
+          "Severity": "HIGH",
+          "Category": "restricted",
+          "PkgName": "",
+          "FilePath": "vendor/COPYING",
+          "Name": "GPL-3.0",
+          "Text": "",
+          "Confidence": 0.95,
+          "Link": "https://spdx.org/licenses/GPL-3.0-only.html"
+        }
+      ]
+    }
+  ]
+}
+"""
+
+
+def test_parse_trivy_packages_json_reads_every_ecosystem_regardless_of_license_data() -> None:
+    packages = parse_trivy_packages_json(REAL_TRIVY_SBOM_LICENSE_OUTPUT)
+    assert len(packages) == 2
+    by_name = {p.name: p for p in packages}
+    assert by_name["lodash"].ecosystem == "npm"
+    assert by_name["lodash"].licenses == ["MIT"]
+    assert by_name["lodash"].purl == "pkg:npm/lodash@4.17.21"
+    # pip, with no installed environment: no license data at all -- confirmed real behavior,
+    # never a fabricated empty-list-means-"no license" claim beyond what Trivy itself says.
+    assert by_name["Django"].ecosystem == "pip"
+    assert by_name["Django"].licenses == []
+
+
+def test_parse_trivy_license_json_reads_only_the_license_file_class() -> None:
+    findings = parse_trivy_license_json(REAL_TRIVY_SBOM_LICENSE_OUTPUT)
+    assert len(findings) == 2
+    names = {f.name for f in findings}
+    assert names == {"MIT", "GPL-3.0"}
+
+
+def test_parse_trivy_license_json_never_reads_packages_licenses() -> None:
+    """`Packages[].Licenses` (plain strings) must never be misread as a license-file
+    classifier match (dicts) -- the two share a field name at different nesting levels."""
+    only_packages = (
+        b'{"Results": [{"Target": "x", "Packages": [{"Name": "p", "Licenses": ["MIT"]}]}]}'
+    )
+    assert parse_trivy_license_json(only_packages) == []
+
+
+def test_license_finding_actionability_matches_the_real_classifier_taxonomy() -> None:
+    findings = parse_trivy_license_json(REAL_TRIVY_SBOM_LICENSE_OUTPUT)
+    by_name = {f.name: f for f in findings}
+    assert by_name["MIT"].category == "notice"
+    assert by_name["MIT"].is_actionable is False  # permissive-family -- inventory only
+    assert by_name["GPL-3.0"].category == "restricted"
+    assert by_name["GPL-3.0"].is_actionable is True
+    assert by_name["GPL-3.0"].severity == Severity.MEDIUM
+    assert set(LICENSE_ACTIONABLE_CATEGORIES) == {"forbidden", "restricted"}
+
+
+def test_license_finding_confidence_level_is_never_confirmed() -> None:
+    findings = parse_trivy_license_json(REAL_TRIVY_SBOM_LICENSE_OUTPUT)
+    assert all(f.confidence_level == Confidence.PROBABLE for f in findings)
+
+
+def test_build_scan_argv_with_license_adds_license_full(tmp_path: Path) -> None:
+    argv = build_scan_argv(
+        "/usr/bin/trivy",
+        tmp_path / "repo",
+        tmp_path / "report.json",
+        tmp_path / "cache",
+        scanners=("vuln", "license"),
+    )
+    idx = argv.index("--scanners")
+    assert argv[idx + 1] == "vuln,license"
+    assert "--license-full" in argv
+
+
+def test_build_scan_argv_without_license_has_no_license_full(tmp_path: Path) -> None:
+    argv = build_scan_argv(
+        "/usr/bin/trivy", tmp_path / "repo", tmp_path / "report.json", tmp_path / "cache"
+    )
+    assert "--license-full" not in argv

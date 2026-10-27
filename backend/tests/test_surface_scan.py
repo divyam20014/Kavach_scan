@@ -44,7 +44,10 @@ def _scan(
     jm: JobManager,
     pid: str,
     targets: list[str],
-    timeout: float = 90,
+    # 150s, not 90s: TBD-107 traced a real stuck-near-completion failure (in a sibling test
+    # using the same shape) to bounded Windows antivirus/indexer retry delays compounding
+    # across several sequential output writes on an already-busy, long-running suite run.
+    timeout: float = 150,
     **params: Any,
 ) -> Any:
     scan, _ = jm.submit(

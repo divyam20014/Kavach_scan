@@ -19,7 +19,11 @@ from app.models.common import Confidence, Severity, new_id
 from app.models.finding import DedupEvent, Finding, FindingSource, StandardMapping
 from app.scanners.repo_scan.gitleaks_adapter import GitleaksFinding
 from app.scanners.repo_scan.semgrep_adapter import SemgrepFinding
-from app.scanners.repo_scan.trivy_adapter import TrivyFinding
+from app.scanners.repo_scan.trivy_adapter import (
+    TrivyFinding,
+    TrivyLicenseFinding,
+    TrivyMisconfigFinding,
+)
 from app.standards.cwe import CWE_CATALOG_VERSION, cwe_title
 from app.storage.repository import StorageRepository
 
@@ -218,4 +222,68 @@ class RepoScanFindingWriter:
             references=f.references,
             rule_id=f.vulnerability_id,
             remediation=remediation,
+        )
+
+    def write_trivy_misconfig(self, f: TrivyMisconfigFinding, *, tool_version: str) -> str:
+        raw = f"{self.project_id}|trivy-iac-{f.fingerprint_key}"
+        fp = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+        source = FindingSource(
+            tool="Trivy",
+            tool_version=tool_version,
+            rule_id=f.check_id,
+            scan_id=self.scan_id,
+            original_severity=f.severity_raw,
+        )
+        location = f"{f.target}" + (f":{f.start_line}" if f.start_line else "")
+        component = f"{f.target}:{f.resource}" if f.resource else f.target
+        return self._write(
+            fp=fp,
+            source=source,
+            title=f.title or f.check_id,
+            summary=f.message,
+            # Trivy's own `Misconfigurations[]` gives no CWE mapping (unlike `CweIDs` on a
+            # vulnerability finding) -- never invented here; see `cwe_ids=[]` below.
+            technical_detail=f"{f.message}\n\n{f.description}\n\nLocation: {location}"
+            + (f"\nResource: {f.resource}" if f.resource else ""),
+            category="repo_scan_trivy_iac",
+            component=component[:200],
+            severity=f.severity,
+            confidence=f.confidence,
+            cwe_ids=[],
+            mappings=[],
+            references=f.references,
+            rule_id=f.check_id,
+            remediation=f.resolution,
+        )
+
+    def write_trivy_license(self, f: TrivyLicenseFinding, *, tool_version: str) -> str:
+        """Only ever called for an `f.is_actionable` match (`forbidden`/`restricted` -- see
+        `TrivyLicenseFinding` itself); every match, actionable or not, is still recorded in
+        full in `licenses.json` by the caller for transparency (security/reliability/scope
+        roadmap Phase 5, TBD-112)."""
+        raw = f"{self.project_id}|trivy-license-{f.fingerprint_key}"
+        fp = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+        source = FindingSource(
+            tool="Trivy",
+            tool_version=tool_version,
+            rule_id=f.name,
+            scan_id=self.scan_id,
+            original_severity=f.category,
+        )
+        component = f"{f.file_path}:{f.pkg_name}" if f.pkg_name else f.file_path
+        return self._write(
+            fp=fp,
+            source=source,
+            title=f"{f.category.capitalize()} license: {f.name}",
+            summary=f"{f.name} ({f.category}) detected in {component}",
+            technical_detail=f"License {f.name}, category {f.category!r}, classifier "
+            f"confidence {f.confidence:.2f}.\n\nLocation: {component}",
+            category="repo_scan_trivy_license",
+            component=component[:200],
+            severity=f.severity,
+            confidence=f.confidence_level,
+            cwe_ids=[],
+            mappings=[],
+            references=[f.link] if f.link else [],
+            rule_id=f.name,
         )

@@ -264,6 +264,33 @@ def test_cve_results_passes_when_no_catalog_entry_matches(repo: StorageRepositor
     assert results[0].outcome.value == "pass"
 
 
+def test_cve_results_notes_staleness_when_the_catalog_has_aged_past_its_own_limit(
+    repo: StorageRepository,
+) -> None:
+    record = parse_catalog_file(_good_catalog_bytes(stale_after_days=10))
+    stale_record = record.model_copy(update={"imported_at": utc_now() - timedelta(days=11)})
+    repo.save_cve_catalog(stale_record)
+    catalog = StoredCveCatalog(repo)
+    assert catalog.available is True and catalog.stale is True
+
+    comp = Component(name="jquery", version="2.0.0")  # not in the affected range -> PASS
+    results = cve_results([comp], catalog)
+    assert len(results) == 1
+    assert results[0].outcome.value == "pass"
+    assert "stale" in results[0].rationale
+
+
+def test_cve_results_does_not_mention_staleness_for_a_fresh_catalog(
+    repo: StorageRepository,
+) -> None:
+    repo.save_cve_catalog(parse_catalog_file(_good_catalog_bytes()))
+    catalog = StoredCveCatalog(repo)
+    assert catalog.stale is False
+    comp = Component(name="jquery", version="2.0.0")
+    results = cve_results([comp], catalog)
+    assert "stale" not in results[0].rationale
+
+
 def test_importing_a_new_catalog_replaces_the_old_one(repo: StorageRepository) -> None:
     repo.save_cve_catalog(parse_catalog_file(_good_catalog_bytes()))
     repo.save_cve_catalog(
@@ -339,7 +366,11 @@ def test_cve_catalog_matches_a_real_component_in_a_full_offline_scan(
         )
         jm.start()
         try:
-            done = wait_for(repo, pid, scan.scan_id, terminal, timeout=90)
+            # 150s, not 90s: TBD-107 traced a real stuck-near-completion failure here to
+            # Windows antivirus/indexer retry delays (`atomic.py::_replace_with_retry`,
+            # bounded at 5s each) compounding across several sequential output writes on an
+            # already-busy, long-running full-suite run -- not an application hang.
+            done = wait_for(repo, pid, scan.scan_id, terminal, timeout=150)
         finally:
             jm.stop()
 

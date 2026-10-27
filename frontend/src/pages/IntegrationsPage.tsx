@@ -6,12 +6,14 @@ import {
   useCveCatalog,
   useDeleteCveCatalog,
   useDockerImageStatus,
+  useDownloadTrivyChecks,
   useDownloadTrivyDb,
   useImportCveCatalog,
   useIntegrationSelftest,
   useIntegrations,
   usePullDockerImage,
   useSettings,
+  useTrivyChecksStatus,
   useTrivyDbStatus,
   useUpdateSettings,
 } from "../api/hooks";
@@ -43,6 +45,7 @@ export function IntegrationsPage() {
 
         <CveCatalogCard />
         <TrivyDbCard />
+        <TrivyChecksCard />
         <DockerImagesCard />
         <ToolPathSettingsCard />
       </Stack>
@@ -193,6 +196,46 @@ function TrivyDbCard() {
       )}
       <Button variant="default" onClick={onDownload} loading={downloadMutation.isPending}>
         {status.data ? "Re-download database" : "Download database…"}
+      </Button>
+    </Card>
+  );
+}
+
+function TrivyChecksCard() {
+  const status = useTrivyChecksStatus();
+  const downloadMutation = useDownloadTrivyChecks();
+
+  const onDownload = () =>
+    downloadMutation.mutate(undefined, {
+      onSuccess: () => notifications.show({ color: "green", message: "Trivy checks bundle downloaded" }),
+      onError: (e) => notifications.show({ color: "red", title: "Download failed", message: e instanceof ApiError ? e.describe() : "Unexpected error" }),
+    });
+
+  return (
+    <Card withBorder component="section" aria-labelledby="trivy-checks-h">
+      <Title order={2} size="h4" id="trivy-checks-h" mb="sm">Trivy IaC/misconfiguration checks bundle</Title>
+      <Text size="sm" c="dimmed" mb="sm">
+        A separate, independent download from the vulnerability database above (about 235 KB). Never
+        downloaded automatically by a scan — a repository scan with the IaC option enabled is rejected
+        until this has been done.
+      </Text>
+      {status.isPending ? (
+        <Loading label="Checking checks-bundle status…" />
+      ) : status.isError ? (
+        <ErrorAlert error={status.error} />
+      ) : !status.data ? (
+        <Text size="sm" c="dimmed" mb="sm">Not downloaded yet.</Text>
+      ) : (
+        <Stack gap="xs" mb="sm">
+          <Group gap="xs">
+            <Badge variant="outline">Trivy {status.data.trivy_version}</Badge>
+            <Badge variant="outline">{(status.data.size_bytes / 1024).toFixed(0)} KB</Badge>
+          </Group>
+          <Text size="xs" c="dimmed">Downloaded {formatDateTime(status.data.downloaded_at)}</Text>
+        </Stack>
+      )}
+      <Button variant="default" onClick={onDownload} loading={downloadMutation.isPending}>
+        {status.data ? "Re-download checks bundle" : "Download checks bundle…"}
       </Button>
     </Card>
   );

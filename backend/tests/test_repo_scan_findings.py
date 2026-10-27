@@ -7,7 +7,11 @@ from app.models.common import Confidence, Severity, new_id
 from app.scanners.repo_scan.findings import RepoScanFindingWriter
 from app.scanners.repo_scan.gitleaks_adapter import GitleaksFinding
 from app.scanners.repo_scan.semgrep_adapter import SemgrepFinding
-from app.scanners.repo_scan.trivy_adapter import TrivyFinding
+from app.scanners.repo_scan.trivy_adapter import (
+    TrivyFinding,
+    TrivyLicenseFinding,
+    TrivyMisconfigFinding,
+)
 from app.storage.repository import StorageRepository
 from tests.conftest import make_project
 
@@ -85,6 +89,57 @@ def test_write_trivy_sets_component_to_package_at_version_and_remediation(
     assert finding.confidence == Confidence.PROBABLE
     assert "1.11.23" in finding.remediation
     assert finding.cwe_ids == [89]
+
+
+def test_write_trivy_misconfig_has_no_cwe_mapping_and_a_separate_category(
+    repo: StorageRepository,
+) -> None:
+    pid = _project(repo)
+    writer = RepoScanFindingWriter(repo, pid, new_id("scan"))
+    f = TrivyMisconfigFinding(
+        check_id="DS-0002",
+        title="Image user should not be 'root'",
+        message="Last USER command in Dockerfile should not be 'root'",
+        description="Running containers with 'root' user can lead to a container escape.",
+        resolution="Add 'USER <non root user name>' line to the Dockerfile",
+        severity_raw="HIGH",
+        target="Dockerfile",
+        resource="",
+        start_line=2,
+        end_line=2,
+    )
+    finding_id = writer.write_trivy_misconfig(f, tool_version="Trivy 0.76.1")
+    finding = repo.get_finding(pid, finding_id)
+    assert finding.category == "repo_scan_trivy_iac"  # never conflated with repo_scan_trivy
+    assert finding.component == "Dockerfile"
+    assert finding.severity == Severity.HIGH
+    assert finding.confidence == Confidence.PROBABLE
+    assert finding.cwe_ids == []  # Trivy gives no CWE mapping for misconfigurations
+    assert "USER" in finding.remediation
+    assert finding.rule_id == "DS-0002"
+
+
+def test_write_trivy_license_uses_a_separate_category_and_namespace(
+    repo: StorageRepository,
+) -> None:
+    pid = _project(repo)
+    writer = RepoScanFindingWriter(repo, pid, new_id("scan"))
+    f = TrivyLicenseFinding(
+        name="GPL-3.0",
+        category="restricted",
+        confidence=0.95,
+        file_path="vendor/COPYING",
+        pkg_name="",
+        link="https://spdx.org/licenses/GPL-3.0-only.html",
+    )
+    assert f.is_actionable is True
+    finding_id = writer.write_trivy_license(f, tool_version="Trivy 0.76.1")
+    finding = repo.get_finding(pid, finding_id)
+    assert finding.category == "repo_scan_trivy_license"
+    assert finding.severity == Severity.MEDIUM
+    assert finding.confidence == Confidence.PROBABLE
+    assert finding.rule_id == "GPL-3.0"
+    assert finding.references == ["https://spdx.org/licenses/GPL-3.0-only.html"]
 
 
 def test_a_second_write_of_the_same_finding_reobserves_rather_than_duplicates(

@@ -223,6 +223,11 @@ class CveCatalog(Protocol):
     catalog_id: str
     catalog_version: str
     updated_at: str
+    #: True once the catalog has aged past its own declared `stale_after_days` (the same
+    #: `age_days > stale_after_days` rule `app/api/settings.py::_catalog_response` uses for
+    #: the Integrations page's own "Stale" badge) -- surfaced here too so a scan's own
+    #: WEB-COMP-002 result is honest about it, not just the settings page.
+    stale: bool
 
     @property
     def available(self) -> bool: ...
@@ -234,6 +239,7 @@ class NoCveCatalog:
     catalog_id = "none"
     catalog_version = ""
     updated_at = ""
+    stale = False
     reason = "No local CVE catalog has been imported; CVE matching was not performed."
 
     @property
@@ -263,13 +269,19 @@ def cve_results(components: list[Component], catalog: CveCatalog) -> list[CheckR
             continue
         matches = catalog.match(comp.name, comp.version)
         if not matches:
+            stale_note = (
+                " -- this catalog is stale; absence of a match does not mean no CVEs exist "
+                "for this version, only that none are in this aging catalog"
+                if catalog.stale
+                else ""
+            )
             out.append(
                 CheckResult(
                     "WEB-COMP-002",
                     Outcome.PASS,
                     label,
                     f"no entries in {catalog.catalog_id} {catalog.catalog_version} "
-                    f"(updated {catalog.updated_at})",
+                    f"(updated {catalog.updated_at}){stale_note}",
                 )
             )
         for m in matches:

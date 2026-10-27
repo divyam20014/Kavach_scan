@@ -11,6 +11,8 @@ export interface RepoScanOptions {
   semgrep_timeout_minutes: number;
   gitleaks_timeout_minutes: number;
   trivy_timeout_minutes: number;
+  trivy_iac: boolean;
+  trivy_sbom: boolean;
 }
 
 export const DEFAULT_REPO_SCAN_OPTIONS: RepoScanOptions = {
@@ -20,6 +22,8 @@ export const DEFAULT_REPO_SCAN_OPTIONS: RepoScanOptions = {
   semgrep_timeout_minutes: 5,
   gitleaks_timeout_minutes: 5,
   trivy_timeout_minutes: 5,
+  trivy_iac: false,
+  trivy_sbom: false,
 };
 
 const SEMGREP_CONFIGS = [
@@ -47,6 +51,8 @@ export function repoScanParams(o: RepoScanOptions): ScanParams {
   if (o.semgrep_timeout_minutes !== DEFAULT_REPO_SCAN_OPTIONS.semgrep_timeout_minutes) p.semgrep_timeout_minutes = o.semgrep_timeout_minutes;
   if (o.gitleaks_timeout_minutes !== DEFAULT_REPO_SCAN_OPTIONS.gitleaks_timeout_minutes) p.gitleaks_timeout_minutes = o.gitleaks_timeout_minutes;
   if (o.trivy_timeout_minutes !== DEFAULT_REPO_SCAN_OPTIONS.trivy_timeout_minutes) p.trivy_timeout_minutes = o.trivy_timeout_minutes;
+  if (o.trivy_iac) p.trivy_iac = true;
+  if (o.trivy_sbom) p.trivy_sbom = true;
   return p;
 }
 
@@ -96,6 +102,8 @@ export function RepoScanOptionsPanel({
                       ...value,
                       engines: (engines.length ? engines : ["semgrep"]) as RepoScanEngine[],
                       docker_engines,
+                      trivy_iac: e.value === "trivy" && !on ? false : value.trivy_iac,
+                      trivy_sbom: e.value === "trivy" && !on ? false : value.trivy_sbom,
                     });
                   }}
                 />
@@ -115,6 +123,26 @@ export function RepoScanOptionsPanel({
                           : value.docker_engines.filter((x) => x !== e.value),
                       );
                     }}
+                  />
+                )}
+                {checked && e.value === "trivy" && (
+                  <Checkbox
+                    ml="xl"
+                    mt={2}
+                    size="xs"
+                    label="Also run IaC/misconfiguration checks (Terraform, Dockerfile, Kubernetes, CloudFormation, Helm, Ansible — requires the checks bundle downloaded in Integrations)"
+                    checked={value.trivy_iac}
+                    onChange={(ev) => set("trivy_iac", ev.currentTarget.checked)}
+                  />
+                )}
+                {checked && e.value === "trivy" && (
+                  <Checkbox
+                    ml="xl"
+                    mt={2}
+                    size="xs"
+                    label="Also generate a software bill of materials and license inventory"
+                    checked={value.trivy_sbom}
+                    onChange={(ev) => set("trivy_sbom", ev.currentTarget.checked)}
                   />
                 )}
               </div>

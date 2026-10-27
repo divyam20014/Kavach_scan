@@ -41,7 +41,10 @@ def _preview_hash(scope: dict[str, Any]) -> str:
     return scope_hash(ScopeDefinition.model_validate(scope))
 
 
-def _wait(client: TestClient, pid: str, sid: str, timeout: float = 90) -> dict[str, Any]:
+def _wait(client: TestClient, pid: str, sid: str, timeout: float = 150) -> dict[str, Any]:
+    # 150s, not 90s: TBD-107 traced a real stuck-near-completion failure (in a sibling test
+    # using the same shape) to bounded Windows antivirus/indexer retry delays compounding
+    # across several sequential output writes on an already-busy, long-running suite run.
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         body = client.get(f"/api/projects/{pid}/scans/{sid}").json()

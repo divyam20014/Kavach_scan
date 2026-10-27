@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -393,6 +394,105 @@ def test_remove_trivy_db_status_clears_it(
     resp = client.delete("/api/integrations/trivy/db-status")
     assert resp.status_code == 204
     assert client.get("/api/integrations/trivy/db-status").json() is None
+
+
+# ---------------------------------------------------------------- Trivy IaC checks bundle
+
+
+def _fake_checks_argv_that_populates_the_cache(executable: str, cache_dir: Path) -> list[str]:
+    code = (
+        "import pathlib, sys\n"
+        "p = pathlib.Path(sys.argv[1]) / 'policy' / 'content'\n"
+        "p.mkdir(parents=True, exist_ok=True)\n"
+        "(p / 'marker').write_text('x')\n"
+    )
+    return [executable, "-c", code, str(cache_dir)]
+
+
+def test_trivy_checks_status_is_none_before_any_download(client: TestClient) -> None:
+    resp = client.get("/api/integrations/trivy/checks-status")
+    assert resp.status_code == 200
+    assert resp.json() is None
+
+
+def test_download_trivy_checks_cleanly_errors_when_trivy_is_not_available(
+    client: TestClient,
+) -> None:
+    resp = client.post("/api/integrations/trivy/download-checks")
+    assert resp.status_code == 422
+
+
+def test_download_trivy_checks_runs_the_real_argv_and_saves_status(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import app.api.settings as settings_api
+
+    client.patch("/api/settings", json={"integrations": {"trivy_path": sys.executable}})
+    monkeypatch.setattr(
+        settings_api, "build_download_checks_argv", _fake_checks_argv_that_populates_the_cache
+    )
+    resp = client.post("/api/integrations/trivy/download-checks")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["trivy_version"]
+    assert body["downloaded_at"]
+
+    status = client.get("/api/integrations/trivy/checks-status").json()
+    assert status["trivy_version"] == body["trivy_version"]
+
+    audit = client.get("/api/audit").json()
+    assert any(e["action"] == "trivy_checks_downloaded" for e in audit["items"])
+
+
+def test_download_trivy_checks_rejects_a_silent_fallback_to_embedded_checks(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Confirmed directly (TBD-111): Trivy's own checks-bundle download can exit 0 while
+    silently falling back to embedded checks on a network failure -- this must never be
+    recorded as a successful download just because the process exited cleanly."""
+    import app.api.settings as settings_api
+
+    client.patch("/api/settings", json={"integrations": {"trivy_path": sys.executable}})
+    monkeypatch.setattr(
+        settings_api,
+        "build_download_checks_argv",
+        lambda executable, cache_dir: [executable, "-c", "pass"],  # exits 0, creates nothing
+    )
+    resp = client.post("/api/integrations/trivy/download-checks")
+    assert resp.status_code == 422
+    assert client.get("/api/integrations/trivy/checks-status").json() is None
+
+
+def test_download_trivy_checks_reports_a_clean_error_on_nonzero_exit(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import app.api.settings as settings_api
+
+    client.patch("/api/settings", json={"integrations": {"trivy_path": sys.executable}})
+    monkeypatch.setattr(
+        settings_api,
+        "build_download_checks_argv",
+        lambda executable, cache_dir: [executable, "-c", "import sys; sys.exit(1)"],
+    )
+    resp = client.post("/api/integrations/trivy/download-checks")
+    assert resp.status_code == 422
+    assert client.get("/api/integrations/trivy/checks-status").json() is None
+
+
+def test_remove_trivy_checks_status_clears_it(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import app.api.settings as settings_api
+
+    client.patch("/api/settings", json={"integrations": {"trivy_path": sys.executable}})
+    monkeypatch.setattr(
+        settings_api, "build_download_checks_argv", _fake_checks_argv_that_populates_the_cache
+    )
+    client.post("/api/integrations/trivy/download-checks")
+    assert client.get("/api/integrations/trivy/checks-status").json() is not None
+    resp = client.delete("/api/integrations/trivy/checks-status")
+    assert resp.status_code == 204
+    assert client.get("/api/integrations/trivy/checks-status").json() is None
 
 
 # ---------------------------------------------------------------- CVE catalog

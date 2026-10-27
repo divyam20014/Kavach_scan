@@ -119,6 +119,92 @@ describe("Repository scan start dialog", () => {
     expect(within(card).queryByRole("checkbox", { name: /Run via Docker/i })).not.toBeChecked();
   });
 
+  it("sends trivy_iac only when the Trivy engine is selected and the checkbox is on", async () => {
+    const { calls } = mockApi({
+      ...base,
+      [`GET /api/projects/${PID}`]: { body: overview({ repository_path: "/srv/some-repo" }) },
+      [`GET /api/projects/${PID}/scope/policy`]: { body: policy() },
+      "GET /api/jobs/modules": { body: [{ module: "repo_scan", label: "Repository scanner (Semgrep / Gitleaks / Trivy)", available: true, reason: "" }] },
+      [`POST /api/projects/${PID}/scans`]: { status: 202, body: scanRecord },
+      [`GET /api/projects/${PID}/scans/${SID}`]: { body: { scan: scanRecord, active: false, terminal: false, elapsed_seconds: null } },
+    });
+    renderAt(`/projects/${PID}`);
+    const u = userEvent.setup();
+    const card = await screen.findByRole("region", { name: "Start a job" });
+    await u.click(await within(card).findByRole("radio", { name: /Repository scanner/ }));
+
+    // The IaC checkbox does not exist until Trivy is selected.
+    expect(within(card).queryByRole("checkbox", { name: /IaC\/misconfiguration checks/ })).not.toBeInTheDocument();
+
+    await u.click(within(card).getByRole("checkbox", { name: /^Trivy/ }));
+    await u.click(within(card).getByRole("checkbox", { name: /IaC\/misconfiguration checks/ }));
+
+    await u.click(within(card).getByRole("button", { name: /Review & confirm/ }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("+ IaC/misconfiguration checks")).toBeInTheDocument();
+    await u.click(within(dialog).getByRole("checkbox", { name: /I confirm/ }));
+    await u.click(within(dialog).getByRole("button", { name: "Start job" }));
+
+    await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path.endsWith("/scans"))).toBe(true));
+    const body = calls.find((c) => c.method === "POST" && c.path.endsWith("/scans"))!.body as {
+      parameters: { engines: string[]; trivy_iac?: boolean };
+    };
+    expect(body.parameters.engines.sort()).toEqual(["semgrep", "trivy"]);
+    expect(body.parameters.trivy_iac).toBe(true);
+  });
+
+  it("sends trivy_sbom only when the Trivy engine is selected and the checkbox is on", async () => {
+    const { calls } = mockApi({
+      ...base,
+      [`GET /api/projects/${PID}`]: { body: overview({ repository_path: "/srv/some-repo" }) },
+      [`GET /api/projects/${PID}/scope/policy`]: { body: policy() },
+      "GET /api/jobs/modules": { body: [{ module: "repo_scan", label: "Repository scanner (Semgrep / Gitleaks / Trivy)", available: true, reason: "" }] },
+      [`POST /api/projects/${PID}/scans`]: { status: 202, body: scanRecord },
+      [`GET /api/projects/${PID}/scans/${SID}`]: { body: { scan: scanRecord, active: false, terminal: false, elapsed_seconds: null } },
+    });
+    renderAt(`/projects/${PID}`);
+    const u = userEvent.setup();
+    const card = await screen.findByRole("region", { name: "Start a job" });
+    await u.click(await within(card).findByRole("radio", { name: /Repository scanner/ }));
+
+    expect(within(card).queryByRole("checkbox", { name: /software bill of materials/i })).not.toBeInTheDocument();
+
+    await u.click(within(card).getByRole("checkbox", { name: /^Trivy/ }));
+    await u.click(within(card).getByRole("checkbox", { name: /software bill of materials/i }));
+
+    await u.click(within(card).getByRole("button", { name: /Review & confirm/ }));
+    const dialog = await screen.findByRole("dialog");
+    expect(within(dialog).getByText("+ SBOM/license inventory")).toBeInTheDocument();
+    await u.click(within(dialog).getByRole("checkbox", { name: /I confirm/ }));
+    await u.click(within(dialog).getByRole("button", { name: "Start job" }));
+
+    await waitFor(() => expect(calls.some((c) => c.method === "POST" && c.path.endsWith("/scans"))).toBe(true));
+    const body = calls.find((c) => c.method === "POST" && c.path.endsWith("/scans"))!.body as {
+      parameters: { engines: string[]; trivy_sbom?: boolean };
+    };
+    expect(body.parameters.engines.sort()).toEqual(["semgrep", "trivy"]);
+    expect(body.parameters.trivy_sbom).toBe(true);
+  });
+
+  it("clears the IaC checkbox when Trivy is unchecked", async () => {
+    mockApi({
+      ...base,
+      [`GET /api/projects/${PID}`]: { body: overview({ repository_path: "/srv/some-repo" }) },
+      [`GET /api/projects/${PID}/scope/policy`]: { body: policy() },
+      "GET /api/jobs/modules": { body: [{ module: "repo_scan", label: "Repository scanner (Semgrep / Gitleaks / Trivy)", available: true, reason: "" }] },
+    });
+    renderAt(`/projects/${PID}`);
+    const u = userEvent.setup();
+    const card = await screen.findByRole("region", { name: "Start a job" });
+    await u.click(await within(card).findByRole("radio", { name: /Repository scanner/ }));
+
+    await u.click(within(card).getByRole("checkbox", { name: /^Trivy/ }));
+    await u.click(within(card).getByRole("checkbox", { name: /IaC\/misconfiguration checks/ }));
+    await u.click(within(card).getByRole("checkbox", { name: /^Trivy/ }));
+
+    expect(within(card).queryByRole("checkbox", { name: /IaC\/misconfiguration checks/ })).not.toBeInTheDocument();
+  });
+
   it("disables starting a repository scan when the project has no repository path or URL", async () => {
     mockApi({
       ...base,
