@@ -180,6 +180,21 @@ export interface ProjectCreate {
   scan_policy: Partial<ScanPolicy>;
 }
 
+/** A standalone repository-scan project: deliberately has no `scope`/`scope_preview_hash`
+ * field at all (not even an empty object) -- the backend only runs its scope-preview-hash
+ * check when the key is present on the wire (`"scope" in req.model_fields_set`), so omitting
+ * it entirely is how a project with no network targets skips a check that exists for
+ * web/surface/API scanning, never meant to gate a pure local-file repository scan. */
+export interface RepoScanProjectCreate {
+  name: string;
+  client_name: string;
+  authorization: AuthorizationInput;
+  repository_path: string;
+  repository_url: string;
+  repository_credential_alias: string;
+  scan_policy: Partial<ScanPolicy>;
+}
+
 export type ProjectUpdate = Partial<Omit<ProjectCreate, "authorization">> & {
   expected_revision: number;
   status?: ProjectStatus;

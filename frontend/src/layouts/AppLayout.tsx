@@ -25,6 +25,7 @@ const ICONS: Record<string, ReactNode> = {
   audit: <Icon path={<><circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.6" /><path d="M12 7v5l3 2" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" /></>} />,
   settings: <Icon path={<><circle cx="12" cy="12" r="3" stroke="currentColor" strokeWidth="1.6" /><path d="M12 3v2.5M12 18.5V21M4.2 7.5l2.1 1.3M17.7 15.2l2.1 1.3M4.2 16.5l2.1-1.3M17.7 8.8l2.1-1.3" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></>} />,
   help: <Icon path={<><circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="1.6" /><path d="M9.5 9.3a2.5 2.5 0 1 1 3.9 2.1c-.9.6-1.4 1-1.4 2.1M12 17v.1" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" /></>} />,
+  repo: <Icon path={<path d="M8 6 3 12l5 6M16 6l5 6-5 6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />} />,
 };
 
 // Three sections, in the order an operator actually works: start a project, review results
@@ -37,6 +38,7 @@ const NAV_SECTIONS: { label: string; items: { to: string; label: string; icon: s
     items: [
       { to: "/", label: "Dashboard", icon: "dashboard", end: true },
       { to: "/projects", label: "Projects", icon: "projects" },
+      { to: "/repo-scan", label: "Repository Scan", icon: "repo" },
     ],
   },
   {

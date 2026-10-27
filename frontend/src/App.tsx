@@ -17,6 +17,7 @@ import { ImportsPage } from "./pages/ImportsPage";
 import { IntegrationsPage } from "./pages/IntegrationsPage";
 import { ProjectWizardPage } from "./pages/ProjectWizardPage";
 import { ReportBuilderPage } from "./pages/ReportBuilderPage";
+import { RepositoryScanStartPage } from "./pages/RepositoryScanStartPage";
 import { AssetsPage, ScansPage } from "./pages/RecordPages";
 import { AuditPage, HelpPage, NotFoundPage, SettingsPage } from "./pages/SystemPages";
 
@@ -78,6 +79,7 @@ export function AppRoutes() {
         <Route index element={<DashboardPage />} />
         <Route path="projects" element={<ProjectsPage />} />
         <Route path="projects/new" element={<ProjectWizardPage />} />
+        <Route path="repo-scan" element={<RepositoryScanStartPage />} />
         <Route path="projects/:projectId" element={<ProjectDetailPage />} />
         <Route path="projects/:projectId/edit" element={<ProjectWizardPage />} />
         <Route path="projects/:projectId/scans/:scanId" element={<ScanDetailPage />} />

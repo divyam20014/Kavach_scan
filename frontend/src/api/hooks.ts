@@ -41,6 +41,7 @@ import type {
   ProjectCreate,
   ProjectOverview,
   ProjectUpdate,
+  RepoScanProjectCreate,
   ReportFilterRequest,
   ReportFormat,
   ReportPreviewResponse,
@@ -270,6 +271,21 @@ export function useSetKillSwitch() {
   const invalidate = useInvalidateAll();
   return useMutation({
     mutationFn: (body: { engaged: boolean; reason: string }) => request<KillSwitchState>("PUT", "/api/kill-switch", { body }),
+    onSuccess: invalidate,
+  });
+}
+
+/** The standalone "Repository Scan" page's one-step flow (security/reliability/scope
+ * roadmap follow-up): creates a scope-less repo_scan-only project, then immediately starts
+ * the scan on it, so the operator never sees the generic network-scope wizard at all. */
+export function useCreateAndStartRepoScan() {
+  const invalidate = useInvalidateAll();
+  return useMutation({
+    mutationFn: async (args: { project: RepoScanProjectCreate; scan: StartScanRequest }) => {
+      const project = await api.post<Project>("/api/projects", args.project);
+      const scan = await api.post<ScanJob>(`/api/projects/${enc(project.project_id)}/scans`, args.scan);
+      return { project, scan };
+    },
     onSuccess: invalidate,
   });
 }

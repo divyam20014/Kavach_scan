@@ -113,6 +113,35 @@ def test_repository_path_rejects_a_relative_path(client: TestClient) -> None:
     assert resp.status_code == 422
 
 
+def test_create_a_repo_scan_only_project_with_no_scope_key_at_all(
+    client: TestClient, tmp_path: Path
+) -> None:
+    """A standalone repository-scan flow (operator-requested): omitting the `scope` key
+    entirely from the request body (not even `{}`) skips the scope-preview-hash check,
+    which only ever fires `if "scope" in req.model_fields_set` -- the project then falls
+    back to the model's own empty-scope default. Confirmed directly that this empty scope
+    is still `valid` (no hosts means no compilation errors, not an invalid scope) and that
+    authorization/module gating work identically to any other project."""
+    body = {
+        "name": "Repo-only scan",
+        "client_name": "Repo-only scan",
+        "authorization": _auth(),
+        "repository_path": str(tmp_path),
+        "scan_policy": {"allowed_modules": ["repo_scan"]},
+    }
+    assert "scope" not in body
+    resp = client.post("/api/projects", json=body)
+    assert resp.status_code == 201, resp.text
+    project = resp.json()
+    assert project["scope"]["hosts"] == []
+    pid = project["project_id"]
+
+    policy = client.get(f"/api/projects/{pid}/scope/policy")
+    assert policy.status_code == 200
+    assert policy.json()["valid"] is True
+    assert policy.json()["can_start_active_work"] is True
+
+
 @pytest.mark.parametrize(
     ("auth", "fragment"),
     [

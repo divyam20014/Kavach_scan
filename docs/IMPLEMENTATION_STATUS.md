@@ -624,3 +624,23 @@ Extended `repo_scan`'s Trivy engine a third time: a single `trivy fs --scanners 
 - Full rationale in TBD-112.
 - **This completes the original 9-phase roadmap's first 5 phases.** Phases 6-8 (scheduled scans, CI API tokens, active-check opt-in) still need a dedicated design-review pause before any implementation — a materially different risk profile from Phases 1-5. A full package/license browser UI and per-category opt-outs are legitimate future candidates, not built speculatively.
 
+## Standalone "Repository Scan" page (2026-10-28, TBD-113)
+
+Operator-requested UX change: repository scanning should be its own streamlined flow, not require the generic project wizard's network-scope step (meaningless for a module with no network targets). Confirmed with the operator (`AskUserQuestion`) to keep it project-based but streamlined, not a fully standalone no-project flow.
+
+- **Key finding, zero backend changes needed**: `ProjectCreate`'s scope-preview-hash check only runs `if "scope" in req.model_fields_set` — omitting the `scope` key from the request body entirely (not `{}`) skips it, and the project falls back to a genuinely `valid` empty-scope default. Confirmed directly with a new real end-to-end test, not just by reading the code.
+- `/api/scope/preview` was confirmed unusable for this (it hard-requires at least one target) — ruling out the alternative of previewing an empty scope for a hash.
+- New page `RepositoryScanStartPage.tsx` at `/repo-scan` (new sidebar nav item): repo source + a lightweight authorization attestation (pre-filled window, same required fields as the wizard) + the existing `RepoScanOptionsPanel` reused as-is. A new `useCreateAndStartRepoScan()` hook creates the project then starts the scan in one step, landing on the ordinary scan-detail page.
+- Tests: `tests/test_api_projects.py` (+1), `src/test/repositoryScanStartPage.test.tsx` (4 new). Full backend and frontend suites run; `tsc`/`eslint`/`npm run build` clean.
+- Full rationale in TBD-113.
+- **Also see TBD-114**: an unrelated, pre-existing intermittent test failure was found while re-verifying the full suite for this change — not caused by this feature.
+
+## Disclosed, not-yet-root-caused intermittent test failure (2026-10-28, TBD-114)
+
+While re-verifying the full backend suite for TBD-113, `tests/test_webapp_verification.py::test_every_evidence_record_and_output_is_bounded_and_secret_free` failed 3 times in a row, then passed once. Investigated directly, not dismissed as "the known TBD-107 flake" (the symptom is a different shape).
+
+- Reproduced via a standalone script: the failure is specific to the one shape where a real `TestClient` context (running the ASGI lifespan) is held open *while* a real scan runs in the same process — exactly what this test (and its one sibling, `test_webapp_zap_engine.py`) does. 3 of 7 repro runs with that combination showed `LabHandler.hits == []` — zero requests ever reached the fixture server — while the scan still finished in `state=completed`, not failed or timed out. The same code without the `TestClient` context never reproduced it.
+- Deliberately **not attributed to TBD-107**: that mechanism is a Windows antivirus-retry window compounding near the *end* of a scan on a busy suite. This one is the opposite shape — zero requests, immediately, at the *start*, only with a `TestClient` lifespan active. Different enough that pattern-matching them without evidence would be exactly the kind of unverified claim this project's own investigation discipline rejects.
+- No fix attempted — the exact `TestClient`-lifespan/worker-thread interaction wasn't traced far enough to identify a safe, targeted change, and a speculative delay/retry was rejected as masking a race rather than fixing it.
+- Full rationale, and what to check next, in TBD-114. Status: **OPEN**, disclosed rather than worked around.
+
