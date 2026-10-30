@@ -145,6 +145,7 @@ export function overview(overrides: Partial<ProjectOverview["project"]> = {}, ex
         max_requests_per_target: 2000,
         allowed_modules: [],
         active_probes: { sqli_error_differential: false, xss_reflection: false, api_mutating_operations: false, api_idor: false, api_rate_limit_probe: false },
+        max_active_probe_requests_per_target: 50,
         evidence_retention_days: null,
       },
       labels: [],

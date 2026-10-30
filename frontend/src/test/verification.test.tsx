@@ -4,8 +4,14 @@ import userEvent from "@testing-library/user-event";
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { emptyPage, emptySummary, mockApi, renderAt, VERSION } from "./utils";
+
+// "/" is the mode chooser until a mode is chosen (TBD-116); these tests exercise VAPT-mode
+// keyboard navigation specifically, so they preset that mode rather than click through it.
+beforeEach(() => {
+  localStorage.setItem("kavach-app-mode", JSON.stringify("vapt"));
+});
 
 const base = {
   "GET /api/version": { body: VERSION },

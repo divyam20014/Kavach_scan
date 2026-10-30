@@ -15,8 +15,8 @@
 
 | Capability | Status | Why | Reference |
 |---|---|---|---|
-| Active SQL injection / error-differential probes | Not built in | Sending exploit-shaped payloads to a target is an active, potentially disruptive action this tool's safe-by-default posture excludes. Passive reflection/DB-error-signature detection is used instead. | TBD-049 |
-| Active XSS reflection probes | Not built in | Same reasoning as above. | TBD-049 |
+| Active SQL injection / error-differential probes | Opt-in, disabled by default | Sending test input to a target is an active action; it is now available but only as an explicit, per-project opt-in (`ScanPolicy.active_probes.sqli_error_differential`), never on by default. One bounded confirmation request per already-crawled parameter, never fuzzing or blind/time-based injection. | TBD-049, TBD-115 |
+| Active XSS reflection probes | Opt-in, disabled by default | Same reasoning and bounds as above (`active_probes.xss_reflection`); the probe marker never executes script. | TBD-049, TBD-115 |
 | Sensitive-file signature probing (backup files, `.git/`, etc.) | Not built in | Would require guessing/requesting paths not discovered by normal crawling — an active probing behavior this build excludes. | TBD-050 |
 | Mutating / destructive API writes | Never performed, even when "enabled" | The mass-assignment and write-safety checks always inventory the request schema; they never send a live mutating request. | Module 7.5 |
 | CVE data fetched automatically | Never | Only a locally-imported CVE catalog is used; nothing is fetched from the internet. | TBD-028, `docs/CVE_CATALOG.md` |

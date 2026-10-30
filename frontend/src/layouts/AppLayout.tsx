@@ -1,9 +1,10 @@
-import { ActionIcon, AppShell, Burger, Divider, Group, NavLink, ScrollArea, Text, Title, Tooltip } from "@mantine/core";
+import { ActionIcon, AppShell, Burger, Button, Divider, Group, NavLink, ScrollArea, Text, Title, Tooltip } from "@mantine/core";
 import { useDisclosure, useLocalStorage } from "@mantine/hooks";
-import type { ReactNode } from "react";
-import { NavLink as RouterNavLink, Outlet, useLocation } from "react-router-dom";
+import { useEffect, type ReactNode } from "react";
+import { Navigate, NavLink as RouterNavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useVersion } from "../api/hooks";
 import { KillSwitchControl } from "../components/JobControls";
+import { type AppMode, useAppMode } from "../lib/mode";
 import { LAYOUT } from "../theme/tokens";
 
 // Minimal inline line-icons (no icon-library dependency added for this) -- one per nav
@@ -28,37 +29,69 @@ const ICONS: Record<string, ReactNode> = {
   repo: <Icon path={<path d="M8 6 3 12l5 6M16 6l5 6-5 6" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" fill="none" />} />,
 };
 
+type NavSection = { label: string; items: { to: string; label: string; icon: string; end?: boolean }[] };
+
 // Three sections, in the order an operator actually works: start a project, review results
 // across projects, then system-level pages. Every entry here is a real, implemented route —
 // project-scoped pages (imports, reports, attack surface, API specs) are reached from the
 // project itself (see ProjectDetailPage) rather than listed again at the top level.
-const NAV_SECTIONS: { label: string; items: { to: string; label: string; icon: string; end?: boolean }[] }[] = [
-  {
-    label: "Workspace",
-    items: [
-      { to: "/", label: "Dashboard", icon: "dashboard", end: true },
-      { to: "/projects", label: "Projects", icon: "projects" },
-      { to: "/repo-scan", label: "Repository Scan", icon: "repo" },
-    ],
-  },
-  {
-    label: "Records",
-    items: [
-      { to: "/findings", label: "Findings", icon: "findings" },
-      { to: "/assets", label: "Assets", icon: "assets" },
-      { to: "/scans", label: "Scans", icon: "scans" },
-    ],
-  },
-  {
-    label: "System",
-    items: [
-      { to: "/integrations", label: "Integrations & CVE data", icon: "integrations" },
-      { to: "/audit", label: "Audit log", icon: "audit" },
-      { to: "/settings", label: "Settings & storage", icon: "settings" },
-      { to: "/help", label: "Help & limitations", icon: "help" },
-    ],
-  },
-];
+//
+// Mode-aware (TBD-116): VAPT Scan and Repository Scan are kept entirely separate feature
+// areas, never shown together. "vapt" gets everything except the Repository Scan entry
+// point; "repo" gets only that entry point, nothing else; no mode chosen yet gets no nav
+// at all (the chooser itself has nothing to navigate to).
+function navSectionsFor(mode: AppMode): NavSection[] {
+  if (mode === "repo") {
+    return [{ label: "Workspace", items: [{ to: "/repo-scan", label: "Repository Scan", icon: "repo" }] }];
+  }
+  if (mode === "vapt") {
+    return [
+      {
+        label: "Workspace",
+        items: [
+          { to: "/", label: "Dashboard", icon: "dashboard", end: true },
+          { to: "/projects", label: "Projects", icon: "projects" },
+        ],
+      },
+      {
+        label: "Records",
+        items: [
+          { to: "/findings", label: "Findings", icon: "findings" },
+          { to: "/assets", label: "Assets", icon: "assets" },
+          { to: "/scans", label: "Scans", icon: "scans" },
+        ],
+      },
+      {
+        label: "System",
+        items: [
+          { to: "/integrations", label: "Integrations & CVE data", icon: "integrations" },
+          { to: "/audit", label: "Audit log", icon: "audit" },
+          { to: "/settings", label: "Settings & storage", icon: "settings" },
+          { to: "/help", label: "Help & limitations", icon: "help" },
+        ],
+      },
+    ];
+  }
+  return [];
+}
+
+/** Keeps every route but the index ("/", handled by `HomeRoute` in `App.tsx`) consistent
+ * with the current mode. A direct link/bookmark to a route while no mode is chosen yet
+ * infers and remembers the mode from the path itself (`/repo-scan` -> "repo", anything
+ * else -> "vapt") rather than bouncing through the chooser -- existing deep links keep
+ * working exactly as before this feature. Once a mode *is* set, a route that belongs to
+ * the other mode is redirected to that mode's home, so the separation still holds. */
+function useModeGuard(mode: AppMode, setMode: (mode: AppMode) => void): ReactNode {
+  const location = useLocation();
+  const path = location.pathname;
+  useEffect(() => {
+    if (path !== "/" && mode === "") setMode(path === "/repo-scan" ? "repo" : "vapt");
+  }, [path, mode, setMode]);
+  if (path === "/") return null;
+  if (mode === "repo" && path !== "/repo-scan") return <Navigate to="/repo-scan" replace />;
+  if (mode === "vapt" && path === "/repo-scan") return <Navigate to="/" replace />;
+  return null;
+}
 
 export function AppLayout() {
   const [opened, { toggle, close }] = useDisclosure();
@@ -67,10 +100,16 @@ export function AppLayout() {
   const [collapsed, setCollapsed] = useLocalStorage({ key: "kavach-nav-collapsed", defaultValue: false });
   const version = useVersion();
   const location = useLocation();
+  const navigate = useNavigate();
+  const [mode, setMode] = useAppMode();
+  const navSections = navSectionsFor(mode);
+  const guardRedirect = useModeGuard(mode, setMode);
   // The icon-rail collapse is a desktop-only display mode -- the mobile drawer (opened via
   // the burger) is a completely different UI (full-width overlay, closed by default) and
   // must always show full labels, regardless of the desktop rail's remembered state.
   const showLabels = !collapsed || opened;
+
+  if (guardRedirect) return guardRedirect;
 
   return (
     <AppShell
@@ -119,6 +158,19 @@ export function AppLayout() {
             </Group>
           </Group>
           <Group gap="md" wrap="nowrap">
+            {mode !== "" && (
+              <Button
+                variant="subtle"
+                color="gray.3"
+                size="xs"
+                onClick={() => {
+                  setMode("");
+                  navigate("/");
+                }}
+              >
+                Switch mode
+              </Button>
+            )}
             <KillSwitchControl />
             {/* Non-critical context, dropped first on narrow screens so it never crowds
                 or overlaps the safety-critical kill-switch control next to it. */}
@@ -131,7 +183,7 @@ export function AppLayout() {
 
       <AppShell.Navbar p="sm" aria-label="Main navigation">
         <AppShell.Section grow component={ScrollArea}>
-          {NAV_SECTIONS.map((section, i) => (
+          {navSections.map((section, i) => (
             // A plain group, not a nested <nav>: the navbar itself is already the one
             // "Main navigation" landmark; a second nested landmark per section would be
             // a redundant/confusing stop for screen-reader users navigating by landmark.

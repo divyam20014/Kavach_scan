@@ -1,6 +1,8 @@
 """Phase 05 verification: edge cases for the web scanner against local fixtures only.
 
-- the scanner sends no crafted input (only GET, only URLs that appeared as links);
+- by default the scanner sends no crafted input (only GET, only URLs that appeared as
+  links); active confirmation probes (WEB-SQLI-001/WEB-XSS-001) exist but are opt-in,
+  disabled unless a project's scan policy explicitly enables them (TBD-115);
 - response caps, content-type limits, redirect validation into excluded paths;
 - 503 backoff, and cancellation interrupting a long Retry-After wait;
 - every evidence format and every scan output is free of secrets;
@@ -27,7 +29,9 @@ from app.integrations.tls_tools import TlsToolSpec
 from app.jobs.manager import JobManager, StartScanRequest
 from app.models.common import Confidence, ScanModule, ScanState
 from app.models.evidence import MAX_EXCERPT_CHARS
+from app.models.project import ScanPolicy
 from app.scanners.webapp.evidence import MAX_BODY_WINDOW
+from app.scanners.webapp.profile import build_profile
 from app.scanners.webapp.rules import RULES, Kind
 from app.scanners.webapp.runner import WebAppRunner
 from app.scope import MemorySink, ScopeGuard
@@ -127,14 +131,24 @@ def test_scanner_sends_no_crafted_input(
     )
 
 
-def test_catalog_has_no_active_rules_and_no_confirmed_xss_claim() -> None:
+def test_active_rules_exist_only_as_opt_in_and_passive_rule_stays_unconfirmed() -> None:
+    """TBD-115: active confirmation rules now exist, but only ever as an explicit,
+    per-project opt-in (ScanPolicy.active_probes) -- disabled in every default profile,
+    never reachable via a scan-start parameter."""
     web = [r for r in RULES.values() if r.rule_id.startswith("WEB-")]
-    assert not [r for r in web if r.kind == Kind.ACTIVE]  # the web scanner has no active rules
+    active = [r for r in web if r.kind == Kind.ACTIVE]
+    assert {r.rule_id for r in active} == {"WEB-SQLI-001", "WEB-XSS-001"}
+
+    default_profile = build_profile({}, ScanPolicy())
+    assert not default_profile.enabled("active_sqli")
+    assert not default_profile.enabled("active_xss")
+    bypass_attempt = build_profile({"active_sqli": True, "active_xss": True}, ScanPolicy())
+    assert not bypass_attempt.enabled("active_sqli")
+    assert not bypass_attempt.enabled("active_xss")
+
     refl = RULES["WEB-REFL-001"]
     assert refl.confidence == Confidence.POTENTIAL and "passive" in refl.title.lower()
     assert "neither confirmed" in refl.summary
-    for rule in web:
-        assert "confirmed executable" not in rule.title.lower()
 
 
 def test_active_parameters_are_rejected(

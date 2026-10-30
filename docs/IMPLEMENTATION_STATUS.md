@@ -644,3 +644,28 @@ While re-verifying the full backend suite for TBD-113, `tests/test_webapp_verifi
 - No fix attempted — the exact `TestClient`-lifespan/worker-thread interaction wasn't traced far enough to identify a safe, targeted change, and a speculative delay/retry was rejected as masking a race rather than fixing it.
 - Full rationale, and what to check next, in TBD-114. Status: **OPEN**, disclosed rather than worked around.
 
+## Security/reliability/scope roadmap, Phase 8 of 9: supervised active-check opt-in (2026-10-29, TBD-115)
+
+A design review of whether "active DAST" could be implemented, given TBD-049/050's safe-by-default posture, confirmed the dormant `ScanPolicy.active_probes.sqli_error_differential`/`xss_reflection` fields (never read by any scanner code since they were added) were exactly the opt-in switch this needed — this phase wires them up, not a new safety-boundary design from scratch.
+
+- `app/scanners/webapp/active_checks.py` (new): for each query parameter the passive crawl already observed, sends exactly **one** bounded confirmation request per enabled probe type — a single syntax-breaking character for SQLi (reusing the passive `WEB-DBERR-001` error-signature catalog), a single unique, non-executing marker for XSS. Never a fresh crawl, never fuzzing, never blind/time-based injection.
+- Three gating layers: the project's own `ScanPolicy.active_probes` (settable only via project create/update, never a scan-start parameter), the existing scope gate (`ScopePolicy.is_target_in_scope`, reused unchanged), and a new, separate `ScanPolicy.max_active_probe_requests_per_target` (default 50, cap 200) budget independent of the crawl's own request budget.
+- Two new rules, `WEB-SQLI-001`/`WEB-XSS-001` (`Kind.ACTIVE`, CWE-89/79), replace the `WEB-INJ-000` placeholder. Disabled in every default profile; enabling them via the opt-in policy fields is the only way to enable them.
+- Frontend: two explicit, separately-labeled checkboxes (project wizard's "Allowed modules & limits" step), never one bundled switch; read-only status on the project detail page.
+- **Not built in this phase**: blind/time-based SQLi, stored-XSS confirmation, the API scanner's own separate `ActiveProbeToggles` fields (`api_mutating_operations`/`api_idor`/`api_rate_limit_probe`), sensitive-file probing (TBD-050 unchanged).
+- Tests: `tests/test_webapp_units.py` (+2), `tests/test_webapp_verification.py` (1 safety-invariant test rewritten for the new, intentional design), `tests/test_webapp_scan.py` (+1 real end-to-end test against the local lab fixture, both opt-in-off and opt-in-on paths). Full backend suite: 2419 passed, 1 skipped, 1 failed (pre-existing, unrelated — a Docker/Trivy settings-API test affected by a real `aquasec/trivy` image already pulled locally from earlier Phase 3-5 verification work, confirmed via `git status` and an isolated rerun). `ruff`/`mypy` clean. Full frontend suite: 112/112 passed; `tsc`/`eslint` clean.
+- Full rationale in TBD-115.
+- Phases 6-7 (scheduled scans, CI API tokens) remain, each needing its own design-review pause before implementation.
+
+## VAPT Scan / Repository Scan mode separation (2026-10-30, TBD-116)
+
+Operator-requested UX change, planned (text-only, no code) and confirmed via `AskUserQuestion` before implementation: the app now opens on a two-option chooser ("VAPT Scan" / "Repository Scan") instead of the dashboard, and each choice shows only its own navigation — no backend changes.
+
+- `lib/mode.ts`'s `useAppMode()`: a `localStorage`-backed `AppMode` ("" / "vapt" / "repo"), the same pattern already used for the nav-collapse preference. Never sent to the backend — a UI-only split, not a security boundary.
+- `App.tsx`'s `HomeRoute` (the `/` index route): no mode chosen → `ModeSelectPage`; `"vapt"` → the existing `DashboardPage`; `"repo"` → redirects to `/repo-scan`.
+- `AppLayout.tsx`'s `navSectionsFor(mode)` replaces the old static `NAV_SECTIONS`: `"repo"` shows only the Repository Scan link, `"vapt"` shows everything else (Dashboard, Projects, Findings, Assets, Scans, Integrations, Audit, Settings, Help), no mode shows nothing. A deep link to a route belonging to the other mode is redirected once a mode is active; a deep link reached before any mode is chosen infers and remembers a mode from the path instead of forcing the chooser (existing bookmarks/tests keep working).
+- `ProjectsPage.tsx` filters out projects whose `allowed_modules` is exactly `["repo_scan"]` (the marker the standalone Repository Scan flow, TBD-113, already creates) from the VAPT-mode list.
+- A real, confirmed bug was found and fixed during verification: Mantine's `useLocalStorage` defaults to a two-pass hydration-safe read that returns the default value on the first render; the deep-link mode-inference effect raced against it and could silently overwrite an already-stored mode. Fixed with `getInitialValueInEffect: false` (this app has no SSR to protect against).
+- Tests: new `tests/appMode.test.tsx` (8 tests). Three pre-existing test files (`dashboard`, `app`, `verification`) needed a one-line mode preset since they exercise VAPT-mode pages at `/`, which is now the chooser by default. Full frontend suite: 120 passed; `tsc`/`eslint` clean.
+- Full rationale in TBD-116, including a pre-existing, system-load-dependent test flake observed during verification (not caused by this change — see TBD-107's cross-referenced mechanism).
+

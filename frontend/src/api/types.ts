@@ -114,6 +114,7 @@ export interface ScanPolicy {
   max_requests_per_target: number;
   allowed_modules: ScanModule[];
   active_probes: ActiveProbeToggles;
+  max_active_probe_requests_per_target: number;
   evidence_retention_days: number | null;
 }
 

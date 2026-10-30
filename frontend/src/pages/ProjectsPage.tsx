@@ -36,6 +36,12 @@ export function ProjectsPage() {
     offset: (page - 1) * PAGE_SIZE,
     limit: PAGE_SIZE,
   });
+  // VAPT mode excludes repository-scan-only projects (TBD-116) -- a project whose
+  // allowed_modules is exactly ["repo_scan"] was created from the separate Repository
+  // Scan flow and belongs there, not in this list. Filters the current page client-side;
+  // `total`/pagination still reflect the server's unfiltered count (no backend change for
+  // this), an accepted, disclosed simplification at this app's single-operator scale.
+  const isRepoOnly = (modules: string[]) => modules.length === 1 && modules[0] === "repo_scan";
 
   return (
     <>
@@ -88,8 +94,9 @@ export function ProjectsPage() {
       </Card>
 
       <QueryState query={query} loadingLabel="Loading projects…">
-        {(data) =>
-          data.total === 0 ? (
+        {(raw) => {
+          const data = { ...raw, items: raw.items.filter((o) => !isRepoOnly(o.project.scan_policy.allowed_modules)) };
+          return data.items.length === 0 ? (
             <Card withBorder>
               <EmptyState
                 title={debounced || status ? "No projects match these filters" : "No projects yet"}
@@ -115,7 +122,7 @@ export function ProjectsPage() {
                 <Table.ScrollContainer minWidth={760}>
                   <Table striped highlightOnHover>
                     <Table.Caption>
-                      {data.total} project(s)
+                      {data.items.length} project(s)
                     </Table.Caption>
                     <Table.Thead>
                       <Table.Tr>
@@ -170,8 +177,8 @@ export function ProjectsPage() {
                 />
               )}
             </Stack>
-          )
-        }
+          );
+        }}
       </QueryState>
     </>
   );

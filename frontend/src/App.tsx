@@ -2,7 +2,7 @@ import { createTheme, MantineProvider } from "@mantine/core";
 import { Notifications } from "@mantine/notifications";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import type { ReactNode } from "react";
-import { Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
 import { ApiError } from "./api/client";
 import { AppLayout } from "./layouts/AppLayout";
 import { DashboardPage } from "./pages/DashboardPage";
@@ -15,11 +15,13 @@ import { FindingDetailPage } from "./pages/FindingDetailPage";
 import { FindingsWorkbenchPage } from "./pages/FindingsWorkbenchPage";
 import { ImportsPage } from "./pages/ImportsPage";
 import { IntegrationsPage } from "./pages/IntegrationsPage";
+import { ModeSelectPage } from "./pages/ModeSelectPage";
 import { ProjectWizardPage } from "./pages/ProjectWizardPage";
 import { ReportBuilderPage } from "./pages/ReportBuilderPage";
 import { RepositoryScanStartPage } from "./pages/RepositoryScanStartPage";
 import { AssetsPage, ScansPage } from "./pages/RecordPages";
 import { AuditPage, HelpPage, NotFoundPage, SettingsPage } from "./pages/SystemPages";
+import { useAppMode } from "./lib/mode";
 
 export const theme = createTheme({
   primaryColor: "blue",
@@ -72,11 +74,21 @@ export function Providers({ children, client }: { children: ReactNode; client: Q
   );
 }
 
+/** The app's index route: no mode chosen yet -> the mode chooser; "vapt" -> the dashboard
+ * (unchanged route); "repo" -> straight into the repository-scan flow (its home is a
+ * different route, `/repo-scan`, not `/`). See `lib/mode.ts` and TBD-116. */
+function HomeRoute() {
+  const [mode] = useAppMode();
+  if (mode === "repo") return <Navigate to="/repo-scan" replace />;
+  if (mode === "vapt") return <DashboardPage />;
+  return <ModeSelectPage />;
+}
+
 export function AppRoutes() {
   return (
     <Routes>
       <Route element={<AppLayout />}>
-        <Route index element={<DashboardPage />} />
+        <Route index element={<HomeRoute />} />
         <Route path="projects" element={<ProjectsPage />} />
         <Route path="projects/new" element={<ProjectWizardPage />} />
         <Route path="repo-scan" element={<RepositoryScanStartPage />} />

@@ -1,8 +1,14 @@
 import { screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import { ApiError, request } from "../api/client";
 import { emptyPage, emptySummary, mockApi, overview, PID, renderAt, VERSION } from "./utils";
+
+// "/" is the mode chooser until a mode is chosen (TBD-116); these tests exercise the
+// VAPT-mode app shell specifically, so they preset that mode rather than click through it.
+beforeEach(() => {
+  localStorage.setItem("kavach-app-mode", JSON.stringify("vapt"));
+});
 
 const base = {
   "GET /api/version": { body: VERSION },

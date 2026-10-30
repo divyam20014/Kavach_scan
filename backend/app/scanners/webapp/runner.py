@@ -35,6 +35,7 @@ from app.integrations.tls_tools import (
 from app.integrations.zap import ZapAvailability, check_availability
 from app.jobs.context import JobContext, JobStop, RunResult
 from app.models.project import ScanPolicy
+from app.scanners.webapp.active_checks import ActiveChecks
 from app.scanners.webapp.checks import PassiveChecks, origin_of
 from app.scanners.webapp.components import (
     ComponentDetector,
@@ -347,6 +348,20 @@ class WebAppRunner:
             state.components.observe_resource(resource)
         if state.crawl.limit_reached:
             ctx.warn(f"Crawl incomplete: {state.crawl.limit_reached}")
+
+        ctx.stage("active checks", 70)
+        sqli_on = profile.enabled("active_sqli")
+        xss_on = profile.enabled("active_xss")
+        if sqli_on or xss_on:
+            active = ActiveChecks(
+                crawl_service,
+                lambda: ctx.guard.policy,
+                sqli_enabled=sqli_on,
+                xss_enabled=xss_on,
+                max_requests=ctx.policy.max_active_probe_requests_per_target,
+            )
+            active.run(state.crawl.pages)
+            state.results += active.results
 
         ctx.stage("cors", 72)
         if profile.enabled("cors"):

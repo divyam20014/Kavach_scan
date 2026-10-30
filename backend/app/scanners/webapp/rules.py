@@ -558,19 +558,40 @@ RULES: dict[str, Rule] = {
             aggregate=False,
         ),
         Rule(
-            "WEB-INJ-000",
-            "Active injection testing (not built in)",
+            "WEB-SQLI-001",
+            "SQL injection confirmed by error-differential probe (opt-in)",
             "injection-indicators",
-            Kind.TOOL,
-            S.INFORMATIONAL,
-            C.NEEDS_REVIEW,
-            (),
+            Kind.ACTIVE,
+            S.HIGH,
+            C.CONFIRMED,
+            (89,),
             "A05",
-            "This build does not send injection test input. SQL injection and XSS coverage "
-            "comes from importing results of a dedicated tool (e.g. OWASP ZAP, Burp Suite) "
-            "run against an authorized target. Always reported as skipped, never as a pass.",
-            "",
-            (),
+            "A single syntax-breaking character sent in a query parameter produced a database "
+            "error signature that was not present in the unmodified response. Opt-in "
+            "(project scan policy active_probes.sqli_error_differential, disabled by default, "
+            "TBD-115): exactly one confirmation request per already-crawled parameter, never a "
+            "payload-fuzzing loop, never blind/time-based injection.",
+            "Use parameterized queries or prepared statements; never build SQL from unsanitized "
+            "input; return generic errors to the client and log details server-side.",
+            (_CS + "SQL_Injection_Prevention_Cheat_Sheet.html",),
+            aggregate=False,
+        ),
+        Rule(
+            "WEB-XSS-001",
+            "Reflected XSS confirmed by marker probe (opt-in)",
+            "injection-indicators",
+            Kind.ACTIVE,
+            S.HIGH,
+            C.CONFIRMED,
+            (79,),
+            "A05",
+            "A unique, non-executing marker sent in a query parameter was reflected unencoded "
+            "in the response body. Opt-in (project scan policy active_probes.xss_reflection, "
+            "disabled by default, TBD-115): exactly one confirmation request per "
+            "already-crawled parameter; the marker never executes script and is not a payload.",
+            "Encode output for its HTML context; add a restrictive Content-Security-Policy.",
+            (_CS + "Cross_Site_Scripting_Prevention_Cheat_Sheet.html",),
+            aggregate=False,
         ),
     ]
 }

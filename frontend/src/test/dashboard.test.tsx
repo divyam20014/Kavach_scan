@@ -2,9 +2,15 @@
 // this file -- covers the empty state, KPIs sourced from real API data (never fabricated),
 // the new "Critical & High findings" KPI, and the new "Recent scans" widget.
 import { screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import type { DashboardSummary, ScanJob } from "../api/types";
 import { emptyPage, emptySummary, mockApi, PID, renderAt, VERSION } from "./utils";
+
+// "/" is the mode chooser until a mode is chosen (TBD-116); these tests exercise the
+// VAPT-mode dashboard specifically, so they preset that mode rather than click through it.
+beforeEach(() => {
+  localStorage.setItem("kavach-app-mode", JSON.stringify("vapt"));
+});
 
 const base = {
   "GET /api/version": { body: VERSION },

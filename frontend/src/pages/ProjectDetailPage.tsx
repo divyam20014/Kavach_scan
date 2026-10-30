@@ -153,6 +153,11 @@ function ProjectDetail({ overview }: { overview: ProjectOverview }) {
               Evidence retention:{" "}
               {project.scan_policy.evidence_retention_days ? `${project.scan_policy.evidence_retention_days} days` : "until manually deleted"}
             </Text>
+            <Text size="sm">
+              Active injection confirmation: SQLi{" "}
+              {project.scan_policy.active_probes.sqli_error_differential ? "on" : "off"} · XSS{" "}
+              {project.scan_policy.active_probes.xss_reflection ? "on" : "off"}
+            </Text>
           </Card>
           <Card withBorder component="section" aria-labelledby="last-h">
             <Title order={2} size="h4" id="last-h" mb="sm">

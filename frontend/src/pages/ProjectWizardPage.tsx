@@ -71,6 +71,8 @@ export interface WizardValues {
   max_pages: number;
   max_duration_minutes: number;
   evidence_retention_days: number | "";
+  active_sqli: boolean;
+  active_xss: boolean;
 }
 
 const EMPTY: WizardValues = {
@@ -109,6 +111,8 @@ const EMPTY: WizardValues = {
   max_pages: 200,
   max_duration_minutes: 30,
   evidence_retention_days: "",
+  active_sqli: false,
+  active_xss: false,
 };
 
 function fromProject(p: Project): WizardValues {
@@ -151,6 +155,8 @@ function fromProject(p: Project): WizardValues {
     max_pages: p.scan_policy.max_pages,
     max_duration_minutes: Math.round(p.scan_policy.max_duration_seconds / 60),
     evidence_retention_days: p.scan_policy.evidence_retention_days ?? "",
+    active_sqli: p.scan_policy.active_probes.sqli_error_differential,
+    active_xss: p.scan_policy.active_probes.xss_reflection,
   };
 }
 
@@ -209,6 +215,14 @@ function buildPolicy(v: WizardValues) {
     max_pages: v.max_pages,
     max_duration_seconds: v.max_duration_minutes * 60,
     evidence_retention_days: v.evidence_retention_days === "" ? null : v.evidence_retention_days,
+    active_probes: {
+      sqli_error_differential: v.active_sqli,
+      xss_reflection: v.active_xss,
+      // Not managed by this wizard yet (API scanner's own opt-in probes).
+      api_mutating_operations: false,
+      api_idor: false,
+      api_rate_limit_probe: false,
+    },
   };
 }
 
@@ -527,6 +541,29 @@ export function ProjectWizard({ existing }: { existing?: Project }) {
               </Group>
               <NumberInput label="Evidence retention (days)" description="Leave empty to keep evidence until manually deleted" min={1} max={3650}
                 value={values.evidence_retention_days} onChange={(v) => set("evidence_retention_days", v === "" ? "" : Number(v))} allowDecimal={false} w={280} />
+              <Card withBorder padding="sm">
+                <Title order={3} size="h5" mb={4}>Active injection confirmation (opt-in)</Title>
+                <Text size="sm" c="dimmed" mb={8}>
+                  Disabled by default. When enabled, the web scanner sends exactly one bounded
+                  confirmation request per already-crawled parameter per probe type — never a
+                  payload-fuzzing loop, never blind/time-based injection. Still gated by scope
+                  and authorization like every other request.
+                </Text>
+                <Stack gap={6}>
+                  <Checkbox
+                    label="SQL injection error-differential"
+                    description="Appends a single syntax-breaking character and checks for a database error signature absent from the unmodified response."
+                    checked={values.active_sqli}
+                    onChange={(e) => set("active_sqli", e.currentTarget.checked)}
+                  />
+                  <Checkbox
+                    label="XSS reflection confirmation"
+                    description="Sends a unique, non-executing marker and confirms it is reflected unencoded. The marker never executes script."
+                    checked={values.active_xss}
+                    onChange={(e) => set("active_xss", e.currentTarget.checked)}
+                  />
+                </Stack>
+              </Card>
               <Text size="sm" c="dimmed">Active injection probes (SQLi/XSS) are not built into the web scanner (safe mode); API write, IDOR and rate-limit probes stay disabled by default and require explicit test identities, fixtures and acknowledgement.</Text>
             </Stack>
           )}

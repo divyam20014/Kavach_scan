@@ -68,9 +68,11 @@ PARAMETERS: dict[str, tuple[type, Any, str]] = {
 }
 
 LIMITATIONS = [
-    "Active injection testing is not built in: no SQL injection or XSS test input is sent. "
-    "Passive indicators only; import results from a dedicated tool (e.g. OWASP ZAP, Burp "
-    "Suite) for injection coverage.",
+    "Active SQL injection/XSS confirmation is opt-in and disabled by default (project scan "
+    "policy active_probes.sqli_error_differential/xss_reflection, TBD-115): when off, "
+    "injection coverage is passive indicators only. When on, each already-crawled "
+    "parameter gets exactly one confirmation request per probe type -- never a "
+    "payload-fuzzing loop, never blind/time-based injection, never a fresh crawl.",
     "JavaScript is not executed; links created only by scripts are not discovered.",
     "Authenticated crawling supports exactly one operator-configured session credential "
     "(bearer/header/cookie/basic), resolved from an environment alias; it never attempts "
@@ -178,11 +180,21 @@ GROUPS: list[tuple[str, str, list[str], str | None]] = [
         ["WEB-REFL-001", "WEB-DBERR-001"],
         None,
     ),
-    ("active_injection", "Active SQL injection / XSS testing", ["WEB-INJ-000"], None),
+    (
+        "active_sqli",
+        "Active SQL injection confirmation (opt-in, project scan policy)",
+        ["WEB-SQLI-001"],
+        None,
+    ),
+    (
+        "active_xss",
+        "Active XSS reflection confirmation (opt-in, project scan policy)",
+        ["WEB-XSS-001"],
+        None,
+    ),
 ]
 ALWAYS_SKIPPED = {
     "cve": "Runs only when a local CVE catalog is imported (none imported in this build)",
-    "active_injection": "Not built in: use imported results from a dedicated tool",
     "sensitive_files": "Not built in: use imported results from a dedicated tool",
 }
 
@@ -269,6 +281,22 @@ def build_profile(params: dict[str, Any], policy: ScanPolicy) -> WebScanProfile:
             enabled, reason = False, f"engine={engine}: native checks are not run"
         elif group in ALWAYS_SKIPPED:
             enabled, reason = False, ALWAYS_SKIPPED[group]
+        elif group == "active_sqli" and not policy.active_probes.sqli_error_differential:
+            enabled, reason = (
+                False,
+                (
+                    "Disabled: enable active_probes.sqli_error_differential in the project's "
+                    "scan policy to opt in"
+                ),
+            )
+        elif group == "active_xss" and not policy.active_probes.xss_reflection:
+            enabled, reason = (
+                False,
+                (
+                    "Disabled: enable active_probes.xss_reflection in the project's scan "
+                    "policy to opt in"
+                ),
+            )
         elif toggle is not None and not _bool(params, toggle):
             enabled, reason = False, "Disabled for this scan"
         checks.append(

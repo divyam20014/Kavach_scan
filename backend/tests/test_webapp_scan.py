@@ -160,12 +160,60 @@ def test_baseline_scan_discovers_pages_and_emits_evidence_backed_results(
         (r["rule_id"], r["outcome"])
         for r in _output(repo, pid, done.scan_id, "coverage.json")["results"]
     }
-    for rule in ("WEB-INJ-000", "WEB-FILE-001", "WEB-COMP-002", "WEB-TLS-005", "WEB-TLS-006"):
+    for rule in (
+        "WEB-SQLI-001",
+        "WEB-XSS-001",
+        "WEB-FILE-001",
+        "WEB-COMP-002",
+        "WEB-TLS-005",
+        "WEB-TLS-006",
+    ):
         assert (rule, "skipped") in coverage and (rule, "pass") not in coverage, rule
     assert ("WEB-HDR-002", "finding") in coverage
     assert ("WEB-CORS-001", "finding") in coverage
     assert ("WEB-METHOD-001", "finding") in coverage  # fixture advertises TRACE via OPTIONS
     assert ("WEB-FORM-001", "finding") in coverage  # home page's password field has no autocomplete
+
+
+def test_active_probes_confirm_by_default_opt_out_and_only_when_enabled(
+    repo: StorageRepository, settings: RuntimeSettings, ports: tuple[int, int]
+) -> None:
+    """TBD-115: WEB-SQLI-001/WEB-XSS-001 are disabled unless the project's scan policy
+    explicitly opts in, and each only fires a bounded number of extra confirmation
+    requests at parameters the passive crawl already observed."""
+    lab, _ = ports
+    off_pid = repo.create_project(lab_project([lab])).project_id
+    done_off = _scan(repo, _manager(repo, settings), off_pid, [f"http://lab.test:{lab}/"])
+    coverage_off = {
+        (r["rule_id"], r["outcome"])
+        for r in _output(repo, off_pid, done_off.scan_id, "coverage.json")["results"]
+    }
+    assert ("WEB-SQLI-001", "skipped") in coverage_off
+    assert ("WEB-XSS-001", "skipped") in coverage_off
+    # Passive checks (WEB-DBERR-001, WEB-REFL-001, ...) still run with active probes off --
+    # only the two opt-in active rules are absent.
+    assert not any(f.rule_id in ("WEB-SQLI-001", "WEB-XSS-001") for f in _findings(repo, off_pid))
+
+    on_pid = repo.create_project(
+        lab_project(
+            [lab],
+            active_probes={"sqli_error_differential": True, "xss_reflection": True},
+        )
+    ).project_id
+    done_on = _scan(repo, _manager(repo, settings), on_pid, [f"http://lab.test:{lab}/"])
+    findings_on = _findings(repo, on_pid)
+    sqli = [f for f in findings_on if f.rule_id == "WEB-SQLI-001"]
+    xss = [f for f in findings_on if f.rule_id == "WEB-XSS-001"]
+    assert len(sqli) == 1 and "/dberror" in (sqli[0].url or "")
+    assert len(xss) == 1 and "/echo?" in (xss[0].url or "")
+    for finding in sqli + xss:
+        assert finding.evidence_ids
+        evidence = repo.get_evidence(on_pid, finding.evidence_ids[0])
+        assert evidence.finding_ids == [finding.finding_id]
+    # the confirmation request is additional to, not instead of, the normal crawl.
+    summary_on = _output(repo, on_pid, done_on.scan_id, "summary.json")
+    summary_off = _output(repo, off_pid, done_off.scan_id, "summary.json")
+    assert summary_on["requests_sent"] > summary_off["requests_sent"]
 
 
 def test_scan_never_requests_out_of_scope_or_disallowed_urls(

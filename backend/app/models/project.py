@@ -199,6 +199,11 @@ class ScanPolicy(StrictModel):
     max_requests_per_target: int = Field(default=2000, ge=1, le=20_000)
     allowed_modules: list[ScanModule] = Field(default_factory=list, max_length=5)
     active_probes: ActiveProbeToggles = Field(default_factory=ActiveProbeToggles)
+    # Separate, tighter sub-budget for `active_probes.sqli_error_differential`/
+    # `xss_reflection` (TBD-115): these send additional requests per parameter on top
+    # of the passive crawl's own `max_requests_per_target`, so they get their own, smaller
+    # ceiling rather than inheriting the crawl's budget.
+    max_active_probe_requests_per_target: int = Field(default=50, ge=1, le=200)
     evidence_retention_days: int | None = Field(default=None, ge=1, le=3650)
 
 

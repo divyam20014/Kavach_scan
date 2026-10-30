@@ -18,9 +18,9 @@ Every check returns exactly one outcome per evaluated subject, always with a rat
 
 Every rule appears in the scan's `coverage.json`; a rule with no applicable subject is listed as `skipped` with that reason.
 
-## Safe mode (always on in this build — TBD-049, TBD-050)
+## Safe mode by default (TBD-049, TBD-050) — active injection confirmation is opt-in (TBD-115)
 
-- **No injection test input is sent.** SQL injection / XSS coverage comes from *passive* indicators (`WEB-REFL-001`, `WEB-DBERR-001`) and from importing a dedicated tool's results (Phase 08). `WEB-INJ-000` documents this and is always `skipped`.
+- **No injection test input is sent unless explicitly opted in.** By default, SQL injection / XSS coverage comes from *passive* indicators (`WEB-REFL-001`, `WEB-DBERR-001`) and from importing a dedicated tool's results (Phase 08). A project can opt in per probe type via `ScanPolicy.active_probes.sqli_error_differential`/`xss_reflection` (both `false` by default); when on, `WEB-SQLI-001`/`WEB-XSS-001` send exactly one bounded confirmation request per already-crawled parameter — never a payload-fuzzing loop, never blind/time-based injection, and gated by a separate, tighter `max_active_probe_requests_per_target` budget on top of the usual scope gate. See TBD_DECISIONS.md.
 - **No sensitive-file probing.** `WEB-FILE-001` is always `skipped`; directory listings, debug pages and default pages are still detected on pages the crawler reaches.
 
 ## Rules
@@ -63,7 +63,8 @@ OWASP column: OWASP Top 10:2025 category the rule *relates to* (mapping confiden
 | WEB-FORM-001 | A password field does not disable autocomplete (form- or field-level) | passive | low / probable | 522 | A02 |
 | WEB-INFO-005 | Sensitive content in an HTML comment (private key block, internal/private IP, or a developer note referencing a credential/secret) | passive | low / probable | 615 | A02 |
 | WEB-METHOD-001 | One `OPTIONS` probe per origin: TRACE/TRACK advertised is a finding (medium); PUT/DELETE/CONNECT advertised is an observation | probe | medium / confirmed | 650 | A02 |
-| WEB-INJ-000 | Active injection testing — **not built in** (always skipped; use imported tool results) | tool | — | — | A05 |
+| WEB-SQLI-001 | SQL injection confirmed by a single error-differential probe — **opt-in**, disabled by default | active | high / confirmed | 89 | A05 |
+| WEB-XSS-001 | Reflected XSS confirmed by a single non-executing marker probe — **opt-in**, disabled by default | active | high / confirmed | 79 | A05 |
 
 ## Aggregation and deduplication
 

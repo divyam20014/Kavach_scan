@@ -45,12 +45,22 @@ def test_profile_defaults_are_safe_and_explicit() -> None:
     profile = build_profile({}, ScanPolicy())
     assert profile.safe_mode is True and profile.auth_scheme == "none"
     disabled = {c.group: c.reason for c in profile.checks if not c.enabled}
-    assert set(disabled) == {"cve", "active_injection", "sensitive_files"}
-    assert all(
-        "not built in" in disabled[g].lower() for g in ("active_injection", "sensitive_files")
-    )
+    assert set(disabled) == {"cve", "active_sqli", "active_xss", "sensitive_files"}
+    assert "not built in" in disabled["sensitive_files"].lower()
+    assert all("enable active_probes" in disabled[g] for g in ("active_sqli", "active_xss"))
     assert profile.budgets.max_pages == 200 and profile.respect_robots and profile.tls_verify
     assert any("injection" in limit.lower() for limit in profile.limitations)
+
+
+def test_active_probes_are_opt_in_via_scan_policy_not_scan_parameters() -> None:
+    off = build_profile({}, ScanPolicy())
+    assert not off.enabled("active_sqli") and not off.enabled("active_xss")
+    policy = ScanPolicy(active_probes={"sqli_error_differential": True, "xss_reflection": False})
+    partial = build_profile({}, policy)
+    assert partial.enabled("active_sqli") and not partial.enabled("active_xss")
+    # Scan-start parameters cannot turn these on -- only the project's own scan policy can.
+    bypass_attempt = build_profile({"active_sqli": True}, ScanPolicy())
+    assert not bypass_attempt.enabled("active_sqli")
 
 
 def test_profile_toggles_and_lowered_budgets() -> None:
