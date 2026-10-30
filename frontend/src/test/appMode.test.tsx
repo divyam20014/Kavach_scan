@@ -5,7 +5,9 @@
 import { screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it } from "vitest";
-import { emptyPage, emptySummary, mockApi, overview, renderAt, VERSION } from "./utils";
+import { emptyPage, emptySummary, mockApi, overview, PID, renderAt, VERSION } from "./utils";
+
+const SID = "scn_" + "4".repeat(32);
 
 const base = {
   "GET /api/version": { body: VERSION },
@@ -93,6 +95,54 @@ describe("app mode separation", () => {
     await u.click(screen.getByRole("button", { name: "Switch mode" }));
     await screen.findByText("What do you want to do?");
     expect(localStorage.getItem("kavach-app-mode")).toBe('""');
+  });
+
+  it("lets Repository Scan mode reach the scan-detail page after starting a scan, and still switch modes from there", async () => {
+    // Regression: starting a repo scan navigates to /projects/:id/scans/:id (the shared
+    // scan-detail page, where progress/findings/reports actually show), which is NOT
+    // "/repo-scan" itself -- the guard used to bounce it straight back, so a started scan's
+    // results were never reachable. A second regression: clicking "Switch mode" from any
+    // page other than "/" used to silently undo itself, because the mode-inference effect
+    // raced the router's own navigation back to "/" and re-inferred a mode from the still-
+    // stale path before it updated.
+    const projectRecord = overview({
+      name: "My repo scan",
+      repository_path: "D:\\repo",
+      scan_policy: { ...overview().project.scan_policy, allowed_modules: ["repo_scan"] },
+    }).project;
+    const scanRecord = {
+      scan_id: SID, project_id: PID, module: "repo_scan" as const, profile: "default", state: "queued" as const,
+      revision: 1, created_at: "", updated_at: "", queued_at: "", started_at: null, finished_at: null,
+      targets: ["repo-scan"], authorized_targets: [], parameters: {},
+      progress: { stage: "", percent: null, counters: {} }, cancel_requested: false,
+      warnings: [], errors: [], output_refs: [], correlation_id: null, retry_of: null,
+      final_reason: "", scope_hash: null,
+    };
+    mockApi({
+      ...base,
+      "POST /api/projects": { status: 201, body: projectRecord },
+      [`POST /api/projects/${PID}/scans`]: { status: 202, body: scanRecord },
+      [`GET /api/projects/${PID}/scans/${SID}`]: { body: { scan: scanRecord, active: false, terminal: false, elapsed_seconds: null } },
+      [`GET /api/projects/${PID}/scans/${SID}/events`]: { body: { items: [], offset: 0, limit: 200, has_more: false, corrupt_lines: 0 } },
+      [`GET /api/projects/${PID}/scans/${SID}/console`]: { body: { lines: [] } },
+    });
+    renderAt("/repo-scan");
+    const u = userEvent.setup();
+    await screen.findByText("Start a repository scan");
+    await u.type(screen.getByRole("textbox", { name: "Name" }), "My repo scan");
+    await u.type(screen.getByRole("textbox", { name: /Repository path/ }), "D:\\repo");
+    await u.type(screen.getByRole("textbox", { name: /Organization/ }), "Acme");
+    await u.type(screen.getByRole("textbox", { name: /Target owner/ }), "Acme IT");
+    await u.type(screen.getByRole("textbox", { name: /Authorized by/ }), "Jane");
+    await u.click(screen.getByRole("checkbox", { name: /operator attestation/i }));
+    await u.click(screen.getByRole("button", { name: "Start scan" }));
+
+    // Lands on the scan-detail page, not bounced back to the start form.
+    expect(await screen.findByText("Queued")).toBeInTheDocument();
+    expect(screen.queryByText("Start a repository scan")).not.toBeInTheDocument();
+
+    await u.click(screen.getByRole("button", { name: "Switch mode" }));
+    await screen.findByText("What do you want to do?");
   });
 
   it("filters repository-scan-only projects out of the VAPT Projects list", async () => {

@@ -1,6 +1,6 @@
 import { ActionIcon, AppShell, Burger, Button, Divider, Group, NavLink, ScrollArea, Text, Title, Tooltip } from "@mantine/core";
 import { useDisclosure, useLocalStorage } from "@mantine/hooks";
-import { useEffect, type ReactNode } from "react";
+import { useEffect, useRef, type ReactNode } from "react";
 import { Navigate, NavLink as RouterNavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { useVersion } from "../api/hooks";
 import { KillSwitchControl } from "../components/JobControls";
@@ -75,20 +75,45 @@ function navSectionsFor(mode: AppMode): NavSection[] {
   return [];
 }
 
+/** Whether `path` belongs to Repository Scan mode: the start form itself, or any
+ * project-scoped page (`/projects/<id>/...`) -- that's where a started scan's own progress,
+ * findings and reports actually live (`RepositoryScanStartPage` navigates straight to
+ * `/projects/<id>/scans/<id>` once a scan starts). `/projects` (the list) and
+ * `/projects/new` are NOT project-scoped and stay VAPT-only. */
+function isRepoScope(path: string): boolean {
+  if (path === "/repo-scan") return true;
+  const parts = path.split("/").filter(Boolean);
+  return parts[0] === "projects" && parts[1] !== undefined && parts[1] !== "new";
+}
+
 /** Keeps every route but the index ("/", handled by `HomeRoute` in `App.tsx`) consistent
  * with the current mode. A direct link/bookmark to a route while no mode is chosen yet
  * infers and remembers the mode from the path itself (`/repo-scan` -> "repo", anything
  * else -> "vapt") rather than bouncing through the chooser -- existing deep links keep
  * working exactly as before this feature. Once a mode *is* set, a route that belongs to
- * the other mode is redirected to that mode's home, so the separation still holds. */
+ * the other mode is redirected to that mode's home, so the separation still holds.
+ *
+ * Inference runs at most once per mount (`inferredRef`), not on every render where
+ * `mode === ""`. `setMode("")` (the header's "Switch mode" control) and the router's own
+ * navigation back to "/" are two separate state updates, not one atomic batch -- they land
+ * in different commits, so there is a real intermediate render where `mode` has already
+ * been cleared but `path` is still the *previous* page. Without the once-only guard, that
+ * intermediate render's "no mode yet" check would immediately re-infer a mode from the
+ * stale path and silently undo the switch (confirmed directly: switching mode from the
+ * scan-detail page reached after starting a scan always landed back on "vapt" instead of
+ * the chooser). */
 function useModeGuard(mode: AppMode, setMode: (mode: AppMode) => void): ReactNode {
   const location = useLocation();
   const path = location.pathname;
+  const inferredRef = useRef(false);
   useEffect(() => {
-    if (path !== "/" && mode === "") setMode(path === "/repo-scan" ? "repo" : "vapt");
+    if (!inferredRef.current && path !== "/" && mode === "") {
+      inferredRef.current = true;
+      setMode(path === "/repo-scan" ? "repo" : "vapt");
+    }
   }, [path, mode, setMode]);
   if (path === "/") return null;
-  if (mode === "repo" && path !== "/repo-scan") return <Navigate to="/repo-scan" replace />;
+  if (mode === "repo" && !isRepoScope(path)) return <Navigate to="/repo-scan" replace />;
   if (mode === "vapt" && path === "/repo-scan") return <Navigate to="/" replace />;
   return null;
 }
